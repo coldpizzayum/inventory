@@ -1,8 +1,13 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 dotenv.config()
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 import { initDb } from './db.js'
 import authRoutes from './routes/auth.js'
@@ -32,6 +37,16 @@ app.use('/api/brand', brandRoutes)
 app.use('/api/packing-items', packingItemRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
+
+// Serve built React frontend (production only)
+const distPath = path.join(__dirname, '../dist')
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath))
+  // SPA fallback: non-API routes all return index.html
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+}
 
 const dbType = process.env.DATABASE_URL ? 'PostgreSQL' : 'SQLite'
 
