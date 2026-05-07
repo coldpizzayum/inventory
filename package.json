@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server/index.js",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node server/index.js",
     "client": "vite",
-    "seed": "node server/seed.js",
     "build": "vite build",
+    "seed": "node server/seed.js",
     "preview": "vite preview"
   },
   "dependencies": {
