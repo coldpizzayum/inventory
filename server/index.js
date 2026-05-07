@@ -1,11 +1,10 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import { fileURLToPath } from 'url'
-import path from 'path'
 
 dotenv.config()
 
+import { initDb } from './db.js'
 import authRoutes from './routes/auth.js'
 import productRoutes from './routes/products.js'
 import partRoutes from './routes/parts.js'
@@ -34,6 +33,15 @@ app.use('/api/packing-items', packingItemRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-})
+const dbType = process.env.DATABASE_URL ? 'PostgreSQL' : 'SQLite'
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}  [${dbType}]`)
+    })
+  })
+  .catch(err => {
+    console.error('❌ DB init failed:', err.message)
+    process.exit(1)
+  })
