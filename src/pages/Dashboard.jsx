@@ -18,6 +18,8 @@ const Icon = {
   Grip: () => (<svg width="10" height="14" viewBox="0 0 14 14" fill="#B0ADA6"><circle cx="5" cy="3" r="1.1"/><circle cx="9" cy="3" r="1.1"/><circle cx="5" cy="7" r="1.1"/><circle cx="9" cy="7" r="1.1"/><circle cx="5" cy="11" r="1.1"/><circle cx="9" cy="11" r="1.1"/></svg>),
   Check: () => (<svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>),
   Photo: () => (<svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
+  Order: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>),
+  Brand: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>),
 }
 
 const NAV = [
@@ -25,8 +27,10 @@ const NAV = [
   { id: 'process',   label: '加工流程',   icon: Icon.Flow },
   { id: 'sku',       label: 'SKU 庫存',   icon: Icon.Stack },
   { id: 'log',       label: '進出貨登記', icon: Icon.Log },
-  { id: 'packaging', label: '包裝副件',   icon: Icon.Box },
-  { id: 'settings',  label: '產品管理',   icon: Icon.Setting },
+  { id: 'packaging', label: '包裝副件',     icon: Icon.Box },
+  { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
+  { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
+  { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
 ]
 
 const PAGE_TITLES = {
@@ -36,6 +40,8 @@ const PAGE_TITLES = {
   log:       '進出貨登記',
   packaging: '包裝副件管理',
   settings:  '產品管理',
+  orders:    '訂單管理',
+  brands:    '設計品牌管理',
 }
 
 const SKU_COLORS = {
@@ -182,6 +188,14 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([])
   const [packingItems, setPackingItems] = useState([])
   const [tokens, setTokens] = useState([])
+  const [orders, setOrders] = useState(() => {
+    const saved = localStorage.getItem('dicas:orders')
+    if (saved) { try { return JSON.parse(saved) } catch {} }
+    return []
+  })
+  const [showNewOrder, setShowNewOrder] = useState(false)
+
+  function saveOrders(next) { setOrders(next); localStorage.setItem('dicas:orders', JSON.stringify(next)) }
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -274,7 +288,7 @@ export default function Dashboard() {
           <button
             key={n.id}
             className={`nav-item ${page === n.id ? 'active' : ''}`}
-            onClick={() => { setPage(n.id); if (n.id === 'settings') loadTokens() }}
+            onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens() }}
             title={collapsed ? n.label : undefined}
             style={collapsed ? { justifyContent: 'center' } : undefined}
           >
@@ -320,29 +334,30 @@ export default function Dashboard() {
                 <button className="btn" style={{ fontSize: 13 }}>
                   <Icon.Export />匯出報表
                 </button>
-                {page === 'overview' && (
-                  <button className="btn primary" style={{ fontSize: 13 }}>
-                    <Icon.Plus />新增訂單
-                  </button>
-                )}
                 {page === 'process' && headerActions}
               </>
+            ) : page === 'orders' ? (
+              <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewOrder(true)}>
+                <Icon.Plus />新增訂單
+              </button>
             ) : headerActions}
           </div>
         </header>
 
         {/* Page content */}
         <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
-          {!selectedProduct && page !== 'settings' ? (
+          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'brands' ? (
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
-              {page === 'overview'  && <OverviewPage products={products} partsData={partsData} logs={logs} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} />}
+              {page === 'overview'  && <OverviewPage products={products} partsData={partsData} logs={logs} orders={orders} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} />}
               {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
               {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
               {page === 'packaging' && <PackagingPage items={packingItems} product={selectedProduct} reload={() => loadPacking(selectedProduct?.id)} />}
-              {page === 'settings'  && <SettingsPage products={products} tokens={tokens} reload={loadProducts} reloadTokens={loadTokens} />}
+              {page === 'settings'  && <SettingsPage products={products} reload={loadProducts} />}
+              {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} />}
+              {page === 'brands'    && <BrandsPage products={products} tokens={tokens} reloadTokens={loadTokens} />}
             </>
           )}
         </div>
@@ -352,8 +367,7 @@ export default function Dashboard() {
 }
 
 // ─── Page: Overview ───────────────────────────────────────────
-function OverviewPage({ products, partsData, logs, selectedProduct, onSelectProduct }) {
-  // Product stock cards (section 1)
+function OverviewPage({ products, partsData, logs, orders, selectedProduct, onSelectProduct }) {
   const stockCards = products.map(p => {
     const key = `prod-inv-${p.id}`
     const stored = (() => { try { return JSON.parse(localStorage.getItem(key) || '{}') } catch { return {} } })()
@@ -365,54 +379,12 @@ function OverviewPage({ products, partsData, logs, selectedProduct, onSelectProd
     }
   })
 
-  // Orders (section 2) — local state for demo
-  const [orders, setOrders] = useState(() => {
-    const saved = localStorage.getItem('dicas:orders')
-    if (saved) { try { return JSON.parse(saved) } catch {} }
-    return products.map(p => ({
-      id: `o-${p.id}`, productId: p.id,
-      customer: 'MUJI', qty: p.order_qty || 0,
-      alloc: p.finished || 0, due: p.estimated_completion || '—', note: '',
-    })).filter(o => o.qty > 0)
-  })
-  const [showNew, setShowNew] = useState(false)
-
-  function saveOrders(next) { setOrders(next); localStorage.setItem('dicas:orders', JSON.stringify(next)) }
-
   return (
     <>
-      {/* Section 1 — 產品庫存 */}
       <SectionHeader title="產品庫存" count={products.length} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {stockCards.map(p => <StockCard key={p.id} p={p} orders={orders.filter(o => o.productId === p.id)} />)}
       </div>
-
-      <div style={{ height: 1, background: 'var(--line-1)', margin: '20px 0' }} />
-
-      {/* Section 2 — 進行中訂單 */}
-      <SectionHeader title="進行中訂單" count={orders.length} onAction={<button className="btn primary" style={{ fontSize: 12 }} onClick={() => setShowNew(true)}><Icon.Plus />新增訂單</button>} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {orders.map(o => {
-          const product = products.find(p => p.id === o.productId)
-          if (!product) return null
-          return (
-            <OrderCard
-              key={o.id} order={o} product={product}
-              onAllocate={n => saveOrders(orders.map(x => x.id === o.id ? { ...x, alloc: n } : x))}
-              onDelete={() => saveOrders(orders.filter(x => x.id !== o.id))}
-            />
-          )
-        })}
-        {orders.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: 13, gridColumn: '1/-1' }}>尚無訂單</p>}
-      </div>
-
-      {showNew && (
-        <NewOrderDrawer
-          products={products}
-          onClose={() => setShowNew(false)}
-          onCreate={payload => { saveOrders([...orders, { id: `o-${Date.now()}`, ...payload }]); setShowNew(false) }}
-        />
-      )}
     </>
   )
 }
@@ -1342,11 +1314,9 @@ function PackagingPage({ items, product, reload }) {
 }
 
 // ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, tokens, reload, reloadTokens }) {
+function SettingsPage({ products, reload }) {
   const [newProduct, setNewProduct] = useState({ name: '', description: '', order_qty: '', order_date: '' })
   const [newPart, setNewPart] = useState({ product_id: '', name: '' })
-  const [newToken, setNewToken] = useState({ product_id: '', label: '' })
-  const [lastToken, setLastToken] = useState(null)
 
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
@@ -1357,17 +1327,6 @@ function SettingsPage({ products, tokens, reload, reloadTokens }) {
     if (!newPart.product_id || !newPart.name) return alert('請選擇產品並填寫零件名稱')
     await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify(newPart) })
     setNewPart(p => ({ ...p, name: '' })); reload()
-  }
-  async function generateToken() {
-    if (!newToken.product_id) return alert('請選擇產品')
-    const res = await apiFetch('/api/designer-tokens', { method: 'POST', body: JSON.stringify(newToken) })
-    const data = await res.json()
-    setLastToken(`${window.location.origin}/brand/${data.token}`)
-    setNewToken({ product_id: '', label: '' }); reloadTokens()
-  }
-  async function deleteToken(id) {
-    if (!confirm('確認刪除此設計師連結？')) return
-    await apiFetch(`/api/designer-tokens/${id}`, { method: 'DELETE' }); reloadTokens()
   }
 
   return (
@@ -1427,8 +1386,59 @@ function SettingsPage({ products, tokens, reload, reloadTokens }) {
           <button className="btn primary" onClick={createPart}><Icon.Plus />新增零件</button>
         </div>
       </SettingsSection>
+    </div>
+  )
+}
 
-      {/* Designer tokens */}
+// ─── Page: Orders ─────────────────────────────────────────────
+function OrdersPage({ orders, saveOrders, products, showNew, setShowNew }) {
+  return (
+    <>
+      <SectionHeader title="進行中訂單" count={orders.length} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        {orders.map(o => {
+          const product = products.find(p => p.id === o.productId)
+          if (!product) return null
+          return (
+            <OrderCard
+              key={o.id} order={o} product={product}
+              onAllocate={n => saveOrders(orders.map(x => x.id === o.id ? { ...x, alloc: n } : x))}
+              onDelete={() => saveOrders(orders.filter(x => x.id !== o.id))}
+            />
+          )
+        })}
+        {orders.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: 13, gridColumn: '1/-1' }}>尚無訂單</p>}
+      </div>
+      {showNew && (
+        <NewOrderDrawer
+          products={products}
+          onClose={() => setShowNew(false)}
+          onCreate={payload => { saveOrders([...orders, { id: `o-${Date.now()}`, ...payload }]); setShowNew(false) }}
+        />
+      )}
+    </>
+  )
+}
+
+// ─── Page: Brands ─────────────────────────────────────────────
+function BrandsPage({ products, tokens, reloadTokens }) {
+  const [newToken, setNewToken] = useState({ product_id: '', label: '' })
+  const [lastToken, setLastToken] = useState(null)
+
+  async function generateToken() {
+    if (!newToken.product_id) return alert('請選擇產品')
+    const res = await apiFetch('/api/designer-tokens', { method: 'POST', body: JSON.stringify(newToken) })
+    const data = await res.json()
+    setLastToken(`${window.location.origin}/brand/${data.token}`)
+    setNewToken({ product_id: '', label: '' }); reloadTokens()
+  }
+  async function deleteToken(id) {
+    if (!confirm('確認刪除此設計師連結？')) return
+    await apiFetch(`/api/designer-tokens/${id}`, { method: 'DELETE' }); reloadTokens()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
       <SettingsSection title="設計師連結管理">
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <select className="select" style={{ flex: '0 0 160px' }} value={newToken.product_id} onChange={e => setNewToken(t => ({ ...t, product_id: e.target.value }))}>
