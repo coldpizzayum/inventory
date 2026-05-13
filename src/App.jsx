@@ -13,6 +13,7 @@ function App() {
         <Route path="/dashboard/*" element={<Dashboard />} />
         <Route path="/input" element={<Input />} />
         <Route path="/brand/:token" element={<Brand />} />
+        <Route path="/brand" element={<Brand />} />
       </Routes>
     </BrowserRouter>
   )

@@ -147,10 +147,11 @@ function ProductView({ product, label, parts, onBack }) {
 export default function Brand() {
   const { token } = useParams()
   const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(!token ? '連結格式不正確，請確認您的設計師連結是否完整。' : null)
+  const [loading, setLoading] = useState(!!token)
 
   useEffect(() => {
+    if (!token) return
     fetch(`/api/brand/${token}`)
       .then(r => {
         if (!r.ok) throw new Error('無效的設計師連結')
