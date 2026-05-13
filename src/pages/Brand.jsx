@@ -1,16 +1,149 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 
-const STATUS_CONFIG = {
-  '等待中':  { color: 'bg-gray-100 text-gray-500',   dot: 'bg-gray-400',   icon: '⏳' },
-  '送加工廠': { color: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-400', icon: '📤' },
-  '加工中':  { color: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-500',   icon: '⚙️' },
-  '包裝中':  { color: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500', icon: '📦' },
-  '完成':    { color: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  icon: '✅' },
+const STATUS_MAP = {
+  '等待中':   { cls: 'wait',    label: '等待中' },
+  '送加工廠': { cls: 'send',    label: '送加工廠' },
+  '加工中':   { cls: 'process', label: '加工中' },
+  '回廠中':   { cls: 'back',    label: '回廠中' },
+  '包裝中':   { cls: 'pack',    label: '包裝中' },
+  '完成':     { cls: 'done',    label: '完成' },
 }
 
-const STATUS_ORDER = ['等待中', '送加工廠', '加工中', '包裝中', '完成']
+const STATUS_ORDER = ['等待中', '送加工廠', '加工中', '回廠中', '包裝中', '完成']
 
+function statusCls(s) {
+  return (STATUS_MAP[s] || STATUS_MAP['等待中']).cls
+}
+
+function BBadge({ status }) {
+  const cls = statusCls(status)
+  return <span className={`badge ${cls}`}><span className="dot" />{status || '等待中'}</span>
+}
+
+function BrandHeader({ showBack, onBack, label }) {
+  return (
+    <div style={{ padding: '16px 18px 14px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {showBack ? (
+        <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: 'var(--text-2)', fontSize: 14, padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
+          我的產品
+        </button>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src="/dicas-logo.svg" alt="DICAS" style={{ height: 18, width: 'auto', display: 'block' }} />
+          {label && (
+            <>
+              <div style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
+              <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>{label}</div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PartRow({ part }) {
+  return (
+    <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line-1)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: part.sku_progress?.length ? 10 : 0 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>{part.name}</div>
+        </div>
+        <BBadge status={part.status} />
+      </div>
+      {part.sku_progress?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {part.sku_progress.map((s, i) => (
+            <span key={i} className={`badge ${statusCls(s.status)}`} style={{ fontSize: 11, padding: '3px 8px' }}>
+              <span className="dot" />{s.color_name} · {s.status}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Single product view ──────────────────────────────────────
+function ProductView({ product, label, parts, onBack }) {
+  const overallStatus = deriveOverallStatus(parts)
+  const [imgSrc, setImgSrc] = useState(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`prod-img-${product.id}`)
+      if (stored) setImgSrc(stored)
+    } catch {}
+  }, [product.id])
+
+  const BRAND_COLORS = ['#4A6FA5', '#7A9E7E', '#C4956A', '#8B7BA8', '#B07070']
+  const brandColor = BRAND_COLORS[product.id % BRAND_COLORS.length] || '#8B9EA8'
+
+  return (
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' }}>
+      <BrandHeader showBack={!!onBack} onBack={onBack} label={label} />
+
+      {/* Product hero */}
+      <div style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)' }}>
+        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/10', background: brandColor, overflow: 'hidden' }}>
+          {imgSrc
+            ? <img src={imgSrc} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff', fontSize: 48, fontWeight: 600, opacity: 0.5 }}>
+                {product.name?.slice(0, 2)}
+              </div>
+          }
+        </div>
+        <div style={{ padding: '14px 18px 16px' }}>
+          <div className="tag">產品</div>
+          <h1 style={{ margin: '4px 0 0', fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em' }}>{product.name}</h1>
+          {product.description && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: 'var(--text-3)', paddingBottom: 2 }}>
+              <span>{product.description}</span>
+              {product.estimated_completion && <><span>·</span><span className="num">預計完成 {product.estimated_completion}</span></>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        {[
+          { l: '訂單日期', v: product.order_date || '-' },
+          { l: '預計完成', v: product.estimated_completion || '待確認', accent: !!product.estimated_completion },
+          { l: '零件數', v: parts.length },
+        ].map((s, i) => (
+          <div key={i} style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '10px 12px' }}>
+            <div className="tag" style={{ fontSize: 9, marginBottom: 3 }}>{s.l}</div>
+            <div className="num" style={{ fontSize: 15, fontWeight: 700, color: s.accent ? 'var(--accent)' : 'var(--text-1)' }}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Overall status */}
+      <div style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="tag">整體狀態</div>
+        <BBadge status={overallStatus} />
+      </div>
+
+      {/* Parts list */}
+      <div style={{ flex: 1, background: 'var(--bg-1)', borderTop: '1px solid var(--line-1)', borderBottom: '1px solid var(--line-1)' }}>
+        <div style={{ padding: '10px 18px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="tag">零件進度</div>
+          <span className="num" style={{ fontSize: 11, color: 'var(--text-3)' }}>{parts.length} 項</span>
+        </div>
+        {parts.map(part => <PartRow key={part.id} part={part} />)}
+      </div>
+
+      <div style={{ padding: '14px 18px 24px', background: 'var(--bg-0)', textAlign: 'center' }}>
+        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>此頁面為唯讀視圖 · 僅顯示被指派產品的加工狀態</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main export ──────────────────────────────────────────────
 export default function Brand() {
   const { token } = useParams()
   const [data, setData] = useState(null)
@@ -30,151 +163,41 @@ export default function Brand() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-400">載入中...</div>
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--bg-0)' }}>
+        <div style={{ color: 'var(--text-4)', fontSize: 14 }}>載入中...</div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🔒</div>
-          <h1 className="text-xl font-bold text-gray-700">連結無效</h1>
-          <p className="text-gray-400 text-sm mt-2">{error}</p>
+      <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-0)', gap: 12 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 28, background: 'var(--bad-tint)', display: 'grid', placeItems: 'center' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
         </div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-1)' }}>連結無效</div>
+        <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{error}</div>
       </div>
     )
   }
 
   const { product, label, parts } = data
-  const overallStatus = deriveOverallStatus(parts)
-  const statusCfg = STATUS_CONFIG[overallStatus] || STATUS_CONFIG['等待中']
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 shadow-sm px-6 py-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div>
-            <div className="text-xs text-gray-400 mb-0.5">品牌設計師視圖</div>
-            <h1 className="text-xl font-bold text-gray-800">{product.name}</h1>
-            <p className="text-sm text-gray-500">{product.description}</p>
-          </div>
-          {label && (
-            <div className="text-right">
-              <div className="text-xs text-gray-400">設計師</div>
-              <div className="font-medium text-gray-700">{label}</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-        {/* Overall Status Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-700">整體進度</h2>
-            <span className={`flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-medium ${statusCfg.color}`}>
-              <span>{statusCfg.icon}</span>
-              {overallStatus}
-            </span>
-          </div>
-
-          {/* Status Timeline */}
-          <div className="flex items-center gap-0 mt-4">
-            {STATUS_ORDER.filter(s => s !== '等待中').map((s, i, arr) => {
-              const currentIdx = STATUS_ORDER.indexOf(overallStatus)
-              const thisIdx = STATUS_ORDER.indexOf(s)
-              const isReached = currentIdx >= thisIdx
-              const cfg = STATUS_CONFIG[s]
-              return (
-                <div key={s} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${isReached ? cfg.color + ' border-2 border-current' : 'bg-gray-100 text-gray-300'}`}>
-                      {isReached ? cfg.icon : (i + 1)}
-                    </div>
-                    <div className={`text-xs mt-1 whitespace-nowrap ${isReached ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>{s}</div>
-                  </div>
-                  {i < arr.length - 1 && (
-                    <div className={`flex-1 h-1 mx-1 rounded ${isReached && currentIdx > thisIdx ? 'bg-blue-400' : 'bg-gray-200'}`} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Order Info */}
-          <div className="mt-5 pt-4 border-t border-gray-100 grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-gray-400">訂單日期</div>
-              <div className="font-medium text-gray-700">{product.order_date || '-'}</div>
-            </div>
-            <div>
-              <div className="text-gray-400">預計完成</div>
-              <div className={`font-medium ${product.estimated_completion ? 'text-blue-600' : 'text-gray-400'}`}>
-                {product.estimated_completion || '待確認'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Parts Status */}
-        <div className="space-y-3">
-          <h2 className="font-semibold text-gray-700 px-1">各零件狀態</h2>
-          {parts.map(part => {
-            const cfg = STATUS_CONFIG[part.status] || STATUS_CONFIG['等待中']
-            const hasDefectAlert = part.defect_alert === '有異常'
-            return (
-              <div key={part.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{part.name}</h3>
-                    {hasDefectAlert && (
-                      <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full mt-1">
-                        ⚠ 品質異常
-                      </span>
-                    )}
-                  </div>
-                  <span className={`flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-medium ${cfg.color}`}>
-                    <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                    {part.status}
-                  </span>
-                </div>
-
-                {/* SKU Progress */}
-                {part.sku_progress.length > 0 && (
-                  <div>
-                    <div className="text-xs text-gray-400 mb-2">SKU / 顏色進度</div>
-                    <div className="flex flex-wrap gap-2">
-                      {part.sku_progress.map((sku, i) => {
-                        const skuCfg = STATUS_CONFIG[sku.status] || STATUS_CONFIG['等待中']
-                        return (
-                          <div key={i} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full ${skuCfg.color}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${skuCfg.dot}`} />
-                            <span className="font-medium">{sku.color_name}</span>
-                            <span className="opacity-75">{sku.status}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        <p className="text-center text-xs text-gray-400 pt-2">此頁面為唯讀視圖 · 僅顯示被指派產品的加工狀態</p>
-      </div>
-    </div>
+    <ProductView
+      product={product}
+      label={label}
+      parts={parts || []}
+      onBack={null}
+    />
   )
 }
 
 function deriveOverallStatus(parts) {
   if (!parts || parts.length === 0) return '等待中'
-  const statusValues = parts.map(p => STATUS_ORDER.indexOf(p.status))
-  const minIdx = Math.min(...statusValues)
-  return STATUS_ORDER[minIdx] || '等待中'
+  const indices = parts.map(p => STATUS_ORDER.indexOf(p.status || '等待中')).filter(i => i >= 0)
+  if (indices.length === 0) return '等待中'
+  return STATUS_ORDER[Math.min(...indices)] || '等待中'
 }

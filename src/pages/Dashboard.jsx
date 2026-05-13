@@ -1,30 +1,66 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend
-} from 'recharts'
 
-const ACTION_LABELS = { receive: '進貨', send: '送出加工', return: '回廠', ship: '大貨出貨' }
-const TABS = [
-  { key: 'overview',    label: '庫存總覽' },
-  { key: 'stages',      label: '加工流程站' },
-  { key: 'skus',        label: 'SKU顏色庫存' },
-  { key: 'defects',     label: '不良率圖表' },
-  { key: 'orders',      label: '訂單達成率' },
-  { key: 'packing',     label: '包裝副件' },
-  { key: 'logs',        label: '進出貨記錄' },
-  { key: 'settings',    label: '⚙ 設定' },
+// ─── Icons ───────────────────────────────────────────────────
+const Icon = {
+  Dashboard: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>),
+  Flow: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M7 11l3-3M14 8l3 3M14 16l3-4M7 13l3 3"/></svg>),
+  Stack: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>),
+  Log: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>),
+  Box: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>),
+  Setting: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.4 1.9l.1.1a2 2 0 11-2.9 2.9l-.1-.1a1.7 1.7 0 00-1.9-.4 1.7 1.7 0 00-1.1 1.6V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.9-2.9l.1-.1a1.7 1.7 0 00.4-1.9 1.7 1.7 0 00-1.6-1.1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1.1 1.7 1.7 0 00-.4-1.9L4.2 6.6a2 2 0 112.9-2.9l.1.1a1.7 1.7 0 001.9.4h.1a1.7 1.7 0 001.1-1.6V3a2 2 0 114 0v.1a1.7 1.7 0 001.1 1.6 1.7 1.7 0 001.9-.4l.1-.1a2 2 0 112.9 2.9l-.1.1a1.7 1.7 0 00-.4 1.9v.1a1.7 1.7 0 001.6 1.1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.6 1.1z"/></svg>),
+  Plus: () => (<svg viewBox="0 0 14 14" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>),
+  Export: () => (<svg viewBox="0 0 16 16" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 11V2M5 5l3-3 3 3M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>),
+  Warn: () => (<svg viewBox="0 0 14 14" fill="none" width="12" height="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7 1.5l6 11H1l6-11z"/><path d="M7 6v3M7 11h.01"/></svg>),
+  Edit: () => (<svg viewBox="0 0 16 16" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11.5 2.5l2 2-8 8L3 13l.5-2.5 8-8z"/></svg>),
+  ChevronLeft: () => (<svg viewBox="0 0 12 12" fill="none" width="12" height="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7.5 3L4.5 6l3 3"/></svg>),
+  X: () => (<svg viewBox="0 0 14 14" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>),
+  Grip: () => (<svg width="10" height="14" viewBox="0 0 14 14" fill="#B0ADA6"><circle cx="5" cy="3" r="1.1"/><circle cx="9" cy="3" r="1.1"/><circle cx="5" cy="7" r="1.1"/><circle cx="9" cy="7" r="1.1"/><circle cx="5" cy="11" r="1.1"/><circle cx="9" cy="11" r="1.1"/></svg>),
+  Check: () => (<svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>),
+  Photo: () => (<svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
+}
+
+const NAV = [
+  { id: 'overview',  label: '產品總覽',   icon: Icon.Dashboard },
+  { id: 'process',   label: '加工流程',   icon: Icon.Flow },
+  { id: 'sku',       label: 'SKU 庫存',   icon: Icon.Stack },
+  { id: 'log',       label: '進出貨登記', icon: Icon.Log },
+  { id: 'packaging', label: '包裝副件',   icon: Icon.Box },
+  { id: 'settings',  label: '設定',       icon: Icon.Setting },
 ]
 
+const PAGE_TITLES = {
+  overview:  '產品庫存儀表板',
+  process:   '加工流程看板',
+  sku:       'SKU 庫存',
+  log:       '進出貨登記',
+  packaging: '包裝副件管理',
+  settings:  '設定',
+}
+
+const SKU_COLORS = {
+  '鈦': '#5a5550', '銀': '#c8c6c0', '橘': '#E8461A', '藍': '#1A5FAD',
+  '硬膜橘': '#E8461A', '硬膜鐵灰': '#3a3f48', '硬膜銀': '#c8ccd1',
+  '黑': '#1a1a1a', '白': '#f0f0f0', '玫瑰金': '#c98a73',
+}
+
+const OPERATORS = [
+  { name: '阿明', role: '現場主管' },
+  { name: '小芳', role: '倉務' },
+  { name: '阿勗', role: '倉務' },
+  { name: '小林', role: '品管' },
+]
+const OP_KEY = 'dicas:operator'
+
+// ─── API helpers ─────────────────────────────────────────────
 function authHeader() {
   const token = localStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
-
 async function apiFetch(url, opts = {}) {
   const res = await fetch(url, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(opts.headers || {}) }
+    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(opts.headers || {}) },
   })
   if (res.status === 401) {
     localStorage.removeItem('token')
@@ -34,23 +70,109 @@ async function apiFetch(url, opts = {}) {
   return res
 }
 
+// ─── Atoms ───────────────────────────────────────────────────
+function SkuDot({ name, size = 12 }) {
+  const c = SKU_COLORS[name] || '#999'
+  return <span className="sku-dot" style={{ background: c, width: size, height: size }} title={name} />
+}
+
+function Badge({ state }) {
+  const map = {
+    wait:    { cls: 'wait',    label: '備料中' },
+    process: { cls: 'process', label: '加工中' },
+    back:    { cls: 'back',    label: '已回廠' },
+    done:    { cls: 'done',    label: '完成' },
+    pack:    { cls: 'pack',    label: '包裝中' },
+  }
+  const s = map[state] || map.wait
+  return <span className={`badge ${s.cls}`}><span className="dot" />{s.label}</span>
+}
+
+function ActionTag({ type }) {
+  const map = {
+    receive: { label: '進貨',    color: 'var(--ok)',     tint: 'var(--ok-tint)' },
+    send:    { label: '送出',    color: 'var(--info)',   tint: 'var(--info-tint)' },
+    return:  { label: '回廠',    color: 'var(--accent)', tint: 'var(--accent-tint)' },
+    ship:    { label: '大貨出貨', color: 'var(--purple)', tint: 'var(--purple-tint)' },
+  }
+  const a = map[type] || { label: type, color: 'var(--text-3)', tint: 'var(--bg-2)' }
+  return (
+    <span style={{
+      fontSize: 12, padding: '2px 8px', borderRadius: 4,
+      background: a.tint, color: a.color, fontWeight: 500,
+    }}>{a.label}</span>
+  )
+}
+
+// ─── Product image with upload (owner only) ───────────────────
+function ProductImageUpload({ productId, brandColor, initials, width, height, borderRadius }) {
+  const [src, setSrc] = useState(null)
+  const inputRef = useRef(null)
+  const KEY = `prod-img-${productId}`
+
+  useEffect(() => {
+    const stored = localStorage.getItem(KEY)
+    if (stored) setSrc(stored)
+  }, [KEY])
+
+  function handleFile(file) {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = e => {
+      const data = e.target.result
+      localStorage.setItem(KEY, data)
+      setSrc(data)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function onDrop(e) {
+    e.preventDefault()
+    handleFile(e.dataTransfer.files[0])
+  }
+
+  return (
+    <div
+      onClick={() => inputRef.current?.click()}
+      onDrop={onDrop}
+      onDragOver={e => e.preventDefault()}
+      style={{
+        width, height: height || '100%', flexShrink: 0,
+        borderRadius: borderRadius || '12px 0 0 12px',
+        overflow: 'hidden', position: 'relative',
+        background: src ? 'transparent' : (brandColor || '#E8461A'),
+        cursor: 'pointer', display: 'grid', placeItems: 'center',
+      }}
+    >
+      {src
+        ? <img src={src} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        : <span style={{ color: '#fff', fontSize: 13, fontWeight: 500, fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', pointerEvents: 'none' }}>{initials}</span>
+      }
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+    </div>
+  )
+}
+
+// ─── Dashboard shell ──────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState('overview')
+  const [page, setPage] = useState('overview')
+  const [collapsed, setCollapsed] = useState(false)
+  const [headerActions, setHeaderActions] = useState(null)
+  const headerActionsSlot = useMemo(() => ({ set: setHeaderActions }), [])
+
+  // API state
   const [products, setProducts] = useState([])
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [partsData, setPartsData] = useState([])
   const [logs, setLogs] = useState([])
   const [packingItems, setPackingItems] = useState([])
   const [tokens, setTokens] = useState([])
-  const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) { navigate('/login'); return }
     loadProducts()
-    loadAlerts()
   }, [])
 
   useEffect(() => {
@@ -67,30 +189,21 @@ export default function Dashboard() {
     setProducts(data)
     if (data.length && !selectedProduct) setSelectedProduct(data[0])
   }
-
   async function loadParts(pid) {
     const res = await apiFetch(`/api/products/${pid}/parts`)
     setPartsData(await res.json())
   }
-
   async function loadLogs(pid) {
     const res = await apiFetch(`/api/receive-logs?product_id=${pid}&limit=200`)
     setLogs(await res.json())
   }
-
   async function loadPacking(pid) {
     const res = await apiFetch(`/api/packing-items?product_id=${pid}`)
     setPackingItems(await res.json())
   }
-
   async function loadTokens() {
     const res = await apiFetch('/api/designer-tokens')
     setTokens(await res.json())
-  }
-
-  async function loadAlerts() {
-    const res = await apiFetch('/api/alerts')
-    setAlerts(await res.json())
   }
 
   function logout() {
@@ -98,140 +211,998 @@ export default function Dashboard() {
     navigate('/login')
   }
 
-  const selProd = selectedProduct
+  const title = PAGE_TITLES[page] || ''
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <header className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🏭</span>
-          <span className="font-bold text-lg">工廠庫存管理系統</span>
-          {alerts.length > 0 && (
-            <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
-              ⚠ {alerts.length} 低庫存
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: collapsed ? '64px 1fr' : '240px 1fr',
+      minHeight: '100vh',
+      background: 'var(--bg-0)',
+      fontFamily: 'var(--font-sans)',
+      transition: 'grid-template-columns 0.2s ease',
+    }}>
+      {/* Sidebar */}
+      <aside style={{
+        padding: '22px 10px', display: 'flex', flexDirection: 'column', gap: 4,
+        position: 'relative', borderRight: '1px solid var(--line-1)',
+        background: 'var(--bg-0)',
+      }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px', marginBottom: 18, minHeight: 32 }}>
+          <img src="/dicas-logo.svg" alt="DiCAS" style={{ height: 28, width: 'auto', display: 'block', flexShrink: 0 }} />
+          {!collapsed && (
+            <span style={{ fontWeight: 500, fontSize: 13, letterSpacing: '0.04em', color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+              庫存管理系統
             </span>
           )}
         </div>
-        <div className="flex items-center gap-4">
-          <select
-            className="bg-slate-700 text-white rounded px-3 py-1.5 text-sm border border-slate-600 focus:outline-none"
-            value={selProd?.id || ''}
-            onChange={e => {
-              const p = products.find(x => x.id === e.target.value)
-              setSelectedProduct(p || null)
-            }}
-          >
-            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button onClick={logout} className="text-slate-300 hover:text-white text-sm">登出</button>
-        </div>
-      </header>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-4 flex overflow-x-auto scrollbar-hide">
-        {TABS.map(t => (
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          style={{
+            position: 'absolute', top: 28, right: -12, zIndex: 2,
+            width: 24, height: 24, borderRadius: 999,
+            background: 'var(--bg-1)', border: '1px solid var(--line-2)',
+            display: 'grid', placeItems: 'center', cursor: 'pointer',
+            color: 'var(--text-2)', padding: 0,
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
+            <path d="M7.5 3L4.5 6l3 3" />
+          </svg>
+        </button>
+
+        {/* Nav items */}
+        {NAV.map(n => (
           <button
-            key={t.key}
-            onClick={() => { setTab(t.key); if (t.key === 'settings') loadTokens() }}
-            className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition ${
-              tab === t.key
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            key={n.id}
+            className={`nav-item ${page === n.id ? 'active' : ''}`}
+            onClick={() => { setPage(n.id); if (n.id === 'settings') loadTokens() }}
+            title={collapsed ? n.label : undefined}
+            style={collapsed ? { justifyContent: 'center' } : undefined}
           >
-            {t.label}
+            <span className="ic"><n.icon /></span>
+            {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{n.label}</span>}
           </button>
         ))}
-      </div>
 
-      {/* Content */}
-      <main className="flex-1 p-6 overflow-auto">
-        {!selProd ? (
-          <EmptyState onAdd={() => setTab('settings')} />
-        ) : (
-          <>
-            {tab === 'overview'  && <OverviewTab product={selProd} parts={partsData} logs={logs} />}
-            {tab === 'stages'    && <StagesTab parts={partsData} reload={() => loadParts(selProd.id)} />}
-            {tab === 'skus'      && <SkusTab parts={partsData} logs={logs} />}
-            {tab === 'defects'   && <DefectsTab parts={partsData} logs={logs} />}
-            {tab === 'orders'    && <OrdersTab product={selProd} parts={partsData} logs={logs} onSave={loadProducts} />}
-            {tab === 'packing'   && <PackingTab items={packingItems} product={selProd} reload={() => loadPacking(selProd.id)} />}
-            {tab === 'logs'      && <LogsTab logs={logs} product={selProd} reload={() => loadLogs(selProd.id)} />}
-            {tab === 'settings'  && <SettingsTab products={products} tokens={tokens} reload={loadProducts} reloadTokens={loadTokens} />}
-          </>
-        )}
+        {/* User */}
+        <div style={{
+          marginTop: 'auto', borderTop: '1px solid var(--line-1)',
+          display: 'flex', alignItems: 'center', gap: 10, padding: '14px 8px',
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 999,
+            background: 'var(--bg-3)', display: 'grid', placeItems: 'center',
+            fontSize: 13, fontWeight: 600, color: 'var(--text-2)', flexShrink: 0,
+          }}>老</div>
+          {!collapsed && (
+            <>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>老闆</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>明智工業</div>
+              </div>
+              <button className="btn ghost" onClick={logout} style={{ padding: '4px 8px', fontSize: 12 }}>登出</button>
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main style={{ background: 'var(--bg-0)', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Topbar */}
+        <header style={{
+          background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)',
+          padding: '14px 32px', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', minHeight: 56, gap: 16,
+        }}>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</h1>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {page === 'overview' || page === 'process' ? (
+              <>
+                <button className="btn" style={{ fontSize: 13 }}>
+                  <Icon.Export />匯出報表
+                </button>
+                {page === 'overview' && (
+                  <button className="btn primary" style={{ fontSize: 13 }}>
+                    <Icon.Plus />新增訂單
+                  </button>
+                )}
+                {page === 'process' && headerActions}
+              </>
+            ) : headerActions}
+          </div>
+        </header>
+
+        {/* Page content */}
+        <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
+          {!selectedProduct && page !== 'settings' ? (
+            <EmptyState onAdd={() => setPage('settings')} />
+          ) : (
+            <>
+              {page === 'overview'  && <OverviewPage products={products} partsData={partsData} logs={logs} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} />}
+              {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
+              {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} />}
+              {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
+              {page === 'packaging' && <PackagingPage items={packingItems} product={selectedProduct} reload={() => loadPacking(selectedProduct?.id)} />}
+              {page === 'settings'  && <SettingsPage products={products} tokens={tokens} reload={loadProducts} reloadTokens={loadTokens} />}
+            </>
+          )}
+        </div>
       </main>
     </div>
   )
 }
 
-/* ─── Overview Tab ─── */
-function OverviewTab({ product, parts, logs }) {
-  const totalStock = parts.reduce((s, p) => s + p.stages.reduce((a, st) => a + st.current_stock, 0), 0)
-  const totalDefects = parts.reduce((s, p) => s + p.stages.reduce((a, st) => a + st.total_defect, 0), 0)
-  const shipped = logs.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
-  const fulfillRate = product.order_qty > 0 ? Math.round(shipped / product.order_qty * 100) : 0
+// ─── Page: Overview ───────────────────────────────────────────
+function OverviewPage({ products, partsData, logs, selectedProduct, onSelectProduct }) {
+  // Product stock cards (section 1)
+  const stockCards = products.map(p => {
+    const key = `prod-inv-${p.id}`
+    const stored = (() => { try { return JSON.parse(localStorage.getItem(key) || '{}') } catch { return {} } })()
+    return {
+      ...p,
+      stock: stored.stock ?? p.finished ?? 0,
+      inTransit: stored.inTransit ?? 0,
+      demand: stored.demand ?? p.order_qty ?? 0,
+    }
+  })
+
+  // Orders (section 2) — local state for demo
+  const [orders, setOrders] = useState(() => {
+    const saved = localStorage.getItem('dicas:orders')
+    if (saved) { try { return JSON.parse(saved) } catch {} }
+    return products.map(p => ({
+      id: `o-${p.id}`, productId: p.id,
+      customer: 'MUJI', qty: p.order_qty || 0,
+      alloc: p.finished || 0, due: p.estimated_completion || '—', note: '',
+    })).filter(o => o.qty > 0)
+  })
+  const [showNew, setShowNew] = useState(false)
+
+  function saveOrders(next) { setOrders(next); localStorage.setItem('dicas:orders', JSON.stringify(next)) }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">{product.name}</h2>
-          <p className="text-gray-500">{product.description}</p>
+    <>
+      {/* Section 1 — 產品庫存 */}
+      <SectionHeader title="產品庫存" count={products.length} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
+        {stockCards.map(p => <StockCard key={p.id} p={p} orders={orders.filter(o => o.productId === p.id)} />)}
+      </div>
+
+      <div style={{ height: 1, background: 'var(--line-1)', margin: '20px 0' }} />
+
+      {/* Section 2 — 進行中訂單 */}
+      <SectionHeader title="進行中訂單" count={orders.length} onAction={<button className="btn primary" style={{ fontSize: 12 }} onClick={() => setShowNew(true)}><Icon.Plus />新增訂單</button>} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        {orders.map(o => {
+          const product = products.find(p => p.id === o.productId)
+          if (!product) return null
+          return (
+            <OrderCard
+              key={o.id} order={o} product={product}
+              onAllocate={n => saveOrders(orders.map(x => x.id === o.id ? { ...x, alloc: n } : x))}
+              onDelete={() => saveOrders(orders.filter(x => x.id !== o.id))}
+            />
+          )
+        })}
+        {orders.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: 13, gridColumn: '1/-1' }}>尚無訂單</p>}
+      </div>
+
+      {showNew && (
+        <NewOrderDrawer
+          products={products}
+          onClose={() => setShowNew(false)}
+          onCreate={payload => { saveOrders([...orders, { id: `o-${Date.now()}`, ...payload }]); setShowNew(false) }}
+        />
+      )}
+    </>
+  )
+}
+
+function SectionHeader({ title, count, onAction }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{title}</h2>
+        <span className="num" style={{ color: 'var(--text-3)', fontSize: 13 }}>· {count}</span>
+      </div>
+      {onAction}
+    </div>
+  )
+}
+
+function StockCard({ p, orders }) {
+  const stateMap = {
+    wait: 'wait', process: 'process', back: 'back', done: 'done',
+    packaging: 'pack',
+  }
+  const state = stateMap[p.status] || 'process'
+  const skus = (p.skus || []).slice(0, 5)
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 12,
+      border: '0.5px solid #EBEBEB', boxShadow: 'var(--shadow-1)',
+      display: 'flex', overflow: 'hidden', minHeight: 132,
+    }}>
+      <ProductImageUpload
+        productId={p.id}
+        brandColor={p.brand_color || '#E8461A'}
+        initials={p.initials || p.name?.slice(0, 2)}
+        width={72}
+      />
+      <div style={{ flex: 1, minWidth: 0, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{p.name}</div>
+          </div>
+          <Badge state={state} />
         </div>
-        <div className="text-right text-sm text-gray-500">
-          <div>訂單數量：<strong className="text-gray-800">{product.order_qty?.toLocaleString()}</strong> 件</div>
-          <div>訂單日期：{product.order_date}</div>
-          {product.estimated_completion && (
-            <div className="text-blue-600 font-medium">預計完成：{product.estimated_completion}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+          <span className="num" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1 }}>{(p.finished || 0).toLocaleString()}</span>
+          <span style={{ fontSize: 12, color: '#888' }}>件</span>
+        </div>
+        <div style={{ fontSize: 10, color: '#888' }}>
+          訂單需求 <span className="num" style={{ color: '#4A4A4A', fontWeight: 500 }}>{(p.order_qty || 0).toLocaleString()}</span> 件
+          {orders.length > 0 && (
+            <>
+              <span style={{ margin: '0 4px', color: '#D8D6D0' }}>·</span>
+              <span style={{ fontWeight: 500, color: '#4A4A4A' }}>{orders.length} 張訂單</span>
+            </>
           )}
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="總庫存" value={totalStock.toLocaleString()} color="blue" icon="📦" />
-        <StatCard label="零件種類" value={parts.length} color="purple" icon="🔩" />
-        <StatCard label="累積不良品" value={totalDefects.toLocaleString()} color="red" icon="⚠️" />
-        <StatCard label="出貨量" value={`${shipped.toLocaleString()} / ${product.order_qty?.toLocaleString()}`} color="green" icon="🚚" />
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 mb-4">訂單達成率 {fulfillRate}%</h3>
-        <div className="w-full bg-gray-200 rounded-full h-4">
-          <div
-            className={`h-4 rounded-full transition-all ${fulfillRate >= 100 ? 'bg-green-500' : fulfillRate >= 50 ? 'bg-blue-500' : 'bg-orange-400'}`}
-            style={{ width: `${Math.min(fulfillRate, 100)}%` }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 'auto', paddingTop: 6 }}>
+          {skus.map(s => <SkuDot key={s.id || s.color_name} name={s.color_name || s} size={10} />)}
         </div>
       </div>
+    </div>
+  )
+}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-700 mb-3">零件庫存狀態</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+function pctColor(pct) {
+  if (pct >= 80) return '#1A7A3C'
+  if (pct >= 50) return '#B07D00'
+  return '#E8461A'
+}
+
+function OrderCard({ order, product, onAllocate, onDelete }) {
+  const [showAlloc, setShowAlloc] = useState(false)
+  const [showDel, setShowDel] = useState(false)
+  const pct = order.qty > 0 ? Math.round((order.alloc / order.qty) * 100) : 0
+  const color = pctColor(pct)
+  const shortId = order.id.replace(/^o-/, '').slice(0, 6).toUpperCase()
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 12,
+      border: '0.5px solid #EBEBEB', boxShadow: 'var(--shadow-1)',
+      display: 'flex', overflow: 'hidden', minHeight: 132,
+    }}>
+      <ProductImageUpload
+        productId={product.id}
+        brandColor={product.brand_color || '#E8461A'}
+        initials={product.initials || product.name?.slice(0, 2)}
+        width={64}
+      />
+      <div style={{ flex: 1, minWidth: 0, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{product.name}</div>
+          <button onClick={() => setShowDel(true)} style={{
+            background: 'transparent', border: 'none', padding: 2, cursor: 'pointer',
+            color: '#A8A6A0', borderRadius: 4, display: 'grid', placeItems: 'center',
+          }} onMouseEnter={e => e.currentTarget.style.color = '#E8461A'} onMouseLeave={e => e.currentTarget.style.color = '#A8A6A0'}>
+            <Icon.X />
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+          <span className="num" style={{ fontSize: 28, fontWeight: 700, color, letterSpacing: '-0.025em', lineHeight: 1 }}>{pct}</span>
+          <span style={{ fontSize: 14, fontWeight: 500, color }}>%</span>
+          <span className="num" style={{ marginLeft: 'auto', fontSize: 10, color: '#888' }}>{order.alloc.toLocaleString()} / {order.qty.toLocaleString()} 件</span>
+        </div>
+        <div style={{ height: 5, background: '#EBEBEB', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ background: '#F5F4F0', color: '#6B6B6B', fontSize: 10, padding: '2px 8px', borderRadius: 20 }}>
+            <span style={{ fontWeight: 500, color: '#4A4A4A' }}>{order.customer}</span>
+            <span style={{ color: '#A8A6A0', fontFamily: 'var(--font-mono)' }}> · #{shortId}</span>
+          </span>
+          <span className="num" style={{ marginLeft: 'auto', fontSize: 10, color: '#888' }}>預計 {order.due}</span>
+        </div>
+        <div style={{ display: 'flex', marginTop: 'auto', paddingTop: 4 }}>
+          <button onClick={() => setShowAlloc(true)} style={{
+            marginLeft: 'auto', background: 'transparent', border: 'none', padding: 0,
+            fontSize: 10, color: '#888', cursor: 'pointer',
+          }} onMouseEnter={e => e.currentTarget.style.color = '#E8461A'} onMouseLeave={e => e.currentTarget.style.color = '#888'}>分配庫存 ›</button>
+        </div>
+      </div>
+      {showAlloc && (
+        <ModalOverlay onClose={() => setShowAlloc(false)}>
+          <div style={{ width: 340, background: '#fff', borderRadius: 14, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>分配庫存給訂單</div>
+              <div style={{ fontSize: 12, color: '#888' }}>{product.name} · {order.customer}</div>
+            </div>
+            <div style={{ background: 'var(--bg-2)', border: '0.5px solid var(--line-1)', borderRadius: 8, padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>訂單總數</span>
+              <span className="num" style={{ fontSize: 18, fontWeight: 600 }}>{order.qty.toLocaleString()} <span style={{ fontSize: 11, color: '#888', fontWeight: 400 }}>件</span></span>
+            </div>
+            <AllocateInput initialValue={order.alloc} max={order.qty} onConfirm={n => { onAllocate(n); setShowAlloc(false) }} onCancel={() => setShowAlloc(false)} />
+          </div>
+        </ModalOverlay>
+      )}
+      {showDel && (
+        <ModalOverlay onClose={() => setShowDel(false)}>
+          <div style={{ width: 340, background: '#fff', borderRadius: 14, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>移除訂單</div>
+            <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>確定要移除 <b>{product.name} × {order.customer}</b> 的訂單嗎？</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn" onClick={() => setShowDel(false)}>取消</button>
+              <button onClick={() => { onDelete(); setShowDel(false) }} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#E8461A', color: '#fff', fontSize: 13, fontWeight: 500 }}>移除</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+    </div>
+  )
+}
+
+function AllocateInput({ initialValue, max, onConfirm, onCancel }) {
+  const [val, setVal] = useState(String(initialValue))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="field">
+        <label>分配數量</label>
+        <input className="input num" autoFocus type="number" value={val} onChange={e => setVal(e.target.value)} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={onCancel}>取消</button>
+        <button className="btn primary" onClick={() => onConfirm(Math.max(0, Math.min(max, Number(val) || 0)))}>確認</button>
+      </div>
+    </div>
+  )
+}
+
+function NewOrderDrawer({ products, onClose, onCreate }) {
+  const [productId, setProductId] = useState(products[0]?.id || '')
+  const [customer, setCustomer] = useState('')
+  const [qty, setQty] = useState('')
+  const [due, setDue] = useState('')
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,20,0.32)', zIndex: 99 }} />
+      <div style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 360,
+        background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.12)',
+        zIndex: 100, display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 17, fontWeight: 600 }}>新增訂單</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, flex: 1, overflow: 'auto' }}>
+          <div className="field">
+            <label>選擇產品</label>
+            <select className="select" value={productId} onChange={e => setProductId(e.target.value)}>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>客戶名稱</label>
+            <input className="input" value={customer} onChange={e => setCustomer(e.target.value)} placeholder="例：MUJI" />
+          </div>
+          <div className="field">
+            <label>訂單數量</label>
+            <input className="input num" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" />
+          </div>
+          <div className="field">
+            <label>預計完成日</label>
+            <input className="input" type="date" value={due} onChange={e => setDue(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ padding: 20, borderTop: '1px solid var(--line-1)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={() => onCreate({
+            productId, customer: customer.trim() || '未命名客戶',
+            qty: Number(qty) || 0,
+            due: due.replace(/^\d{4}-/, '').replace('-', '/') || '—',
+            alloc: 0,
+          })}>建立訂單</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── Page: Process (flow board) ───────────────────────────────
+const PROCESS_DATA_INIT = {
+  default: {
+    rows: [],
+  }
+}
+
+function ProcessPage({ product, headerActionsSlot }) {
+  const [partsData, setPartsData] = useState([])
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(null)
+
+  useEffect(() => {
+    if (!product) return
+    apiFetch(`/api/products/${product.id}/parts`).then(r => r.json()).then(data => {
+      // Convert API parts to process rows format
+      const rows = data.map(part => {
+        const stations = (part.stages || []).map((st, i) => {
+          const next = part.stages[i + 1]
+          const isDone = st.current_stock > 0 && (next ? next.current_stock > 0 : true)
+          const isCurrent = st.current_stock > 0 && (!next || next.current_stock === 0)
+          return {
+            vendor: st.factory_name,
+            action: st.action_name,
+            qty: st.current_stock > 0 ? st.current_stock : null,
+            status: isDone ? 'done' : isCurrent ? 'current' : 'wait',
+          }
+        })
+        const lastStage = part.stages?.[part.stages.length - 1]
+        const finished = lastStage?.current_stock || 0
+        const allDone = stations.every(s => s.status === 'done')
+        return {
+          name: part.name,
+          skus: part.skus?.map(s => s.color_name) || [],
+          state: allDone ? 'done' : stations.some(s => s.status === 'current') ? 'process' : 'wait',
+          stations,
+          finished,
+          complete: allDone,
+        }
+      })
+      setPartsData(rows)
+    }).catch(() => setPartsData([]))
+  }, [product?.id])
+
+  const startEdit = () => { setDraft(JSON.parse(JSON.stringify(partsData))); setEditing(true) }
+  const cancelEdit = () => { setDraft(null); setEditing(false) }
+  const saveEdit = () => { setPartsData(draft); setDraft(null); setEditing(false) }
+
+  useEffect(() => {
+    if (!headerActionsSlot) return
+    headerActionsSlot.set(
+      editing ? (
+        <>
+          <button className="btn" onClick={cancelEdit}>取消</button>
+          <button className="btn primary" onClick={saveEdit}>儲存變更</button>
+        </>
+      ) : (
+        <button onClick={startEdit} style={{
+          appearance: 'none', font: 'inherit', fontWeight: 500, fontSize: 14,
+          padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
+          background: '#fff', border: '1px solid #E8461A', color: '#E8461A',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <Icon.Edit />編輯流程
+        </button>
+      )
+    )
+    return () => headerActionsSlot.set(null)
+  }, [editing, headerActionsSlot])
+
+  const rows = editing ? draft : partsData
+  const imgSrc = product ? localStorage.getItem(`prod-img-${product.id}`) : null
+
+  return (
+    <>
+      {editing && (
+        <div style={{
+          background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', gap: 8,
+          fontSize: 13, color: '#C53A12',
+        }}>
+          <Icon.Edit />
+          <span style={{ fontWeight: 500 }}>編輯模式</span>
+          <span style={{ color: '#5F5E5A' }}>— 拖拉欄位調整加工順序，拖拉左側 grip 調整零件順序</span>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-3)' }}>
+          <p>尚無加工站資料，請前往「設定」新增零件與加工站</p>
+        </div>
+      ) : (
+        <ProcessTable rows={rows} edit={editing} productImgSrc={imgSrc} onMutate={setDraft} />
+      )}
+    </>
+  )
+}
+
+const CELL_H = 52, CELL_W = 90, NAME_W = 120, FIN_W = 80
+
+function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
+  const colCount = rows.reduce((m, r) => Math.max(m, r.stations.length), 0)
+  const padded = rows.map(r => {
+    const sts = r.stations.slice()
+    while (sts.length < colCount) sts.push(null)
+    return { ...r, stations: sts }
+  })
+
+  const [colDrag, setColDrag] = useState(null)
+  const [colHover, setColHover] = useState(null)
+  const [rowDrag, setRowDrag] = useState(null)
+  const [rowHover, setRowHover] = useState(null)
+  const [delColAt, setDelColAt] = useState(null)
+
+  const moveCol = (from, to) => {
+    if (from == null || from === to) return
+    const next = padded.map(r => {
+      const sts = r.stations.slice()
+      const [m] = sts.splice(from, 1)
+      sts.splice(from < to ? to - 1 : to, 0, m)
+      return { ...r, stations: sts }
+    })
+    onMutate(next)
+  }
+
+  const deleteCol = i => {
+    onMutate(padded.map(r => ({ ...r, stations: r.stations.filter((_, ci) => ci !== i) })))
+    setDelColAt(null)
+  }
+
+  const addCol = () => {
+    onMutate(padded.map(r => ({ ...r, stations: [...r.stations, { vendor: '—', action: '新加工站', qty: null, status: 'wait' }] })))
+  }
+
+  const moveRow = (from, to) => {
+    if (from == null || from === to) return
+    const rs = padded.slice()
+    const [m] = rs.splice(from, 1)
+    rs.splice(from < to ? to - 1 : to, 0, m)
+    onMutate(rs)
+  }
+
+  return (
+    <>
+      <div style={{ background: '#fff', borderRadius: 12, border: '0.5px solid #EBEBEB', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <thead>
+            <tr style={{ background: '#F8F8F6' }}>
+              <th style={{ width: NAME_W, padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 500, color: '#888', letterSpacing: '0.04em' }}>零件</th>
+              {Array.from({ length: colCount }).map((_, i) => (
+                <th key={i} style={{ width: CELL_W, padding: 0, borderLeft: '0.5px solid #F0EFE8', background: '#F8F8F6' }}>
+                  <div
+                    draggable={edit}
+                    onDragStart={edit ? () => setColDrag(i) : undefined}
+                    onDragOver={edit ? e => { e.preventDefault(); setColHover(i) } : undefined}
+                    onDrop={edit ? e => { e.preventDefault(); moveCol(colDrag, i); setColDrag(null); setColHover(null) } : undefined}
+                    className="proc-stationhdr"
+                    style={{
+                      position: 'relative', height: 36, padding: '0 10px',
+                      display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center',
+                      fontSize: 10, fontWeight: 500, color: '#888',
+                      cursor: edit ? (colDrag === i ? 'grabbing' : 'grab') : 'default',
+                      opacity: colDrag === i ? 0.4 : 1,
+                      outline: edit && colHover === i && colDrag != null && colDrag !== i ? '2px solid #4A8BD6' : 'none',
+                      outlineOffset: -1,
+                    }}
+                  >
+                    {edit && <Icon.Grip />}
+                    <span>站 {i + 1}</span>
+                    {edit && (
+                      <button
+                        onClick={e => { e.stopPropagation(); setDelColAt(i) }}
+                        className="proc-delx"
+                        style={{
+                          position: 'absolute', top: 4, right: 4,
+                          width: 16, height: 16, borderRadius: 999,
+                          background: '#fff', border: '0.5px solid #EBEBEB',
+                          color: '#9A9A95', cursor: 'pointer', padding: 0,
+                          display: 'none', placeItems: 'center',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#C53A12'; e.currentTarget.style.borderColor = '#C53A12' }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#9A9A95'; e.currentTarget.style.borderColor = '#EBEBEB' }}
+                      >
+                        <Icon.X />
+                      </button>
+                    )}
+                  </div>
+                </th>
+              ))}
+              {edit && (
+                <th style={{ width: 56, padding: 0, borderLeft: '0.5px solid #F0EFE8', background: '#F8F8F6' }}>
+                  <div style={{ height: 36, display: 'grid', placeItems: 'center' }}>
+                    <button onClick={addCol} style={{
+                      appearance: 'none', font: 'inherit', cursor: 'pointer',
+                      background: '#fff', border: '1px dashed #C9C7C0', color: '#888',
+                      borderRadius: 6, padding: '3px 8px', fontSize: 11,
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8461A'; e.currentTarget.style.color = '#E8461A' }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = '#C9C7C0'; e.currentTarget.style.color = '#888' }}
+                    >+ 新增</button>
+                  </div>
+                </th>
+              )}
+              <th style={{ width: FIN_W, padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 500, color: '#888', borderLeft: '0.5px solid #EBEBEB', background: '#F8F8F6' }}>成品</th>
+            </tr>
+          </thead>
+          <tbody>
+            {padded.map((row, ri) => {
+              const isDragging = rowDrag === ri
+              const isHover = edit && rowHover === ri && rowDrag != null && rowDrag !== ri
+              return (
+                <tr
+                  key={row.name + ri}
+                  onDragOver={edit ? e => { e.preventDefault(); setRowHover(ri) } : undefined}
+                  onDrop={edit ? e => { e.preventDefault(); moveRow(rowDrag, ri); setRowDrag(null); setRowHover(null) } : undefined}
+                  style={{ borderTop: '0.5px solid #F0EFE8', background: isHover ? '#EEF4FA' : 'transparent', opacity: isDragging ? 0.4 : 1 }}
+                >
+                  <td style={{ width: NAME_W, padding: '0 14px', verticalAlign: 'middle' }}>
+                    <div style={{ height: CELL_H, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {edit && (
+                        <span
+                          draggable
+                          onDragStart={e => { setRowDrag(ri) }}
+                          onDragEnd={() => { setRowDrag(null); setRowHover(null) }}
+                          style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'inline-flex' }}
+                        ><Icon.Grip /></span>
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 3 }}>
+                          {row.skus.slice(0, 4).map(s => <SkuDot key={s} name={s} size={7} />)}
+                          {row.skus.length > 4 && <span style={{ fontSize: 10, color: '#888' }}>+{row.skus.length - 4}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  {row.stations.map((st, ci) => <StationCell key={ci} st={st} />)}
+                  {edit && <td style={{ width: 56, borderLeft: '0.5px solid #F0EFE8' }}><div style={{ height: CELL_H }} /></td>}
+                  <td style={{ width: FIN_W, padding: 0, verticalAlign: 'middle', borderLeft: '0.5px solid #EBEBEB', background: '#FAF9F5' }}>
+                    <div style={{ height: CELL_H, padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{
+                        height: 22, borderRadius: 4, overflow: 'hidden',
+                        background: row.complete ? '#E6F4EC' : '#F0EFE8',
+                        display: 'grid', placeItems: 'center',
+                        color: row.complete ? '#1A7A3C' : '#A8A6A0',
+                      }}>
+                        {row.complete
+                          ? <Icon.Check />
+                          : productImgSrc
+                            ? <img src={productImgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <Icon.Photo />
+                        }
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+                        <span className="num" style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{(row.finished || 0).toLocaleString()}</span>
+                        <span style={{ fontSize: 10, color: '#888' }}>件</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {delColAt != null && (
+        <ModalOverlay onClose={() => setDelColAt(null)}>
+          <div style={{ width: 340, background: '#fff', borderRadius: 14, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>刪除加工站</div>
+            <div style={{ fontSize: 13, color: 'var(--text-2)' }}>刪除 <b>站 {delColAt + 1}</b> 將清除該站所有紀錄，確認？</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn" onClick={() => setDelColAt(null)}>取消</button>
+              <button onClick={() => deleteCol(delColAt)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#E8461A', color: '#fff', fontSize: 13, fontWeight: 500 }}>刪除</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+    </>
+  )
+}
+
+function StationCell({ st }) {
+  if (!st) return (
+    <td style={{ width: CELL_W, padding: 0, verticalAlign: 'middle', borderLeft: '0.5px solid #F0EFE8' }}>
+      <div style={{ height: CELL_H }} />
+    </td>
+  )
+  const isDone = st.status === 'done'
+  const isCurrent = st.status === 'current'
+  const isWait = st.status === 'wait'
+  const bg = isDone ? '#F0FBF4' : isCurrent ? '#FEF6F4' : '#FFFFFF'
+  const statusColor = isDone ? '#1A7A3C' : isCurrent ? '#E8461A' : '#888'
+  const qtyColor = isCurrent ? '#E8461A' : '#1A1A1A'
+  return (
+    <td style={{ width: CELL_W, padding: 0, verticalAlign: 'middle', borderLeft: '0.5px solid #F0EFE8' }}>
+      <div style={{ height: CELL_H, padding: '6px 8px', background: bg, opacity: isWait ? 0.35 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+        <div style={{ fontSize: 9, fontWeight: 500, color: statusColor, display: 'flex', alignItems: 'center', gap: 3, lineHeight: 1 }}>
+          {isDone && <span style={{ fontSize: 10 }}>✓</span>}
+          {isCurrent && <span style={{ width: 5, height: 5, borderRadius: 999, background: statusColor, display: 'inline-block' }} />}
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.action}</span>
+        </div>
+        <div className="num" style={{ fontSize: 13, fontWeight: 600, color: qtyColor, letterSpacing: '-0.01em' }}>
+          {st.qty == null ? '—' : st.qty.toLocaleString()}
+        </div>
+      </div>
+    </td>
+  )
+}
+
+// ─── Page: SKU Inventory ──────────────────────────────────────
+function SkuPage({ parts, logs, products, onSelectProduct, selectedProduct }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Product tabs */}
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-1)', borderRadius: 8, border: '1px solid var(--line-1)', width: 'fit-content', marginBottom: 8 }}>
+        {products.map(p => (
+          <button key={p.id} className="btn ghost" onClick={() => onSelectProduct(p)} style={{
+            padding: '8px 16px', fontSize: 13,
+            background: selectedProduct?.id === p.id ? 'var(--bg-3)' : 'transparent',
+            color: selectedProduct?.id === p.id ? 'var(--text-1)' : 'var(--text-3)',
+            fontWeight: selectedProduct?.id === p.id ? 500 : 400,
+          }}>{p.name}</button>
+        ))}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {parts.map((part, i) => <SkuPartRow key={part.id} part={part} logs={logs} isFirst={i === 0} />)}
+        {parts.length === 0 && <div style={{ padding: '40px 24px', color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>尚無零件資料</div>}
+      </div>
+    </div>
+  )
+}
+
+function SkuPartRow({ part, logs, isFirst }) {
+  const [open, setOpen] = useState(isFirst)
+  const skuLogs = (color_name) => logs.filter(l => l.part_id === part.id && l.sku_color === color_name)
+  return (
+    <div style={{ borderTop: isFirst ? 'none' : '1px solid var(--line-1)' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: '100%', border: 'none', background: 'transparent', textAlign: 'left',
+        padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer',
+      }}>
+        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', color: 'var(--text-3)', display: 'inline-flex' }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 2l4 4-4 4"/></svg>
+        </span>
+        <span style={{ fontSize: 15, fontWeight: 500 }}>{part.name}</span>
+        <div style={{ display: 'flex', gap: 4 }}>{part.skus?.map(s => <SkuDot key={s.id} name={s.color_name} />)}</div>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{part.skus?.length || 0} 個 SKU</span>
+      </button>
+      {open && part.skus?.length > 0 && (
+        <div style={{ padding: '0 24px 18px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr className="border-b text-gray-500">
-                <th className="text-left py-2 pr-4">零件</th>
-                <th className="text-right py-2 px-3">在庫</th>
-                <th className="text-right py-2 px-3">送出</th>
-                <th className="text-right py-2 px-3">回廠</th>
-                <th className="text-right py-2 px-3">不良品</th>
+              <tr style={{ borderBottom: '1px solid var(--line-1)' }}>
+                {['SKU', '進貨', '送加工', '回廠', '出貨', '不良', '估計在庫'].map(h => (
+                  <th key={h} style={{ padding: '8px 0', textAlign: h === 'SKU' ? 'left' : 'right', fontSize: 12, fontWeight: 400, color: 'var(--text-3)' }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {parts.map(p => {
-                const s0 = p.stages[0] || {}
+              {part.skus.map(sku => {
+                const sl = skuLogs(sku.color_name)
+                const receive = sl.filter(l => l.action_type === 'receive').reduce((s, l) => s + l.qty, 0)
+                const send = sl.filter(l => l.action_type === 'send').reduce((s, l) => s + l.qty, 0)
+                const ret = sl.filter(l => l.action_type === 'return').reduce((s, l) => s + l.qty, 0)
+                const ship = sl.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
+                const defect = sl.reduce((s, l) => s + (l.defect_qty || 0), 0)
+                const est = receive + ret - send - ship
+                const low = est <= 50
                 return (
-                  <tr key={p.id} className="border-b hover:bg-gray-50">
-                    <td className="py-2 pr-4 font-medium">{p.name}</td>
-                    <td className="text-right py-2 px-3">{s0.current_stock ?? 0}</td>
-                    <td className="text-right py-2 px-3 text-orange-600">{s0.total_sent ?? 0}</td>
-                    <td className="text-right py-2 px-3 text-green-600">{s0.total_returned ?? 0}</td>
-                    <td className="text-right py-2 px-3 text-red-500">{s0.total_defect ?? 0}</td>
+                  <tr key={sku.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                    <td style={{ padding: '10px 0' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <SkuDot name={sku.color_name} />{sku.color_name}
+                      </span>
+                    </td>
+                    {[receive, send, ret, ship, defect].map((v, i) => (
+                      <td key={i} className="num" style={{ padding: '10px 0', textAlign: 'right', color: [null, 'var(--accent)', 'var(--ok)', 'var(--info)', 'var(--bad)'][i] || 'inherit' }}>{v || '—'}</td>
+                    ))}
+                    <td className="num" style={{ padding: '10px 0', textAlign: 'right', fontWeight: 600, color: low ? 'var(--bad)' : 'var(--text-1)' }}>
+                      {low && <span style={{ color: 'var(--bad)', marginRight: 4 }}>●</span>}{est}
+                    </td>
                   </tr>
                 )
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page: Log entry ──────────────────────────────────────────
+function LogPage({ products, selectedProduct, logs, reload }) {
+  const [action, setAction] = useState('receive')
+  const [pid, setPid] = useState(selectedProduct?.id || '')
+  const [partName, setPartName] = useState('')
+  const [sku, setSku] = useState('')
+  const [qty, setQty] = useState('')
+  const [defect, setDefect] = useState('')
+  const [note, setNote] = useState('')
+  const [hover, setHover] = useState(null)
+  const [operator, setOperator] = useState(() => { try { return localStorage.getItem(OP_KEY) } catch { return null } })
+  const [switching, setSwitching] = useState(false)
+  const [partsData, setPartsData] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+
+  const showPicker = !operator || switching
+
+  useEffect(() => {
+    if (pid) apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).then(d => { setPartsData(d); setPartName(d[0]?.name || ''); setSku(d[0]?.skus?.[0]?.color_name || '') })
+  }, [pid])
+
+  useEffect(() => {
+    if (selectedProduct) setPid(selectedProduct.id)
+  }, [selectedProduct?.id])
+
+  const product = products.find(p => p.id === pid)
+  const part = partsData.find(p => p.name === partName)
+
+  const ACTIONS = [
+    { key: 'receive', label: '進貨',    color: 'var(--ok)',     tint: 'var(--ok-tint)',     hint: '原料或半成品從加工廠送回我們倉庫' },
+    { key: 'send',    label: '送出',    color: 'var(--info)',   tint: 'var(--info-tint)',   hint: '把零件送去外部加工廠處理' },
+    { key: 'return',  label: '回廠',    color: 'var(--accent)', tint: 'var(--accent-tint)', hint: '外部加工完成的零件回到倉庫，會記錄不良品' },
+    { key: 'ship',    label: '大貨出貨', color: 'var(--purple)', tint: 'var(--purple-tint)', hint: '成品出貨給品牌客戶或通路' },
+  ]
+  const shown = ACTIONS.find(a => a.key === (hover || action))
+
+  async function submit() {
+    if (!qty || isNaN(+qty)) return alert('請輸入正確數量')
+    setSubmitting(true)
+    try {
+      await apiFetch('/api/receive-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: pid, part_id: part?.id,
+          sku_color: sku || '', action_type: action,
+          qty: +qty, defect_qty: defect ? +defect : 0, note,
+          operator,
+        })
+      })
+      setQty(''); setDefect(''); setNote('')
+      reload()
+    } catch (e) { alert('送出失敗：' + e.message) }
+    finally { setSubmitting(false) }
+  }
+
+  function pickOp(name) {
+    setOperator(name)
+    try { localStorage.setItem(OP_KEY, name) } catch {}
+    setSwitching(false)
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
+      {/* Form */}
+      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18, position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>新增登記</h3>
+          {operator && (
+            <button onClick={() => setSwitching(true)} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+              background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 999,
+              cursor: 'pointer', font: 'inherit',
+            }}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700 }}>{operator.slice(0, 1)}</span>
+              <span style={{ fontSize: 12, fontWeight: 500 }}>{operator}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>切換</span>
+            </button>
+          )}
+        </div>
+
+        {showPicker && <OperatorPicker onPick={pickOp} dismissable={!!operator} onDismiss={() => setSwitching(false)} />}
+
+        <div className="field">
+          <label>動作類型</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {ACTIONS.map(a => (
+              <button key={a.key}
+                onClick={() => setAction(a.key)}
+                onMouseEnter={() => setHover(a.key)}
+                onMouseLeave={() => setHover(null)}
+                style={{
+                  padding: '12px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500,
+                  border: `1px solid ${action === a.key ? a.color : 'var(--line-2)'}`,
+                  background: action === a.key ? a.tint : 'var(--bg-1)',
+                  color: action === a.key ? a.color : 'var(--text-2)',
+                  display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+                }}>
+                <span style={{ width: 6, height: 6, borderRadius: 3, background: a.color }} />{a.label}
+              </button>
+            ))}
+          </div>
+          {shown && (
+            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 6, background: 'var(--bg-2)', border: '1px solid var(--line-1)', fontSize: 12, color: 'var(--text-2)' }}>
+              <b style={{ color: 'var(--text-1)' }}>{shown.label}</b> · {shown.hint}
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <label>產品</label>
+          <select className="select" value={pid} onChange={e => setPid(e.target.value)}>
+            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+
+        <div className="field">
+          <label>零件</label>
+          <select className="select" value={partName} onChange={e => { setPartName(e.target.value); const np = partsData.find(x => x.name === e.target.value); setSku(np?.skus?.[0]?.color_name || '') }}>
+            {partsData.map(p => <option key={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+
+        {part?.skus?.length > 0 && (
+          <div className="field">
+            <label>SKU 顏色</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {part.skus.map(s => (
+                <button key={s.id} onClick={() => setSku(s.color_name)} style={{
+                  padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 13,
+                  border: `1px solid ${sku === s.color_name ? 'var(--accent)' : 'var(--line-2)'}`,
+                  background: sku === s.color_name ? 'var(--accent-tint)' : 'var(--bg-1)',
+                  color: sku === s.color_name ? 'var(--accent)' : 'var(--text-2)',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}>
+                  <SkuDot name={s.color_name} />{s.color_name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field">
+            <label>數量</label>
+            <input className="input num" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" />
+          </div>
+          <div className="field">
+            <label>不良品數量</label>
+            <input className="input num" type="number" value={defect} onChange={e => setDefect(e.target.value)} placeholder="0" />
+          </div>
+        </div>
+
+        <div className="field">
+          <label>備註</label>
+          <input className="input" placeholder="（選填）" value={note} onChange={e => setNote(e.target.value)} />
+        </div>
+
+        <button className="btn primary" onClick={submit} disabled={submitting} style={{ width: '100%', padding: 14, justifyContent: 'center', fontSize: 15 }}>
+          {submitting ? '送出中...' : '確認送出'}
+        </button>
+      </div>
+
+      {/* Recent logs */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>最近紀錄</h3>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{logs.length} 筆</span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-2)' }}>
+                {['時間', '登記人', '動作', '零件', 'SKU', '數量', '不良'].map(h => (
+                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 && <tr><td colSpan={7} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
+              {logs.slice(0, 50).map(log => (
+                <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                  <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{log.logged_at?.slice(0, 16).replace('T', ' ')}</td>
+                  <td style={{ padding: '12px 14px' }}>{log.operator || log.who || '—'}</td>
+                  <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
+                  <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    {log.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>}
+                  </td>
+                  <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
+                  <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -240,372 +1211,115 @@ function OverviewTab({ product, parts, logs }) {
   )
 }
 
-/* ─── Stages Tab ─── */
-function StagesTab({ parts, reload }) {
-  const [addStage, setAddStage] = useState(null)
-  const [form, setForm] = useState({ factory_name: '', action_name: '' })
-
-  const FACTORIES = ['黑豬鋁','家佑','阿奇','廠內','雷射','小林','良浩','阿勗','拋台李','至威','永勝','豪成','勗成']
-
-  async function saveStage(partId) {
-    await apiFetch(`/api/parts/${partId}/stages`, {
-      method: 'POST',
-      body: JSON.stringify({ ...form, sort_order: 99 })
-    })
-    setAddStage(null)
-    setForm({ factory_name: '', action_name: '' })
-    reload()
-  }
-
-  async function deleteStage(partId, stageId) {
-    if (!confirm('確認刪除此加工站？')) return
-    await apiFetch(`/api/parts/${partId}/stages/${stageId}`, { method: 'DELETE' })
-    reload()
-  }
-
+// ─── Operator picker modal ────────────────────────────────────
+function OperatorPicker({ onPick, dismissable, onDismiss }) {
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">加工流程站</h2>
-      {parts.map(part => (
-        <div key={part.id} className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-700">{part.name}</h3>
-            <button
-              onClick={() => setAddStage(addStage === part.id ? null : part.id)}
-              className="text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1 rounded-lg"
-            >+ 新增加工站</button>
-          </div>
-          {addStage === part.id && (
-            <div className="flex gap-3 mb-3 p-3 bg-blue-50 rounded-lg">
-              <select
-                className="border rounded px-2 py-1.5 text-sm"
-                value={form.factory_name}
-                onChange={e => setForm(f => ({ ...f, factory_name: e.target.value }))}
-              >
-                <option value="">選擇加工廠</option>
-                {FACTORIES.map(f => <option key={f}>{f}</option>)}
-              </select>
-              <input
-                className="border rounded px-2 py-1.5 text-sm flex-1"
-                placeholder="作業名稱（如：CNC加工）"
-                value={form.action_name}
-                onChange={e => setForm(f => ({ ...f, action_name: e.target.value }))}
-              />
-              <button onClick={() => saveStage(part.id)} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">儲存</button>
-              <button onClick={() => setAddStage(null)} className="text-gray-500 px-2 text-sm">取消</button>
-            </div>
-          )}
-          {part.stages.length === 0 ? (
-            <p className="text-gray-400 text-sm">尚無加工站</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {part.stages.map((stage, i) => (
-                <div key={stage.id} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <span className="text-xs text-gray-400">{i + 1}</span>
-                  <div>
-                    <div className="text-sm font-medium">{stage.factory_name}</div>
-                    <div className="text-xs text-gray-500">{stage.action_name}</div>
-                  </div>
-                  <div className="text-right ml-2">
-                    <div className="text-sm font-bold text-blue-600">{stage.current_stock}</div>
-                    <div className="text-xs text-gray-400">在庫</div>
-                  </div>
-                  <button
-                    onClick={() => deleteStage(part.id, stage.id)}
-                    className="text-red-400 hover:text-red-600 ml-1 text-xs"
-                  >✕</button>
-                </div>
-              ))}
-            </div>
-          )}
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,20,20,0.45)', display: 'grid', placeItems: 'center', zIndex: 200, borderRadius: 16, padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>你是誰？</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>選擇今天的登記人</div>
         </div>
-      ))}
-    </div>
-  )
-}
-
-/* ─── SKU Tab ─── */
-function SkusTab({ parts, logs }) {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">SKU 顏色庫存</h2>
-      {parts.map(part => (
-        <div key={part.id} className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-700 mb-3">{part.name}</h3>
-          {part.skus.length === 0 ? (
-            <p className="text-gray-400 text-sm">尚無 SKU</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="text-left py-2">顏色</th>
-                    <th className="text-right py-2 px-3">進貨</th>
-                    <th className="text-right py-2 px-3">送加工</th>
-                    <th className="text-right py-2 px-3">回廠</th>
-                    <th className="text-right py-2 px-3">出貨</th>
-                    <th className="text-right py-2 px-3">不良</th>
-                    <th className="text-right py-2 px-3">估計在庫</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {part.skus.map(sku => {
-                    const skuLogs = logs.filter(l => l.part_id === part.id && l.sku_color === sku.color_name)
-                    const receive = skuLogs.filter(l => l.action_type === 'receive').reduce((s, l) => s + l.qty, 0)
-                    const send    = skuLogs.filter(l => l.action_type === 'send').reduce((s, l) => s + l.qty, 0)
-                    const ret     = skuLogs.filter(l => l.action_type === 'return').reduce((s, l) => s + l.qty, 0)
-                    const ship    = skuLogs.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
-                    const defect  = skuLogs.reduce((s, l) => s + (l.defect_qty || 0), 0)
-                    const est = receive + ret - send - ship
-                    return (
-                      <tr key={sku.id} className="border-b hover:bg-gray-50">
-                        <td className="py-2">
-                          <span className="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full">{sku.color_name}</span>
-                        </td>
-                        <td className="text-right py-2 px-3">{receive}</td>
-                        <td className="text-right py-2 px-3 text-orange-500">{send}</td>
-                        <td className="text-right py-2 px-3 text-green-600">{ret}</td>
-                        <td className="text-right py-2 px-3 text-blue-600">{ship}</td>
-                        <td className="text-right py-2 px-3 text-red-500">{defect}</td>
-                        <td className={`text-right py-2 px-3 font-bold ${est < 0 ? 'text-red-500' : 'text-gray-800'}`}>{est}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {OPERATORS.map(op => (
+            <button key={op.name} onClick={() => onPick(op.name)}
+              style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 12, padding: '14px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, font: 'inherit' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = '#fff' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line-1)'; e.currentTarget.style.background = 'var(--bg-1)' }}
+            >
+              <span style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: 700 }}>{op.name.slice(0, 1)}</span>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{op.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{op.role}</div>
+            </button>
+          ))}
         </div>
-      ))}
-    </div>
-  )
-}
-
-/* ─── Defects Tab ─── */
-function DefectsTab({ parts, logs }) {
-  const chartData = parts.map(part => {
-    const partLogs = logs.filter(l => l.part_id === part.id)
-    const totalQty = partLogs.reduce((s, l) => s + l.qty, 0)
-    const defects  = partLogs.reduce((s, l) => s + (l.defect_qty || 0), 0)
-    const rate = totalQty > 0 ? +(defects / totalQty * 100).toFixed(2) : 0
-    return { name: part.name.length > 6 ? part.name.slice(0, 6) + '…' : part.name, rate, defects, totalQty }
-  })
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">不良率圖表</h2>
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-600 mb-4">各零件不良率 (%)</h3>
-        {chartData.length === 0 ? (
-          <p className="text-gray-400 text-sm">尚無資料</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={v => `${v}%`} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v) => [`${v}%`, '不良率']} />
-              <Bar dataKey="rate" name="不良率" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={entry.rate > 5 ? '#ef4444' : entry.rate > 2 ? '#f59e0b' : '#22c55e'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-600 mb-3">不良品明細</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-gray-500">
-              <th className="text-left py-2">零件</th>
-              <th className="text-right py-2 px-3">總量</th>
-              <th className="text-right py-2 px-3">不良品</th>
-              <th className="text-right py-2 px-3">不良率</th>
-              <th className="py-2 px-3">狀態</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chartData.map((r, i) => (
-              <tr key={i} className="border-b hover:bg-gray-50">
-                <td className="py-2 font-medium">{parts[i]?.name}</td>
-                <td className="text-right py-2 px-3">{r.totalQty}</td>
-                <td className="text-right py-2 px-3 text-red-500">{r.defects}</td>
-                <td className="text-right py-2 px-3">{r.rate}%</td>
-                <td className="py-2 px-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    r.rate > 5 ? 'bg-red-100 text-red-600' : r.rate > 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-600'
-                  }`}>
-                    {r.rate > 5 ? '⚠ 異常' : r.rate > 2 ? '注意' : '正常'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {dismissable && <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', padding: 4, fontSize: 12, color: 'var(--text-3)', cursor: 'pointer' }}>取消</button>}
       </div>
     </div>
   )
 }
 
-/* ─── Orders Tab ─── */
-function OrdersTab({ product, parts, logs, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const [completion, setCompletion] = useState(product.estimated_completion || '')
-
-  const shipped = logs.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
-  const fulfillRate = product.order_qty > 0 ? Math.min(100, Math.round(shipped / product.order_qty * 100)) : 0
-
-  const pieData = [
-    { name: '已出貨', value: shipped, fill: '#22c55e' },
-    { name: '未出貨', value: Math.max(0, product.order_qty - shipped), fill: '#e5e7eb' },
-  ]
-
-  async function saveCompletion() {
-    await apiFetch(`/api/products/${product.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ ...product, estimated_completion: completion })
-    })
-    setEditing(false)
-    onSave()
-  }
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">訂單達成率</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-600 mb-4">出貨進度</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="text-center mt-2">
-            <span className="text-3xl font-bold text-blue-600">{fulfillRate}%</span>
-            <div className="text-sm text-gray-500 mt-1">{shipped.toLocaleString()} / {product.order_qty?.toLocaleString()} 件</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-          <h3 className="font-semibold text-gray-600">訂單資訊</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">訂單數量</span><strong>{product.order_qty?.toLocaleString()} 件</strong></div>
-            <div className="flex justify-between"><span className="text-gray-500">訂單日期</span><span>{product.order_date}</span></div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">預計完成</span>
-              {editing ? (
-                <div className="flex gap-2">
-                  <input type="date" value={completion} onChange={e => setCompletion(e.target.value)} className="border rounded px-2 py-1 text-sm" />
-                  <button onClick={saveCompletion} className="bg-blue-600 text-white px-2 py-1 rounded text-xs">儲存</button>
-                  <button onClick={() => setEditing(false)} className="text-gray-400 px-1 text-xs">取消</button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className={product.estimated_completion ? 'text-blue-600 font-medium' : 'text-gray-400'}>
-                    {product.estimated_completion || '未設定'}
-                  </span>
-                  <button onClick={() => setEditing(true)} className="text-xs text-gray-400 hover:text-blue-500">✏️</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ─── Packing Tab ─── */
-function PackingTab({ items, product, reload }) {
+// ─── Page: Packaging ─────────────────────────────────────────
+function PackagingPage({ items, product, reload }) {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({ name: '', supplier: '', stock: 0 })
   const [editId, setEditId] = useState(null)
   const [editData, setEditData] = useState({})
 
   async function addItem() {
-    await apiFetch('/api/packing-items', {
-      method: 'POST',
-      body: JSON.stringify({ product_id: product.id, ...form })
-    })
-    setForm({ name: '', supplier: '', stock: 0 })
-    setShowAdd(false)
-    reload()
+    await apiFetch('/api/packing-items', { method: 'POST', body: JSON.stringify({ product_id: product.id, ...form }) })
+    setForm({ name: '', supplier: '', stock: 0 }); setShowAdd(false); reload()
   }
-
   async function updateItem(id) {
     await apiFetch(`/api/packing-items/${id}`, { method: 'PUT', body: JSON.stringify(editData) })
-    setEditId(null)
-    reload()
+    setEditId(null); reload()
   }
-
   async function deleteItem(id) {
     if (!confirm('確認刪除？')) return
-    await apiFetch(`/api/packing-items/${id}`, { method: 'DELETE' })
-    reload()
+    await apiFetch(`/api/packing-items/${id}`, { method: 'DELETE' }); reload()
   }
 
+  const PACKING_MOCK = [
+    { name: '彩盒 · ' + (product?.name || ''), stock: 1800, min: 500, used: 320, vendor: '盒立精緻' },
+    { name: '說明書 · ' + (product?.name || ''), stock: 120, min: 500, used: 200, vendor: '印良印刷' },
+    { name: '防塵袋 · 通用', stock: 8400, min: 1000, used: 600, vendor: '毛胚布業' },
+  ]
+
+  const displayItems = items.length > 0 ? items : PACKING_MOCK
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-800">包裝副件</h2>
-        <button onClick={() => setShowAdd(!showAdd)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新增副件</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>包裝副件</h3>
+        <button className="btn primary" onClick={() => setShowAdd(!showAdd)} style={{ fontSize: 13 }}><Icon.Plus />新增副件</button>
       </div>
+
       {showAdd && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
-          <input className="border rounded px-2 py-1.5 text-sm flex-1" placeholder="副件名稱" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <input className="border rounded px-2 py-1.5 text-sm w-32" placeholder="供應商" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} />
-          <input type="number" className="border rounded px-2 py-1.5 text-sm w-24" placeholder="庫存" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: +e.target.value }))} />
-          <button onClick={addItem} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">新增</button>
-          <button onClick={() => setShowAdd(false)} className="text-gray-400 px-2 text-sm">取消</button>
+        <div style={{ background: 'var(--accent-tint)', border: '1px solid var(--accent-tint-hi)', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="副件名稱" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <input className="input" style={{ width: 120 }} placeholder="供應商" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} />
+          <input type="number" className="input num" style={{ width: 100 }} placeholder="庫存" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: +e.target.value }))} />
+          <button className="btn primary" onClick={addItem}>新增</button>
+          <button className="btn" onClick={() => setShowAdd(false)}>取消</button>
         </div>
       )}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left py-3 px-4">副件名稱</th>
-              <th className="text-left py-3 px-3">供應商</th>
-              <th className="text-right py-3 px-3">庫存</th>
-              <th className="text-right py-3 px-3">本月進</th>
-              <th className="text-right py-3 px-3">本月出</th>
-              <th className="text-right py-3 px-3">不良</th>
-              <th className="py-3 px-3">操作</th>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-2)' }}>
+              {['品項', '供應商', '庫存', '本月用量', '最低安全量', '狀態', '操作'].map(h => (
+                <th key={h} style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)' }}>{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">尚無包裝副件</td></tr>
-            )}
-            {items.map(item => editId === item.id ? (
-              <tr key={item.id} className="border-b bg-yellow-50">
-                <td className="py-2 px-4"><input className="border rounded px-2 py-1 text-sm w-full" value={editData.name} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} /></td>
-                <td className="py-2 px-3"><input className="border rounded px-2 py-1 text-sm w-full" value={editData.supplier} onChange={e => setEditData(d => ({ ...d, supplier: e.target.value }))} /></td>
-                {['stock', 'month_in', 'month_out', 'defect'].map(k => (
-                  <td key={k} className="py-2 px-3"><input type="number" className="border rounded px-1 py-1 text-sm w-16 text-right" value={editData[k] ?? 0} onChange={e => setEditData(d => ({ ...d, [k]: +e.target.value }))} /></td>
-                ))}
-                <td className="py-2 px-3 flex gap-1">
-                  <button onClick={() => updateItem(item.id)} className="bg-green-600 text-white px-2 py-1 rounded text-xs">儲存</button>
-                  <button onClick={() => setEditId(null)} className="text-gray-400 px-1 text-xs">取消</button>
-                </td>
-              </tr>
-            ) : (
-              <tr key={item.id} className="border-b hover:bg-gray-50">
-                <td className="py-2 px-4 font-medium">{item.name}</td>
-                <td className="py-2 px-3 text-gray-500">{item.supplier || '-'}</td>
-                <td className="text-right py-2 px-3 font-bold">{item.stock}</td>
-                <td className="text-right py-2 px-3 text-green-600">{item.month_in}</td>
-                <td className="text-right py-2 px-3 text-orange-500">{item.month_out}</td>
-                <td className="text-right py-2 px-3 text-red-500">{item.defect}</td>
-                <td className="py-2 px-3 flex gap-1">
-                  <button onClick={() => { setEditId(item.id); setEditData({ ...item }) }} className="text-blue-500 hover:text-blue-700 text-xs">編輯</button>
-                  <button onClick={() => deleteItem(item.id)} className="text-red-400 hover:text-red-600 text-xs">刪除</button>
-                </td>
-              </tr>
-            ))}
+            {displayItems.map((item, i) => {
+              const low = item.stock < (item.min || 0)
+              return (
+                <tr key={item.id || i} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                  <td style={{ padding: '14px 16px', fontWeight: 500 }}>{item.name}</td>
+                  <td style={{ padding: '14px 16px', color: 'var(--text-3)' }}>{item.supplier || item.vendor || '—'}</td>
+                  <td className="num" style={{ padding: '14px 16px', fontSize: 16, fontWeight: 500, color: low ? 'var(--bad)' : 'var(--text-1)' }}>{(item.stock || 0).toLocaleString()}</td>
+                  <td className="num" style={{ padding: '14px 16px', color: 'var(--text-3)' }}>{(item.month_out || item.used || 0).toLocaleString()}</td>
+                  <td className="num" style={{ padding: '14px 16px', color: 'var(--text-4)' }}>{(item.min || 0).toLocaleString()}</td>
+                  <td style={{ padding: '14px 16px' }}>
+                    {low
+                      ? <span className="badge low"><Icon.Warn />低庫存</span>
+                      : <span className="badge done"><span className="dot" />正常</span>
+                    }
+                  </td>
+                  <td style={{ padding: '14px 16px' }}>
+                    {item.id && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { setEditId(item.id); setEditData({ ...item }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--info)', fontSize: 12 }}>編輯</button>
+                        <button onClick={() => deleteItem(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>刪除</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -613,261 +1327,158 @@ function PackingTab({ items, product, reload }) {
   )
 }
 
-/* ─── Logs Tab ─── */
-function LogsTab({ logs, product, reload }) {
-  const [dateFilter, setDateFilter] = useState('')
-
-  const filtered = dateFilter
-    ? logs.filter(l => l.logged_at.startsWith(dateFilter))
-    : logs
-
-  async function exportCSV() {
-    const res = await apiFetch(`/api/export/csv/${product.id}`)
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${product.name}_logs.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-800">進出貨記錄</h2>
-        <div className="flex gap-3">
-          <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="border rounded px-2 py-1.5 text-sm" />
-          {dateFilter && <button onClick={() => setDateFilter('')} className="text-gray-400 text-sm">清除</button>}
-          <button onClick={exportCSV} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">⬇ 匯出 CSV</button>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left py-3 px-4">時間</th>
-              <th className="text-left py-3 px-3">零件</th>
-              <th className="text-left py-3 px-3">SKU</th>
-              <th className="text-left py-3 px-3">動作</th>
-              <th className="text-right py-3 px-3">數量</th>
-              <th className="text-right py-3 px-3">不良</th>
-              <th className="text-left py-3 px-3">備註</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">無記錄</td></tr>
-            )}
-            {filtered.map(log => (
-              <tr key={log.id} className="border-b hover:bg-gray-50">
-                <td className="py-2 px-4 text-gray-500 text-xs">{log.logged_at?.slice(0, 16).replace('T', ' ')}</td>
-                <td className="py-2 px-3">{log.part_name || '-'}</td>
-                <td className="py-2 px-3">
-                  {log.sku_color && <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{log.sku_color}</span>}
-                </td>
-                <td className="py-2 px-3">
-                  <ActionBadge type={log.action_type} />
-                </td>
-                <td className="text-right py-2 px-3 font-medium">{log.qty}</td>
-                <td className="text-right py-2 px-3 text-red-500">{log.defect_qty || 0}</td>
-                <td className="py-2 px-3 text-gray-400 text-xs">{log.note}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/* ─── Settings Tab ─── */
-function SettingsTab({ products, tokens, reload, reloadTokens }) {
+// ─── Page: Settings ───────────────────────────────────────────
+function SettingsPage({ products, tokens, reload, reloadTokens }) {
   const [newProduct, setNewProduct] = useState({ name: '', description: '', order_qty: '', order_date: '' })
   const [newPart, setNewPart] = useState({ product_id: '', name: '' })
   const [newToken, setNewToken] = useState({ product_id: '', label: '' })
   const [lastToken, setLastToken] = useState(null)
-  const [editProduct, setEditProduct] = useState(null)
-  const [editForm, setEditForm] = useState({})
 
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
     await apiFetch('/api/products', { method: 'POST', body: JSON.stringify(newProduct) })
-    setNewProduct({ name: '', description: '', order_qty: '', order_date: '' })
-    reload()
+    setNewProduct({ name: '', description: '', order_qty: '', order_date: '' }); reload()
   }
-
   async function createPart() {
     if (!newPart.product_id || !newPart.name) return alert('請選擇產品並填寫零件名稱')
     await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify(newPart) })
-    setNewPart(p => ({ ...p, name: '' }))
-    reload()
+    setNewPart(p => ({ ...p, name: '' })); reload()
   }
-
   async function generateToken() {
     if (!newToken.product_id) return alert('請選擇產品')
     const res = await apiFetch('/api/designer-tokens', { method: 'POST', body: JSON.stringify(newToken) })
     const data = await res.json()
     setLastToken(`${window.location.origin}/brand/${data.token}`)
-    setNewToken({ product_id: '', label: '' })
-    reloadTokens()
+    setNewToken({ product_id: '', label: '' }); reloadTokens()
   }
-
   async function deleteToken(id) {
     if (!confirm('確認刪除此設計師連結？')) return
-    await apiFetch(`/api/designer-tokens/${id}`, { method: 'DELETE' })
-    reloadTokens()
-  }
-
-  async function saveEditProduct() {
-    await apiFetch(`/api/products/${editProduct}`, { method: 'PUT', body: JSON.stringify(editForm) })
-    setEditProduct(null)
-    reload()
+    await apiFetch(`/api/designer-tokens/${id}`, { method: 'DELETE' }); reloadTokens()
   }
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">系統設定</h2>
-
-      {/* Add Product */}
-      <Section title="新增產品">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <input className="border rounded px-3 py-2 text-sm" placeholder="產品名稱 *" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} />
-          <input className="border rounded px-3 py-2 text-sm" placeholder="描述" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} />
-          <input type="number" className="border rounded px-3 py-2 text-sm" placeholder="訂單數量" value={newProduct.order_qty} onChange={e => setNewProduct(p => ({ ...p, order_qty: e.target.value }))} />
-          <input type="date" className="border rounded px-3 py-2 text-sm" value={newProduct.order_date} onChange={e => setNewProduct(p => ({ ...p, order_date: e.target.value }))} />
-        </div>
-        <button onClick={createProduct} className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">新增產品</button>
-      </Section>
-
-      {/* Edit Products */}
-      <Section title="產品列表">
-        <div className="space-y-2">
-          {products.map(p => editProduct === p.id ? (
-            <div key={p.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <input className="border rounded px-2 py-1.5 text-sm" value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="名稱" />
-              <input className="border rounded px-2 py-1.5 text-sm" value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} placeholder="描述" />
-              <input type="number" className="border rounded px-2 py-1.5 text-sm" value={editForm.order_qty || ''} onChange={e => setEditForm(f => ({ ...f, order_qty: +e.target.value }))} placeholder="訂單量" />
-              <input type="date" className="border rounded px-2 py-1.5 text-sm" value={editForm.estimated_completion || ''} onChange={e => setEditForm(f => ({ ...f, estimated_completion: e.target.value }))} placeholder="預計完成" />
-              <div className="col-span-2 md:col-span-4 flex gap-2">
-                <button onClick={saveEditProduct} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm">儲存</button>
-                <button onClick={() => setEditProduct(null)} className="text-gray-400 text-sm">取消</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
+      {/* Product images */}
+      <SettingsSection title="產品圖片">
+        <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 16 }}>拖曳或點擊圖片區域上傳產品照，設計師端會以唯讀方式看到。</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+          {products.map(p => (
+            <div key={p.id} className="card" style={{ padding: 16, display: 'flex', gap: 16 }}>
+              <ProductImageUpload
+                productId={p.id}
+                brandColor={p.brand_color || '#E8461A'}
+                initials={p.initials || p.name?.slice(0, 2)}
+                width={100}
+                height={100}
+                borderRadius={10}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
+                {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 10px', marginTop: 10, alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text-3)' }}>訂單量</span>
+                  <span className="num" style={{ fontWeight: 500 }}>{p.order_qty?.toLocaleString() || '—'}</span>
+                  {p.estimated_completion && (
+                    <>
+                      <span style={{ color: 'var(--text-3)' }}>預計完成</span>
+                      <span className="num" style={{ color: 'var(--accent)', fontWeight: 500 }}>{p.estimated_completion}</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div key={p.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
-              <div>
-                <span className="font-medium">{p.name}</span>
-                <span className="text-gray-400 text-xs ml-2">{p.description}</span>
-              </div>
-              <button onClick={() => { setEditProduct(p.id); setEditForm({ ...p }) }} className="text-blue-500 hover:text-blue-700 text-sm">編輯</button>
             </div>
           ))}
         </div>
-      </Section>
+      </SettingsSection>
 
-      {/* Add Part */}
-      <Section title="新增零件">
-        <div className="flex gap-3">
-          <select className="border rounded px-3 py-2 text-sm" value={newPart.product_id} onChange={e => setNewPart(p => ({ ...p, product_id: e.target.value }))}>
-            <option value="">選擇產品</option>
-            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input className="border rounded px-3 py-2 text-sm flex-1" placeholder="零件名稱" value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))} />
-          <button onClick={createPart} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">新增零件</button>
+      {/* Add product */}
+      <SettingsSection title="新增產品">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+          <div className="field"><label>產品名稱 *</label><input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} /></div>
+          <div className="field"><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
+          <div className="field"><label>訂單數量</label><input type="number" className="input num" value={newProduct.order_qty} onChange={e => setNewProduct(p => ({ ...p, order_qty: e.target.value }))} /></div>
+          <div className="field"><label>訂單日期</label><input type="date" className="input" value={newProduct.order_date} onChange={e => setNewProduct(p => ({ ...p, order_date: e.target.value }))} /></div>
         </div>
-      </Section>
+        <button className="btn primary" onClick={createProduct} style={{ marginTop: 12 }}><Icon.Plus />新增產品</button>
+      </SettingsSection>
 
-      {/* Designer Tokens */}
-      <Section title="設計師連結管理">
-        <div className="flex gap-3 flex-wrap">
-          <select className="border rounded px-3 py-2 text-sm" value={newToken.product_id} onChange={e => setNewToken(t => ({ ...t, product_id: e.target.value }))}>
+      {/* Add part */}
+      <SettingsSection title="新增零件">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <select className="select" style={{ flex: '0 0 160px' }} value={newPart.product_id} onChange={e => setNewPart(p => ({ ...p, product_id: e.target.value }))}>
             <option value="">選擇產品</option>
             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <input className="border rounded px-3 py-2 text-sm flex-1" placeholder="標籤（如：設計師姓名）" value={newToken.label} onChange={e => setNewToken(t => ({ ...t, label: e.target.value }))} />
-          <button onClick={generateToken} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700">產生連結</button>
+          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="零件名稱" value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))} />
+          <button className="btn primary" onClick={createPart}><Icon.Plus />新增零件</button>
+        </div>
+      </SettingsSection>
+
+      {/* Designer tokens */}
+      <SettingsSection title="設計師連結管理">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <select className="select" style={{ flex: '0 0 160px' }} value={newToken.product_id} onChange={e => setNewToken(t => ({ ...t, product_id: e.target.value }))}>
+            <option value="">選擇產品</option>
+            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="標籤（如：設計師姓名）" value={newToken.label} onChange={e => setNewToken(t => ({ ...t, label: e.target.value }))} />
+          <button className="btn primary" onClick={generateToken}><Icon.Plus />產生連結</button>
         </div>
         {lastToken && (
-          <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-            <p className="text-xs text-purple-600 mb-1">已產生連結（點擊複製）：</p>
-            <button
-              className="text-sm text-purple-800 font-mono break-all hover:underline"
-              onClick={() => { navigator.clipboard.writeText(lastToken); alert('已複製！') }}
-            >{lastToken}</button>
+          <div style={{ padding: '10px 14px', background: 'var(--purple-tint)', border: '1px solid rgba(107,63,160,0.2)', borderRadius: 8, marginBottom: 12 }}>
+            <p style={{ fontSize: 11, color: 'var(--purple)', marginBottom: 4 }}>已產生連結（點擊複製）：</p>
+            <button onClick={() => { navigator.clipboard.writeText(lastToken); alert('已複製！') }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--purple)', fontFamily: 'var(--font-mono)', textAlign: 'left', wordBreak: 'break-all' }}>
+              {lastToken}
+            </button>
           </div>
         )}
-        <div className="mt-4 space-y-2">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {tokens.map(t => (
-            <div key={t.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '10px 14px' }}>
               <div>
-                <span className="font-medium text-sm">{t.product_name}</span>
-                {t.label && <span className="text-gray-500 text-xs ml-2">({t.label})</span>}
-                <div className="text-xs text-gray-400 font-mono">/brand/{t.token.slice(0, 16)}…</div>
+                <span style={{ fontWeight: 500, fontSize: 13 }}>{t.product_name}</span>
+                {t.label && <span style={{ color: 'var(--text-3)', fontSize: 12, marginLeft: 8 }}>({t.label})</span>}
+                <div style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>/brand/{t.token.slice(0, 16)}…</div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/brand/${t.token}`); alert('已複製！') }}
-                  className="text-blue-500 text-xs hover:text-blue-700"
-                >複製</button>
-                <button onClick={() => deleteToken(t.id)} className="text-red-400 text-xs hover:text-red-600">刪除</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/brand/${t.token}`); alert('已複製！') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--info)', fontSize: 12 }}>複製</button>
+                <button onClick={() => deleteToken(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>刪除</button>
               </div>
             </div>
           ))}
-          {tokens.length === 0 && <p className="text-gray-400 text-sm">尚無設計師連結</p>}
+          {tokens.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無設計師連結</p>}
         </div>
-      </Section>
+      </SettingsSection>
     </div>
   )
 }
 
-/* ─── Helpers ─── */
-function StatCard({ label, value, color, icon }) {
-  const colors = {
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    purple: 'bg-purple-50 border-purple-200 text-purple-700',
-    red: 'bg-red-50 border-red-200 text-red-700',
-    green: 'bg-green-50 border-green-200 text-green-700',
-  }
+function SettingsSection({ title, children }) {
   return (
-    <div className={`${colors[color]} border rounded-xl p-4`}>
-      <div className="text-2xl mb-1">{icon}</div>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-sm opacity-70">{label}</div>
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, fontFamily: 'var(--font-mono)' }}>{title}</div>
+      <div className="card" style={{ padding: 20 }}>{children}</div>
     </div>
   )
 }
 
-function Section({ title, children }) {
+// ─── Helpers ─────────────────────────────────────────────────
+function ModalOverlay({ onClose, children }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="font-semibold text-gray-700 mb-4">{title}</h3>
-      {children}
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,20,0.32)', display: 'grid', placeItems: 'center', zIndex: 100 }}>
+      <div onClick={e => e.stopPropagation()}>{children}</div>
     </div>
-  )
-}
-
-function ActionBadge({ type }) {
-  const styles = {
-    receive: 'bg-green-100 text-green-700',
-    send:    'bg-orange-100 text-orange-700',
-    return:  'bg-blue-100 text-blue-700',
-    ship:    'bg-purple-100 text-purple-700',
-  }
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[type] || 'bg-gray-100 text-gray-600'}`}>
-      {ACTION_LABELS[type] || type}
-    </span>
   )
 }
 
 function EmptyState({ onAdd }) {
   return (
-    <div className="text-center py-20 text-gray-400">
-      <div className="text-6xl mb-4">📦</div>
-      <p className="text-lg">尚無產品資料</p>
-      <p className="text-sm mt-1">請先執行 <code className="bg-gray-100 px-2 py-0.5 rounded">npm run seed</code> 或前往設定新增產品</p>
-      <button onClick={onAdd} className="mt-4 bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700">前往設定</button>
+    <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-3)' }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+      <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)', margin: '0 0 8px' }}>尚無產品資料</p>
+      <p style={{ fontSize: 13, margin: '0 0 20px' }}>請執行 <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: 4 }}>npm run seed</code> 或前往設定新增產品</p>
+      <button className="btn primary" onClick={onAdd}><Icon.Setting />前往設定</button>
     </div>
   )
 }
