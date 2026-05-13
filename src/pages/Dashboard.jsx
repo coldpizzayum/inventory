@@ -1319,8 +1319,11 @@ function PackagingPage({ items, product, reload }) {
 
 // ─── Page: Settings ───────────────────────────────────────────
 function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
+  const [showNewProduct, setShowNewProduct] = useState(false)
   const [newProduct, setNewProduct] = useState({ name: '', description: '', order_qty: '', order_date: '' })
-  const [newPart, setNewPart] = useState({ product_id: '', name: '' })
+  const [allParts, setAllParts] = useState({})
+  const [partInputs, setPartInputs] = useState({})   // productId → input string
+  const [showPartForm, setShowPartForm] = useState({}) // productId → bool
   const [stockEdits, setStockEdits] = useState(() => {
     const map = {}
     products.forEach(p => {
@@ -1331,6 +1334,17 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     })
     return map
   })
+
+  useEffect(() => { loadAllParts() }, [products])
+
+  async function loadAllParts() {
+    const entries = await Promise.all(products.map(async p => {
+      const res = await apiFetch(`/api/products/${p.id}/parts`)
+      const parts = res.ok ? await res.json() : []
+      return [p.id, parts]
+    }))
+    setAllParts(Object.fromEntries(entries))
+  }
 
   function updateStock(p) {
     const val = Math.max(0, Number(stockEdits[p.id]) || 0)
@@ -1344,103 +1358,138 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
     await apiFetch('/api/products', { method: 'POST', body: JSON.stringify(newProduct) })
-    setNewProduct({ name: '', description: '', order_qty: '', order_date: '' }); reload()
+    setNewProduct({ name: '', description: '', order_qty: '', order_date: '' })
+    setShowNewProduct(false); reload()
   }
-  async function createPart() {
-    if (!newPart.product_id || !newPart.name) return alert('請選擇產品並填寫零件名稱')
-    await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify(newPart) })
-    setNewPart(p => ({ ...p, name: '' })); reload()
+
+  async function createPart(productId) {
+    const name = (partInputs[productId] || '').trim()
+    if (!name) return
+    await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify({ product_id: productId, name }) })
+    setPartInputs(s => ({ ...s, [productId]: '' }))
+    setShowPartForm(s => ({ ...s, [productId]: false }))
+    loadAllParts()
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 860 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewProduct(true)}>
+          <Icon.Plus />新增產品
+        </button>
+      </div>
+
       {/* Product cards */}
-      <SettingsSection title="產品管理">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-          {products.map(p => {
-            const orderCount = orders.filter(o => o.productId === p.id).length
-            return (
-              <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Top: image + info */}
-                <div style={{ display: 'flex', gap: 14 }}>
-                  <ProductImageUpload
-                    productId={p.id}
-                    brandColor={p.brand_color || '#E8461A'}
-                    initials={p.initials || p.name?.slice(0, 2)}
-                    width={80} height={80} borderRadius={8}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
-                    {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
-                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
-                      訂單量 <span className="num" style={{ fontWeight: 600, color: 'var(--text-1)' }}>{p.order_qty?.toLocaleString() || '—'}</span>
-                    </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+        {products.map(p => {
+          const orderCount = orders.filter(o => o.productId === p.id).length
+          const parts = allParts[p.id] || []
+          return (
+            <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Top: image + info */}
+              <div style={{ display: 'flex', gap: 14 }}>
+                <ProductImageUpload
+                  productId={p.id}
+                  brandColor={p.brand_color || '#E8461A'}
+                  initials={p.initials || p.name?.slice(0, 2)}
+                  width={80} height={80} borderRadius={8}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
+                  {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
+                    訂單量 <span className="num" style={{ fontWeight: 600, color: 'var(--text-1)' }}>{p.order_qty?.toLocaleString() || '—'}</span>
                   </div>
                 </div>
-
-                {/* Stock row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line-1)' }}>
-                  <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>庫存量</span>
-                  <input
-                    className="input num"
-                    type="number"
-                    style={{ flex: 1, padding: '5px 8px', fontSize: 14 }}
-                    value={stockEdits[p.id] ?? '0'}
-                    onChange={e => setStockEdits(s => ({ ...s, [p.id]: e.target.value }))}
-                    onKeyDown={e => e.key === 'Enter' && updateStock(p)}
-                  />
-                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>件</span>
-                  <button className="btn" style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }} onClick={() => updateStock(p)}>更新</button>
-                </div>
-
-                {/* Action buttons */}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}
-                    onClick={() => onGoToProcess(p)}
-                  >
-                    <Icon.Flow />加工流程
-                  </button>
-                  <button
-                    className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center', position: 'relative' }}
-                    onClick={() => onGoToOrders(p.id)}
-                  >
-                    <Icon.Order />訂單
-                    {orderCount > 0 && (
-                      <span style={{ marginLeft: 4, background: 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
-                        {orderCount}
-                      </span>
-                    )}
-                  </button>
-                </div>
               </div>
-            )
-          })}
-        </div>
-      </SettingsSection>
 
-      {/* Add product */}
-      <SettingsSection title="新增產品">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-          <div className="field"><label>產品名稱 *</label><input className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} /></div>
-          <div className="field"><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
-          <div className="field"><label>訂單數量</label><input type="number" className="input num" value={newProduct.order_qty} onChange={e => setNewProduct(p => ({ ...p, order_qty: e.target.value }))} /></div>
-          <div className="field"><label>訂單日期</label><input type="date" className="input" value={newProduct.order_date} onChange={e => setNewProduct(p => ({ ...p, order_date: e.target.value }))} /></div>
-        </div>
-        <button className="btn primary" onClick={createProduct} style={{ marginTop: 12 }}><Icon.Plus />新增產品</button>
-      </SettingsSection>
+              {/* Stock row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderTop: '1px solid var(--line-1)' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>庫存量</span>
+                <input className="input num" type="number" style={{ flex: 1, padding: '5px 8px', fontSize: 14 }}
+                  value={stockEdits[p.id] ?? '0'}
+                  onChange={e => setStockEdits(s => ({ ...s, [p.id]: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && updateStock(p)} />
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>件</span>
+                <button className="btn" style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }} onClick={() => updateStock(p)}>更新</button>
+              </div>
 
-      {/* Add part */}
-      <SettingsSection title="新增零件">
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <select className="select" style={{ flex: '0 0 160px' }} value={newPart.product_id} onChange={e => setNewPart(p => ({ ...p, product_id: e.target.value }))}>
-            <option value="">選擇產品</option>
-            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="零件名稱" value={newPart.name} onChange={e => setNewPart(p => ({ ...p, name: e.target.value }))} />
-          <button className="btn primary" onClick={createPart}><Icon.Plus />新增零件</button>
-        </div>
-      </SettingsSection>
+              {/* Parts list */}
+              <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
+                    零件 ({parts.length})
+                  </span>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--info)', padding: 0 }}
+                    onClick={() => setShowPartForm(s => ({ ...s, [p.id]: !s[p.id] }))}>
+                    {showPartForm[p.id] ? '取消' : '＋ 新增零件'}
+                  </button>
+                </div>
+                {parts.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showPartForm[p.id] ? 8 : 0 }}>
+                    {parts.map(pt => (
+                      <span key={pt.id} style={{ background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 20, padding: '3px 10px', fontSize: 12, color: 'var(--text-2)' }}>
+                        {pt.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {parts.length === 0 && !showPartForm[p.id] && (
+                  <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0 }}>尚未新增零件</p>
+                )}
+                {showPartForm[p.id] && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <input className="input" style={{ flex: 1, fontSize: 13 }} placeholder="零件名稱"
+                      autoFocus
+                      value={partInputs[p.id] || ''}
+                      onChange={e => setPartInputs(s => ({ ...s, [p.id]: e.target.value }))}
+                      onKeyDown={e => e.key === 'Enter' && createPart(p.id)} />
+                    <button className="btn primary" style={{ fontSize: 12 }} onClick={() => createPart(p.id)}>新增</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
+                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
+                  <Icon.Flow />加工流程
+                </button>
+                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
+                  <Icon.Order />訂單
+                  {orderCount > 0 && (
+                    <span style={{ marginLeft: 4, background: 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
+                      {orderCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* New product modal */}
+      {showNewProduct && (
+        <ModalOverlay onClose={() => setShowNewProduct(false)}>
+          <div style={{ width: 480, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 17, fontWeight: 600 }}>新增產品</div>
+              <button className="btn ghost" onClick={() => setShowNewProduct(false)} style={{ padding: 6 }}><Icon.X /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="field" style={{ gridColumn: '1/-1' }}><label>產品名稱 *</label><input autoFocus className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createProduct()} /></div>
+              <div className="field" style={{ gridColumn: '1/-1' }}><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
+              <div className="field"><label>訂單數量</label><input type="number" className="input num" value={newProduct.order_qty} onChange={e => setNewProduct(p => ({ ...p, order_qty: e.target.value }))} /></div>
+              <div className="field"><label>訂單日期</label><input type="date" className="input" value={newProduct.order_date} onChange={e => setNewProduct(p => ({ ...p, order_date: e.target.value }))} /></div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn" onClick={() => setShowNewProduct(false)}>取消</button>
+              <button className="btn primary" onClick={createProduct}><Icon.Plus />新增產品</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
     </div>
   )
 }
