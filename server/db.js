@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import pg from 'pg'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import dotenv from 'dotenv'
 
@@ -167,6 +168,8 @@ const PG_SCHEMA = `
 
 function createSqliteAdapter() {
   const dbPath = path.resolve(__dirname, '..', process.env.DB_PATH || './data/inventory.db')
+  const dbDir = path.dirname(dbPath)
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
   const raw = new Database(dbPath)
   raw.pragma('journal_mode = WAL')
   raw.pragma('foreign_keys = ON')
