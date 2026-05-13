@@ -27,7 +27,6 @@ const NAV = [
   { id: 'process',   label: '加工流程',   icon: Icon.Flow },
   { id: 'sku',       label: 'SKU 庫存',   icon: Icon.Stack },
   { id: 'log',       label: '進出貨登記', icon: Icon.Log },
-  { id: 'packaging', label: '包裝副件',     icon: Icon.Box },
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
   { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
@@ -38,7 +37,6 @@ const PAGE_TITLES = {
   process:   '加工流程看板',
   sku:       'SKU 庫存',
   log:       '進出貨登記',
-  packaging: '包裝副件管理',
   settings:  '產品管理',
   orders:    '訂單管理',
   brands:    '設計品牌管理',
@@ -186,7 +184,6 @@ export default function Dashboard() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [partsData, setPartsData] = useState([])
   const [logs, setLogs] = useState([])
-  const [packingItems, setPackingItems] = useState([])
   const [tokens, setTokens] = useState([])
   const [orders, setOrders] = useState(() => {
     const saved = localStorage.getItem('dicas:orders')
@@ -208,7 +205,6 @@ export default function Dashboard() {
     if (selectedProduct) {
       loadParts(selectedProduct.id)
       loadLogs(selectedProduct.id)
-      loadPacking(selectedProduct.id)
     }
   }, [selectedProduct])
 
@@ -225,10 +221,6 @@ export default function Dashboard() {
   async function loadLogs(pid) {
     const res = await apiFetch(`/api/receive-logs?product_id=${pid}&limit=200`)
     setLogs(await res.json())
-  }
-  async function loadPacking(pid) {
-    const res = await apiFetch(`/api/packing-items?product_id=${pid}`)
-    setPackingItems(await res.json())
   }
   async function loadTokens() {
     const res = await apiFetch('/api/designer-tokens')
@@ -355,7 +347,6 @@ export default function Dashboard() {
               {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
               {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
-              {page === 'packaging' && <PackagingPage items={packingItems} product={selectedProduct} reload={() => loadPacking(selectedProduct?.id)} />}
               {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); loadParts(p.id); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
@@ -1230,93 +1221,6 @@ function OperatorPicker({ onPick, dismissable, onDismiss }) {
 }
 
 // ─── Page: Packaging ─────────────────────────────────────────
-function PackagingPage({ items, product, reload }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ name: '', supplier: '', stock: 0 })
-  const [editId, setEditId] = useState(null)
-  const [editData, setEditData] = useState({})
-
-  async function addItem() {
-    await apiFetch('/api/packing-items', { method: 'POST', body: JSON.stringify({ product_id: product.id, ...form }) })
-    setForm({ name: '', supplier: '', stock: 0 }); setShowAdd(false); reload()
-  }
-  async function updateItem(id) {
-    await apiFetch(`/api/packing-items/${id}`, { method: 'PUT', body: JSON.stringify(editData) })
-    setEditId(null); reload()
-  }
-  async function deleteItem(id) {
-    if (!confirm('確認刪除？')) return
-    await apiFetch(`/api/packing-items/${id}`, { method: 'DELETE' }); reload()
-  }
-
-  const PACKING_MOCK = [
-    { name: '彩盒 · ' + (product?.name || ''), stock: 1800, min: 500, used: 320, vendor: '盒立精緻' },
-    { name: '說明書 · ' + (product?.name || ''), stock: 120, min: 500, used: 200, vendor: '印良印刷' },
-    { name: '防塵袋 · 通用', stock: 8400, min: 1000, used: 600, vendor: '毛胚布業' },
-  ]
-
-  const displayItems = items.length > 0 ? items : PACKING_MOCK
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>包裝副件</h3>
-        <button className="btn primary" onClick={() => setShowAdd(!showAdd)} style={{ fontSize: 13 }}><Icon.Plus />新增副件</button>
-      </div>
-
-      {showAdd && (
-        <div style={{ background: 'var(--accent-tint)', border: '1px solid var(--accent-tint-hi)', borderRadius: 12, padding: '14px 16px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="副件名稱" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <input className="input" style={{ width: 120 }} placeholder="供應商" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} />
-          <input type="number" className="input num" style={{ width: 100 }} placeholder="庫存" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: +e.target.value }))} />
-          <button className="btn primary" onClick={addItem}>新增</button>
-          <button className="btn" onClick={() => setShowAdd(false)}>取消</button>
-        </div>
-      )}
-
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-2)' }}>
-              {['品項', '供應商', '庫存', '本月用量', '最低安全量', '狀態', '操作'].map(h => (
-                <th key={h} style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {displayItems.map((item, i) => {
-              const low = item.stock < (item.min || 0)
-              return (
-                <tr key={item.id || i} style={{ borderBottom: '1px solid var(--line-1)' }}>
-                  <td style={{ padding: '14px 16px', fontWeight: 500 }}>{item.name}</td>
-                  <td style={{ padding: '14px 16px', color: 'var(--text-3)' }}>{item.supplier || item.vendor || '—'}</td>
-                  <td className="num" style={{ padding: '14px 16px', fontSize: 16, fontWeight: 500, color: low ? 'var(--bad)' : 'var(--text-1)' }}>{(item.stock || 0).toLocaleString()}</td>
-                  <td className="num" style={{ padding: '14px 16px', color: 'var(--text-3)' }}>{(item.month_out || item.used || 0).toLocaleString()}</td>
-                  <td className="num" style={{ padding: '14px 16px', color: 'var(--text-4)' }}>{(item.min || 0).toLocaleString()}</td>
-                  <td style={{ padding: '14px 16px' }}>
-                    {low
-                      ? <span className="badge low"><Icon.Warn />低庫存</span>
-                      : <span className="badge done"><span className="dot" />正常</span>
-                    }
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    {item.id && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => { setEditId(item.id); setEditData({ ...item }) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--info)', fontSize: 12 }}>編輯</button>
-                        <button onClick={() => deleteItem(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>刪除</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
 // ─── Page: Settings ───────────────────────────────────────────
 function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
