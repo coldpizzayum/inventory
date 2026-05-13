@@ -37,6 +37,15 @@ router.put('/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const db = getDb()
+    await db.prepare('DELETE FROM parts WHERE product_id=?').run(req.params.id)
+    await db.prepare('DELETE FROM products WHERE id=?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.get('/:id/parts', async (req, res) => {
   try {
     const db = getDb()

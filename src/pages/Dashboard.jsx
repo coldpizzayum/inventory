@@ -1320,7 +1320,7 @@ function PackagingPage({ items, product, reload }) {
 // ─── Page: Settings ───────────────────────────────────────────
 function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
-  const [newProduct, setNewProduct] = useState({ name: '', description: '', order_qty: '', order_date: '' })
+  const [newProduct, setNewProduct] = useState({ name: '', description: '', stock: '' })
   const [allParts, setAllParts] = useState({})
   const [partInputs, setPartInputs] = useState({})   // productId → input string
   const [showPartForm, setShowPartForm] = useState({}) // productId → bool
@@ -1357,9 +1357,22 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
 
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
-    await apiFetch('/api/products', { method: 'POST', body: JSON.stringify(newProduct) })
-    setNewProduct({ name: '', description: '', order_qty: '', order_date: '' })
+    const res = await apiFetch('/api/products', { method: 'POST', body: JSON.stringify({ name: newProduct.name, description: newProduct.description }) })
+    const { id } = await res.json()
+    if (newProduct.stock) {
+      const val = Math.max(0, Number(newProduct.stock) || 0)
+      localStorage.setItem(`prod-inv-${id}`, JSON.stringify({ stock: val }))
+    }
+    setNewProduct({ name: '', description: '', stock: '' })
     setShowNewProduct(false); reload()
+  }
+
+  async function deleteProduct(p) {
+    if (!confirm(`確認刪除「${p.name}」？此操作無法復原，該產品的所有零件也會一併刪除。`)) return
+    await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' })
+    localStorage.removeItem(`prod-inv-${p.id}`)
+    localStorage.removeItem(`prod-img-${p.id}`)
+    reload()
   }
 
   async function createPart(productId) {
@@ -1396,11 +1409,15 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                   width={80} height={80} borderRadius={8}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
-                  {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
-                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
-                    訂單量 <span className="num" style={{ fontWeight: 600, color: 'var(--text-1)' }}>{p.order_qty?.toLocaleString() || '—'}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
+                    <button onClick={() => deleteProduct(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 2, flexShrink: 0 }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
+                      <Icon.X />
+                    </button>
                   </div>
+                  {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
                 </div>
               </div>
 
@@ -1477,11 +1494,10 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
               <div style={{ fontSize: 17, fontWeight: 600 }}>新增產品</div>
               <button className="btn ghost" onClick={() => setShowNewProduct(false)} style={{ padding: 6 }}><Icon.X /></button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="field" style={{ gridColumn: '1/-1' }}><label>產品名稱 *</label><input autoFocus className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createProduct()} /></div>
-              <div className="field" style={{ gridColumn: '1/-1' }}><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
-              <div className="field"><label>訂單數量</label><input type="number" className="input num" value={newProduct.order_qty} onChange={e => setNewProduct(p => ({ ...p, order_qty: e.target.value }))} /></div>
-              <div className="field"><label>訂單日期</label><input type="date" className="input" value={newProduct.order_date} onChange={e => setNewProduct(p => ({ ...p, order_date: e.target.value }))} /></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="field"><label>產品名稱 *</label><input autoFocus className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createProduct()} /></div>
+              <div className="field"><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
+              <div className="field"><label>庫存數量</label><input type="number" className="input num" value={newProduct.stock} onChange={e => setNewProduct(p => ({ ...p, stock: e.target.value }))} /></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn" onClick={() => setShowNewProduct(false)}>取消</button>
