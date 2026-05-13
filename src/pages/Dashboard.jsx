@@ -1429,26 +1429,43 @@ function BrandsPage({ products }) {
   useEffect(() => { loadBrands() }, [])
 
   async function loadBrands() {
-    const res = await apiFetch('/api/brands')
-    setBrands(await res.json())
+    try {
+      const res = await apiFetch('/api/brands')
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
+      setBrands(await res.json())
+    } catch (e) { alert('載入品牌失敗：' + e.message) }
   }
   async function createBrand() {
     if (!newName.trim()) return alert('請填寫品牌名稱')
-    await apiFetch('/api/brands', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) })
-    setNewName(''); loadBrands()
+    try {
+      const res = await apiFetch('/api/brands', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
+      setNewName(''); loadBrands()
+    } catch (e) { alert('新增品牌失敗：' + e.message) }
   }
   async function deleteBrand(id) {
     if (!confirm('確認刪除此品牌？')) return
-    await apiFetch(`/api/brands/${id}`, { method: 'DELETE' }); loadBrands()
+    try {
+      const res = await apiFetch(`/api/brands/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      loadBrands()
+    } catch (e) { alert('刪除品牌失敗：' + e.message) }
   }
   async function assignProduct(brandId) {
     const productId = assignSelects[brandId]
-    if (!productId) return
-    await apiFetch(`/api/brands/${brandId}/products`, { method: 'POST', body: JSON.stringify({ product_id: productId }) })
-    setAssignSelects(s => ({ ...s, [brandId]: '' })); loadBrands()
+    if (!productId) return alert('請先選擇產品')
+    try {
+      const res = await apiFetch(`/api/brands/${brandId}/products`, { method: 'POST', body: JSON.stringify({ product_id: productId }) })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
+      setAssignSelects(s => ({ ...s, [brandId]: '' })); loadBrands()
+    } catch (e) { alert('指派失敗：' + e.message) }
   }
   async function removeProduct(brandId, productId) {
-    await apiFetch(`/api/brands/${brandId}/products/${productId}`, { method: 'DELETE' }); loadBrands()
+    try {
+      const res = await apiFetch(`/api/brands/${brandId}/products/${productId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      loadBrands()
+    } catch (e) { alert('移除失敗：' + e.message) }
   }
 
   return (
