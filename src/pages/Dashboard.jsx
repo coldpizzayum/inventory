@@ -194,6 +194,7 @@ export default function Dashboard() {
     return []
   })
   const [showNewOrder, setShowNewOrder] = useState(false)
+  const [ordersFilter, setOrdersFilter] = useState(null)
 
   function saveOrders(next) { setOrders(next); localStorage.setItem('dicas:orders', JSON.stringify(next)) }
 
@@ -355,8 +356,11 @@ export default function Dashboard() {
               {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
               {page === 'packaging' && <PackagingPage items={packingItems} product={selectedProduct} reload={() => loadPacking(selectedProduct?.id)} />}
-              {page === 'settings'  && <SettingsPage products={products} reload={loadProducts} />}
-              {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} />}
+              {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
+                onGoToProcess={p => { setSelectedProduct(p); loadParts(p.id); setPage('process') }}
+                onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
+              />}
+              {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
               {page === 'brands'    && <BrandsPage products={products} />}
             </>
           )}
@@ -1314,9 +1318,28 @@ function PackagingPage({ items, product, reload }) {
 }
 
 // ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, reload }) {
+function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
   const [newProduct, setNewProduct] = useState({ name: '', description: '', order_qty: '', order_date: '' })
   const [newPart, setNewPart] = useState({ product_id: '', name: '' })
+  const [stockEdits, setStockEdits] = useState(() => {
+    const map = {}
+    products.forEach(p => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(`prod-inv-${p.id}`) || '{}')
+        map[p.id] = String(stored.stock ?? p.finished ?? 0)
+      } catch { map[p.id] = '0' }
+    })
+    return map
+  })
+
+  function updateStock(p) {
+    const val = Math.max(0, Number(stockEdits[p.id]) || 0)
+    try {
+      const stored = JSON.parse(localStorage.getItem(`prod-inv-${p.id}`) || '{}')
+      localStorage.setItem(`prod-inv-${p.id}`, JSON.stringify({ ...stored, stock: val }))
+      setStockEdits(s => ({ ...s, [p.id]: String(val) }))
+    } catch {}
+  }
 
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
@@ -1330,37 +1353,69 @@ function SettingsPage({ products, reload }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
-      {/* Product images */}
-      <SettingsSection title="產品圖片">
-        <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 16 }}>拖曳或點擊圖片區域上傳產品照，設計師端會以唯讀方式看到。</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 860 }}>
+      {/* Product cards */}
+      <SettingsSection title="產品管理">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-          {products.map(p => (
-            <div key={p.id} className="card" style={{ padding: 16, display: 'flex', gap: 16 }}>
-              <ProductImageUpload
-                productId={p.id}
-                brandColor={p.brand_color || '#E8461A'}
-                initials={p.initials || p.name?.slice(0, 2)}
-                width={100}
-                height={100}
-                borderRadius={10}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
-                {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
-                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 10px', marginTop: 10, alignItems: 'center', fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-3)' }}>訂單量</span>
-                  <span className="num" style={{ fontWeight: 500 }}>{p.order_qty?.toLocaleString() || '—'}</span>
-                  {p.estimated_completion && (
-                    <>
-                      <span style={{ color: 'var(--text-3)' }}>預計完成</span>
-                      <span className="num" style={{ color: 'var(--accent)', fontWeight: 500 }}>{p.estimated_completion}</span>
-                    </>
-                  )}
+          {products.map(p => {
+            const orderCount = orders.filter(o => o.productId === p.id).length
+            return (
+              <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Top: image + info */}
+                <div style={{ display: 'flex', gap: 14 }}>
+                  <ProductImageUpload
+                    productId={p.id}
+                    brandColor={p.brand_color || '#E8461A'}
+                    initials={p.initials || p.name?.slice(0, 2)}
+                    width={80} height={80} borderRadius={8}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
+                    {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
+                      訂單量 <span className="num" style={{ fontWeight: 600, color: 'var(--text-1)' }}>{p.order_qty?.toLocaleString() || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stock row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--line-1)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>庫存量</span>
+                  <input
+                    className="input num"
+                    type="number"
+                    style={{ flex: 1, padding: '5px 8px', fontSize: 14 }}
+                    value={stockEdits[p.id] ?? '0'}
+                    onChange={e => setStockEdits(s => ({ ...s, [p.id]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && updateStock(p)}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>件</span>
+                  <button className="btn" style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }} onClick={() => updateStock(p)}>更新</button>
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}
+                    onClick={() => onGoToProcess(p)}
+                  >
+                    <Icon.Flow />加工流程
+                  </button>
+                  <button
+                    className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center', position: 'relative' }}
+                    onClick={() => onGoToOrders(p.id)}
+                  >
+                    <Icon.Order />訂單
+                    {orderCount > 0 && (
+                      <span style={{ marginLeft: 4, background: 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
+                        {orderCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </SettingsSection>
 
@@ -1391,12 +1446,26 @@ function SettingsPage({ products, reload }) {
 }
 
 // ─── Page: Orders ─────────────────────────────────────────────
-function OrdersPage({ orders, saveOrders, products, showNew, setShowNew }) {
+function OrdersPage({ orders, saveOrders, products, showNew, setShowNew, filterProductId, setFilterProductId }) {
+  const filtered = filterProductId ? orders.filter(o => o.productId === filterProductId) : orders
+  const filterProduct = filterProductId ? products.find(p => p.id === filterProductId) : null
+
   return (
     <>
-      <SectionHeader title="進行中訂單" count={orders.length} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>進行中訂單</h2>
+        <span className="num" style={{ color: 'var(--text-3)', fontSize: 13 }}>· {filtered.length}</span>
+        {filterProduct && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent)', color: '#fff', borderRadius: 20, padding: '3px 10px 3px 12px', fontSize: 12, fontWeight: 500 }}>
+            {filterProduct.name}
+            <button onClick={() => setFilterProductId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: 0, display: 'grid', placeItems: 'center', opacity: 0.8 }}>
+              <Icon.X />
+            </button>
+          </span>
+        )}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {orders.map(o => {
+        {filtered.map(o => {
           const product = products.find(p => p.id === o.productId)
           if (!product) return null
           return (
@@ -1407,7 +1476,7 @@ function OrdersPage({ orders, saveOrders, products, showNew, setShowNew }) {
             />
           )
         })}
-        {orders.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: 13, gridColumn: '1/-1' }}>尚無訂單</p>}
+        {filtered.length === 0 && <p style={{ color: 'var(--text-3)', fontSize: 13, gridColumn: '1/-1' }}>尚無訂單</p>}
       </div>
       {showNew && (
         <NewOrderDrawer
