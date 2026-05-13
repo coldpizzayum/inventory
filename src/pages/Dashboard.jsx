@@ -26,7 +26,7 @@ const NAV = [
   { id: 'sku',       label: 'SKU 庫存',   icon: Icon.Stack },
   { id: 'log',       label: '進出貨登記', icon: Icon.Log },
   { id: 'packaging', label: '包裝副件',   icon: Icon.Box },
-  { id: 'settings',  label: '設定',       icon: Icon.Setting },
+  { id: 'settings',  label: '產品管理',   icon: Icon.Setting },
 ]
 
 const PAGE_TITLES = {
@@ -35,7 +35,7 @@ const PAGE_TITLES = {
   sku:       'SKU 庫存',
   log:       '進出貨登記',
   packaging: '包裝副件管理',
-  settings:  '設定',
+  settings:  '產品管理',
 }
 
 const SKU_COLORS = {
@@ -119,9 +119,23 @@ function ProductImageUpload({ productId, brandColor, initials, width, height, bo
     if (!file || !file.type.startsWith('image/')) return
     const reader = new FileReader()
     reader.onload = e => {
-      const data = e.target.result
-      localStorage.setItem(KEY, data)
-      setSrc(data)
+      const img = new Image()
+      img.onload = () => {
+        const MAX = 800
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        const data = canvas.toDataURL('image/jpeg', 0.75)
+        try {
+          localStorage.setItem(KEY, data)
+          setSrc(data)
+        } catch {
+          alert('圖片儲存失敗：瀏覽器儲存空間不足，請先清除其他產品圖片後再試。')
+        }
+      }
+      img.src = e.target.result
     }
     reader.readAsDataURL(file)
   }
@@ -706,7 +720,7 @@ function ProcessPage({ product, headerActionsSlot }) {
 
       {rows.length === 0 ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-3)' }}>
-          <p>尚無加工站資料，請前往「設定」新增零件與加工站</p>
+          <p>尚無加工站資料，請前往「產品管理」新增零件與加工站</p>
         </div>
       ) : (
         <ProcessTable rows={rows} edit={editing} productImgSrc={imgSrc} onMutate={setDraft} />
@@ -1477,8 +1491,8 @@ function EmptyState({ onAdd }) {
     <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-3)' }}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
       <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)', margin: '0 0 8px' }}>尚無產品資料</p>
-      <p style={{ fontSize: 13, margin: '0 0 20px' }}>請執行 <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: 4 }}>npm run seed</code> 或前往設定新增產品</p>
-      <button className="btn primary" onClick={onAdd}><Icon.Setting />前往設定</button>
+      <p style={{ fontSize: 13, margin: '0 0 20px' }}>請執行 <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: 4 }}>npm run seed</code> 或前往產品管理新增產品</p>
+      <button className="btn primary" onClick={onAdd}><Icon.Setting />前往產品管理</button>
     </div>
   )
 }
