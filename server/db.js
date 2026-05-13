@@ -95,6 +95,20 @@ const SQLITE_SCHEMA = `
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+  CREATE TABLE IF NOT EXISTS brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS brand_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id INTEGER NOT NULL,
+    product_id TEXT NOT NULL,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    UNIQUE(brand_id, product_id)
+  );
 `
 
 const PG_SCHEMA = `
@@ -161,6 +175,20 @@ const PG_SCHEMA = `
     label TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+  CREATE TABLE IF NOT EXISTS brands (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS brand_products (
+    id SERIAL PRIMARY KEY,
+    brand_id INTEGER NOT NULL,
+    product_id TEXT NOT NULL,
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    UNIQUE(brand_id, product_id)
   );
 `
 

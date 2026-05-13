@@ -21,24 +21,15 @@ function BBadge({ status }) {
   return <span className={`badge ${cls}`}><span className="dot" />{status || '等待中'}</span>
 }
 
-function BrandHeader({ showBack, onBack, label }) {
+function BrandHeader({ brandName }) {
   return (
-    <div style={{ padding: '16px 18px 14px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      {showBack ? (
-        <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: 'var(--text-2)', fontSize: 14, padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2L4 7l5 5"/></svg>
-          我的產品
-        </button>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src="/dicas-logo.svg" alt="DICAS" style={{ height: 18, width: 'auto', display: 'block' }} />
-          {label && (
-            <>
-              <div style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
-              <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>{label}</div>
-            </>
-          )}
-        </div>
+    <div style={{ padding: '16px 18px 14px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <img src="/dicas-logo.svg" alt="DICAS" style={{ height: 18, width: 'auto', display: 'block' }} />
+      {brandName && (
+        <>
+          <div style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
+          <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em' }}>{brandName}</div>
+        </>
       )}
     </div>
   )
@@ -46,11 +37,9 @@ function BrandHeader({ showBack, onBack, label }) {
 
 function PartRow({ part }) {
   return (
-    <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line-1)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: part.sku_progress?.length ? 10 : 0 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>{part.name}</div>
-        </div>
+    <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line-1)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: part.sku_progress?.length ? 8 : 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{part.name}</div>
         <BBadge status={part.status} />
       </div>
       {part.sku_progress?.length > 0 && (
@@ -66,8 +55,15 @@ function PartRow({ part }) {
   )
 }
 
-// ─── Single product view ──────────────────────────────────────
-function ProductView({ product, label, parts, onBack }) {
+function deriveOverallStatus(parts) {
+  if (!parts || parts.length === 0) return '等待中'
+  const indices = parts.map(p => STATUS_ORDER.indexOf(p.status || '等待中')).filter(i => i >= 0)
+  if (indices.length === 0) return '等待中'
+  return STATUS_ORDER[Math.min(...indices)] || '等待中'
+}
+
+function ProductCard({ item }) {
+  const { product, parts } = item
   const overallStatus = deriveOverallStatus(parts)
   const [imgSrc, setImgSrc] = useState(null)
 
@@ -82,68 +78,54 @@ function ProductView({ product, label, parts, onBack }) {
   const brandColor = BRAND_COLORS[product.id % BRAND_COLORS.length] || '#8B9EA8'
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' }}>
-      <BrandHeader showBack={!!onBack} onBack={onBack} label={label} />
-
+    <div style={{ background: 'var(--bg-1)', borderTop: '1px solid var(--line-1)' }}>
       {/* Product hero */}
-      <div style={{ background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)' }}>
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/10', background: brandColor, overflow: 'hidden' }}>
-          {imgSrc
-            ? <img src={imgSrc} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff', fontSize: 48, fontWeight: 600, opacity: 0.5 }}>
-                {product.name?.slice(0, 2)}
-              </div>
-          }
-        </div>
-        <div style={{ padding: '14px 18px 16px' }}>
-          <div className="tag">產品</div>
-          <h1 style={{ margin: '4px 0 0', fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em' }}>{product.name}</h1>
-          {product.description && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: 'var(--text-3)', paddingBottom: 2 }}>
-              <span>{product.description}</span>
-              {product.estimated_completion && <><span>·</span><span className="num">預計完成 {product.estimated_completion}</span></>}
+      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: brandColor, overflow: 'hidden' }}>
+        {imgSrc
+          ? <img src={imgSrc} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#fff', fontSize: 40, fontWeight: 600, opacity: 0.4 }}>
+              {product.name?.slice(0, 2)}
             </div>
+        }
+      </div>
+
+      {/* Product info */}
+      <div style={{ padding: '14px 18px 12px', borderBottom: '1px solid var(--line-1)' }}>
+        <div className="tag" style={{ marginBottom: 4 }}>產品</div>
+        <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>{product.name}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <BBadge status={overallStatus} />
+          {product.estimated_completion && (
+            <span className="num" style={{ fontSize: 12, color: 'var(--text-3)' }}>預計完成 {product.estimated_completion}</span>
           )}
         </div>
       </div>
 
-      {/* Stats row */}
-      <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      {/* Stats */}
+      <div style={{ padding: '12px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, borderBottom: '1px solid var(--line-1)' }}>
         {[
           { l: '訂單日期', v: product.order_date || '-' },
-          { l: '預計完成', v: product.estimated_completion || '待確認', accent: !!product.estimated_completion },
           { l: '零件數', v: parts.length },
         ].map((s, i) => (
-          <div key={i} style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '10px 12px' }}>
-            <div className="tag" style={{ fontSize: 9, marginBottom: 3 }}>{s.l}</div>
-            <div className="num" style={{ fontSize: 15, fontWeight: 700, color: s.accent ? 'var(--accent)' : 'var(--text-1)' }}>{s.v}</div>
+          <div key={i} style={{ background: 'var(--bg-0)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '8px 12px' }}>
+            <div className="tag" style={{ fontSize: 9, marginBottom: 2 }}>{s.l}</div>
+            <div className="num" style={{ fontSize: 14, fontWeight: 700 }}>{s.v}</div>
           </div>
         ))}
       </div>
 
-      {/* Overall status */}
-      <div style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="tag">整體狀態</div>
-        <BBadge status={overallStatus} />
-      </div>
-
-      {/* Parts list */}
-      <div style={{ flex: 1, background: 'var(--bg-1)', borderTop: '1px solid var(--line-1)', borderBottom: '1px solid var(--line-1)' }}>
-        <div style={{ padding: '10px 18px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Parts */}
+      <div style={{ paddingTop: 4 }}>
+        <div style={{ padding: '8px 18px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="tag">零件進度</div>
           <span className="num" style={{ fontSize: 11, color: 'var(--text-3)' }}>{parts.length} 項</span>
         </div>
         {parts.map(part => <PartRow key={part.id} part={part} />)}
       </div>
-
-      <div style={{ padding: '14px 18px 24px', background: 'var(--bg-0)', textAlign: 'center' }}>
-        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>此頁面為唯讀視圖 · 僅顯示被指派產品的加工狀態</p>
-      </div>
     </div>
   )
 }
 
-// ─── Main export ──────────────────────────────────────────────
 export default function Brand() {
   const { token } = useParams()
   const [data, setData] = useState(null)
@@ -184,21 +166,27 @@ export default function Brand() {
     )
   }
 
-  const { product, label, parts } = data
+  const { brand_name, products } = data
 
   return (
-    <ProductView
-      product={product}
-      label={label}
-      parts={parts || []}
-      onBack={null}
-    />
-  )
-}
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' }}>
+      <BrandHeader brandName={brand_name} />
 
-function deriveOverallStatus(parts) {
-  if (!parts || parts.length === 0) return '等待中'
-  const indices = parts.map(p => STATUS_ORDER.indexOf(p.status || '等待中')).filter(i => i >= 0)
-  if (indices.length === 0) return '等待中'
-  return STATUS_ORDER[Math.min(...indices)] || '等待中'
+      {products.length === 0 ? (
+        <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--text-4)', fontSize: 14 }}>
+          尚未指派任何產品
+        </div>
+      ) : (
+        <div style={{ flex: 1 }}>
+          {products.map((item, i) => (
+            <ProductCard key={item.product.id || i} item={item} />
+          ))}
+        </div>
+      )}
+
+      <div style={{ padding: '14px 18px 24px', background: 'var(--bg-0)', textAlign: 'center' }}>
+        <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>此頁面為唯讀視圖 · 僅顯示被指派產品的加工狀態</p>
+      </div>
+    </div>
+  )
 }

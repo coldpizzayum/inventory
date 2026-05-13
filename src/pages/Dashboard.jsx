@@ -357,7 +357,7 @@ export default function Dashboard() {
               {page === 'packaging' && <PackagingPage items={packingItems} product={selectedProduct} reload={() => loadPacking(selectedProduct?.id)} />}
               {page === 'settings'  && <SettingsPage products={products} reload={loadProducts} />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} />}
-              {page === 'brands'    && <BrandsPage products={products} tokens={tokens} reloadTokens={loadTokens} />}
+              {page === 'brands'    && <BrandsPage products={products} />}
             </>
           )}
         </div>
@@ -1421,59 +1421,106 @@ function OrdersPage({ orders, saveOrders, products, showNew, setShowNew }) {
 }
 
 // ─── Page: Brands ─────────────────────────────────────────────
-function BrandsPage({ products, tokens, reloadTokens }) {
-  const [newToken, setNewToken] = useState({ product_id: '', label: '' })
-  const [lastToken, setLastToken] = useState(null)
+function BrandsPage({ products }) {
+  const [brands, setBrands] = useState([])
+  const [newName, setNewName] = useState('')
+  const [assignSelects, setAssignSelects] = useState({}) // brandId → selected product_id
 
-  async function generateToken() {
-    if (!newToken.product_id) return alert('請選擇產品')
-    const res = await apiFetch('/api/designer-tokens', { method: 'POST', body: JSON.stringify(newToken) })
-    const data = await res.json()
-    setLastToken(`${window.location.origin}/brand/${data.token}`)
-    setNewToken({ product_id: '', label: '' }); reloadTokens()
+  useEffect(() => { loadBrands() }, [])
+
+  async function loadBrands() {
+    const res = await apiFetch('/api/brands')
+    setBrands(await res.json())
   }
-  async function deleteToken(id) {
-    if (!confirm('確認刪除此設計師連結？')) return
-    await apiFetch(`/api/designer-tokens/${id}`, { method: 'DELETE' }); reloadTokens()
+  async function createBrand() {
+    if (!newName.trim()) return alert('請填寫品牌名稱')
+    await apiFetch('/api/brands', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) })
+    setNewName(''); loadBrands()
+  }
+  async function deleteBrand(id) {
+    if (!confirm('確認刪除此品牌？')) return
+    await apiFetch(`/api/brands/${id}`, { method: 'DELETE' }); loadBrands()
+  }
+  async function assignProduct(brandId) {
+    const productId = assignSelects[brandId]
+    if (!productId) return
+    await apiFetch(`/api/brands/${brandId}/products`, { method: 'POST', body: JSON.stringify({ product_id: productId }) })
+    setAssignSelects(s => ({ ...s, [brandId]: '' })); loadBrands()
+  }
+  async function removeProduct(brandId, productId) {
+    await apiFetch(`/api/brands/${brandId}/products/${productId}`, { method: 'DELETE' }); loadBrands()
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
-      <SettingsSection title="設計師連結管理">
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-          <select className="select" style={{ flex: '0 0 160px' }} value={newToken.product_id} onChange={e => setNewToken(t => ({ ...t, product_id: e.target.value }))}>
-            <option value="">選擇產品</option>
-            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="標籤（如：設計師姓名）" value={newToken.label} onChange={e => setNewToken(t => ({ ...t, label: e.target.value }))} />
-          <button className="btn primary" onClick={generateToken}><Icon.Plus />產生連結</button>
-        </div>
-        {lastToken && (
-          <div style={{ padding: '10px 14px', background: 'var(--purple-tint)', border: '1px solid rgba(107,63,160,0.2)', borderRadius: 8, marginBottom: 12 }}>
-            <p style={{ fontSize: 11, color: 'var(--purple)', marginBottom: 4 }}>已產生連結（點擊複製）：</p>
-            <button onClick={() => { navigator.clipboard.writeText(lastToken); alert('已複製！') }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--purple)', fontFamily: 'var(--font-mono)', textAlign: 'left', wordBreak: 'break-all' }}>
-              {lastToken}
-            </button>
-          </div>
-        )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {tokens.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 8, padding: '10px 14px' }}>
-              <div>
-                <span style={{ fontWeight: 500, fontSize: 13 }}>{t.product_name}</span>
-                {t.label && <span style={{ color: 'var(--text-3)', fontSize: 12, marginLeft: 8 }}>({t.label})</span>}
-                <div style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>/brand/{t.token.slice(0, 16)}…</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/brand/${t.token}`); alert('已複製！') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--info)', fontSize: 12 }}>複製</button>
-                <button onClick={() => deleteToken(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>刪除</button>
-              </div>
-            </div>
-          ))}
-          {tokens.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無設計師連結</p>}
+      {/* Create brand */}
+      <SettingsSection title="新增品牌">
+        <div style={{ display: 'flex', gap: 10 }}>
+          <input className="input" style={{ flex: 1 }} placeholder="品牌名稱（如：Cumei）" value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && createBrand()} />
+          <button className="btn primary" onClick={createBrand}><Icon.Plus />新增</button>
         </div>
       </SettingsSection>
+
+      {/* Brand list */}
+      {brands.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無品牌，請先新增。</p>}
+      {brands.map(brand => {
+        const link = `${window.location.origin}/brand/${brand.token}`
+        const assignedIds = new Set(brand.products.map(p => p.id))
+        const unassigned = products.filter(p => !assignedIds.has(p.id))
+        return (
+          <div key={brand.id} className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Brand header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{brand.name}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={() => { navigator.clipboard.writeText(link); alert('連結已複製！') }}
+                  style={{ background: 'none', border: '1px solid var(--line-2)', borderRadius: 6, cursor: 'pointer', color: 'var(--info)', fontSize: 12, padding: '4px 10px' }}>
+                  複製連結
+                </button>
+                <button onClick={() => deleteBrand(brand.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>
+                  刪除品牌
+                </button>
+              </div>
+            </div>
+
+            {/* Assigned products */}
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
+                已指派產品 ({brand.products.length})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {brand.products.map(p => (
+                  <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 20, padding: '4px 10px 4px 12px', fontSize: 13 }}>
+                    {p.name}
+                    <button onClick={() => removeProduct(brand.id, p.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-3)', display: 'grid', placeItems: 'center', lineHeight: 1 }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+                      <Icon.X />
+                    </button>
+                  </span>
+                ))}
+                {brand.products.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-4)' }}>尚未指派任何產品</span>}
+              </div>
+            </div>
+
+            {/* Assign product */}
+            {unassigned.length > 0 && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select className="select" style={{ flex: 1 }}
+                  value={assignSelects[brand.id] || ''}
+                  onChange={e => setAssignSelects(s => ({ ...s, [brand.id]: e.target.value }))}>
+                  <option value="">選擇要指派的產品…</option>
+                  {unassigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button className="btn primary" onClick={() => assignProduct(brand.id)}><Icon.Plus />指派</button>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
