@@ -25,7 +25,7 @@ const Icon = {
 const NAV = [
   { id: 'overview',  label: '產品總覽',   icon: Icon.Dashboard },
   { id: 'process',   label: '加工流程',   icon: Icon.Flow },
-  { id: 'sku',       label: 'SKU 庫存',   icon: Icon.Stack },
+  { id: 'sku',       label: '零件管理',   icon: Icon.Stack },
   { id: 'log',       label: '進出貨登記', icon: Icon.Log },
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
@@ -35,7 +35,7 @@ const NAV = [
 const PAGE_TITLES = {
   overview:  '產品庫存儀表板',
   process:   '加工流程看板',
-  sku:       'SKU 庫存',
+  sku:       '零件管理',
   log:       '進出貨登記',
   settings:  '產品管理',
   orders:    '訂單管理',
@@ -345,11 +345,12 @@ export default function Dashboard() {
             <>
               {page === 'overview'  && <OverviewPage products={products} partsData={partsData} logs={logs} orders={orders} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} />}
               {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
-              {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} />}
+              {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} reloadParts={() => loadParts(selectedProduct?.id)} reloadLogs={() => loadLogs(selectedProduct?.id)} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
               {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); loadParts(p.id); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
+                onGoToSku={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id); setPage('sku') }}
               />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
               {page === 'brands'    && <BrandsPage products={products} />}
@@ -908,8 +909,121 @@ function StationCell({ st }) {
   )
 }
 
-// ─── Page: SKU Inventory ──────────────────────────────────────
-function SkuPage({ parts, logs, products, onSelectProduct, selectedProduct }) {
+// ─── Page: Parts Management ───────────────────────────────────
+function AddPartModal({ selectedProduct, onClose, onCreated }) {
+  const [partName, setPartName] = useState('')
+  const [colorInput, setColorInput] = useState('')
+  const [stockInput, setStockInput] = useState('')
+  const [skus, setSkus] = useState([]) // [{colorName, stock}]
+  const [saving, setSaving] = useState(false)
+
+  function addColor() {
+    const name = colorInput.trim()
+    if (!name) return
+    if (skus.find(s => s.colorName === name)) return
+    setSkus(prev => [...prev, { colorName: name, stock: Number(stockInput) || 0 }])
+    setColorInput(''); setStockInput('')
+  }
+
+  async function handleCreate() {
+    const name = partName.trim()
+    if (!name || !selectedProduct) return
+    setSaving(true)
+    try {
+      const partRes = await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify({ product_id: selectedProduct.id, name }) })
+      const { id: partId } = await partRes.json()
+      for (const sku of skus) {
+        await apiFetch(`/api/parts/${partId}/skus`, { method: 'POST', body: JSON.stringify({ color_name: sku.colorName }) })
+        if (sku.stock > 0) {
+          await apiFetch('/api/receive-logs', { method: 'POST', body: JSON.stringify({
+            product_id: selectedProduct.id, part_id: partId,
+            sku_color: sku.colorName, action_type: 'receive',
+            qty: sku.stock, defect_qty: 0, note: '初始庫存',
+          }) })
+        }
+      }
+      onCreated()
+      onClose()
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 480, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 17, fontWeight: 600 }}>新增零件</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+
+        {/* Part name */}
+        <div className="field">
+          <label>零件名稱 *</label>
+          <input autoFocus className="input" placeholder="例：外殼" value={partName}
+            onChange={e => setPartName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && document.getElementById('color-input')?.focus()} />
+        </div>
+
+        {/* Add color row */}
+        <div className="field">
+          <label>顏色 / SKU</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input id="color-input" className="input" placeholder="顏色名稱，例：鈦" style={{ flex: 2 }}
+              value={colorInput} onChange={e => setColorInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addColor()} />
+            <input className="input num" placeholder="初始庫存" style={{ flex: 1 }}
+              type="number" min="0" value={stockInput}
+              onChange={e => setStockInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addColor()} />
+            <button className="btn" style={{ flexShrink: 0 }} onClick={addColor}>
+              <Icon.Plus />
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 4 }}>
+            輸入顏色後按 + 加入，可加入多個顏色
+          </div>
+        </div>
+
+        {/* Added SKUs */}
+        {skus.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {skus.map((sku, i) => (
+              <span key={i} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'var(--bg-2)', border: '1px solid var(--line-1)',
+                borderRadius: 20, padding: '4px 10px 4px 8px', fontSize: 12,
+              }}>
+                <SkuDot name={sku.colorName} size={10} />
+                {sku.colorName}
+                {sku.stock > 0 && <span className="num" style={{ color: 'var(--text-3)', fontSize: 11 }}>· {sku.stock}</span>}
+                <button onClick={() => setSkus(prev => prev.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-4)', display: 'inline-flex', marginLeft: 2 }}>
+                  <Icon.X />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4, borderTop: '1px solid var(--line-1)' }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={handleCreate} disabled={saving || !partName.trim()}>
+            <Icon.Plus />{saving ? '新增中...' : '新增零件'}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
+function SkuPage({ parts, logs, products, onSelectProduct, selectedProduct, reloadParts, reloadLogs }) {
+  const [showAddPart, setShowAddPart] = useState(false)
+
+  async function deletePart(partId, partName) {
+    if (!confirm(`確認刪除零件「${partName}」？其所有 SKU 也會一併刪除。`)) return
+    await apiFetch(`/api/parts/${partId}`, { method: 'DELETE' })
+    reloadParts()
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Product tabs */}
@@ -925,67 +1039,146 @@ function SkuPage({ parts, logs, products, onSelectProduct, selectedProduct }) {
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {parts.map((part, i) => <SkuPartRow key={part.id} part={part} logs={logs} isFirst={i === 0} />)}
-        {parts.length === 0 && <div style={{ padding: '40px 24px', color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>尚無零件資料</div>}
+        {parts.map((part, i) => (
+          <SkuPartRow key={part.id} part={part} logs={logs} isFirst={i === 0}
+            onDelete={() => deletePart(part.id, part.name)}
+            onReload={reloadParts}
+          />
+        ))}
+        {parts.length === 0 && (
+          <div style={{ padding: '40px 24px', color: 'var(--text-3)', fontSize: 13, textAlign: 'center' }}>
+            尚無零件資料，請先新增零件
+          </div>
+        )}
       </div>
+
+      <button className="btn" style={{ fontSize: 13, alignSelf: 'flex-start' }} onClick={() => setShowAddPart(true)}>
+        <Icon.Plus />新增零件
+      </button>
+
+      {showAddPart && (
+        <AddPartModal
+          selectedProduct={selectedProduct}
+          onClose={() => setShowAddPart(false)}
+          onCreated={() => { reloadParts(); reloadLogs() }}
+        />
+      )}
     </div>
   )
 }
 
-function SkuPartRow({ part, logs, isFirst }) {
+function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
   const [open, setOpen] = useState(isFirst)
+  const [addingSku, setAddingSku] = useState(false)
+  const [newSku, setNewSku] = useState('')
+
   const skuLogs = (color_name) => logs.filter(l => l.part_id === part.id && l.sku_color === color_name)
+
+  async function createSku() {
+    const name = newSku.trim()
+    if (!name) return
+    await apiFetch(`/api/parts/${part.id}/skus`, { method: 'POST', body: JSON.stringify({ color_name: name }) })
+    setNewSku(''); setAddingSku(false); onReload()
+  }
+
+  async function deleteSku(skuId, skuName) {
+    if (!confirm(`確認刪除 SKU「${skuName}」？`)) return
+    await apiFetch(`/api/parts/${part.id}/skus/${skuId}`, { method: 'DELETE' })
+    onReload()
+  }
+
   return (
     <div style={{ borderTop: isFirst ? 'none' : '1px solid var(--line-1)' }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        width: '100%', border: 'none', background: 'transparent', textAlign: 'left',
-        padding: '18px 24px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer',
-      }}>
-        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', color: 'var(--text-3)', display: 'inline-flex' }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 2l4 4-4 4"/></svg>
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 500 }}>{part.name}</span>
-        <div style={{ display: 'flex', gap: 4 }}>{part.skus?.map(s => <SkuDot key={s.id} name={s.color_name} />)}</div>
-        <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{part.skus?.length || 0} 個 SKU</span>
-      </button>
-      {open && part.skus?.length > 0 && (
+      {/* Part header */}
+      <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => setOpen(o => !o)} style={{
+          flex: 1, border: 'none', background: 'transparent', textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', padding: 0,
+        }}>
+          <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', color: 'var(--text-3)', display: 'inline-flex', flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 2l4 4-4 4"/></svg>
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 500 }}>{part.name}</span>
+          <div style={{ display: 'flex', gap: 4 }}>{part.skus?.map(s => <SkuDot key={s.id} name={s.color_name} />)}</div>
+          <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{part.skus?.length || 0} 個 SKU</span>
+        </button>
+        <button onClick={onDelete} style={{
+          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)',
+          padding: 4, borderRadius: 4, display: 'grid', placeItems: 'center', flexShrink: 0,
+        }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
+          <Icon.X />
+        </button>
+      </div>
+
+      {/* Expanded: SKU table + add SKU */}
+      {open && (
         <div style={{ padding: '0 24px 18px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--line-1)' }}>
-                {['SKU', '進貨', '送加工', '回廠', '出貨', '不良', '估計在庫'].map(h => (
-                  <th key={h} style={{ padding: '8px 0', textAlign: h === 'SKU' ? 'left' : 'right', fontSize: 12, fontWeight: 400, color: 'var(--text-3)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {part.skus.map(sku => {
-                const sl = skuLogs(sku.color_name)
-                const receive = sl.filter(l => l.action_type === 'receive').reduce((s, l) => s + l.qty, 0)
-                const send = sl.filter(l => l.action_type === 'send').reduce((s, l) => s + l.qty, 0)
-                const ret = sl.filter(l => l.action_type === 'return').reduce((s, l) => s + l.qty, 0)
-                const ship = sl.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
-                const defect = sl.reduce((s, l) => s + (l.defect_qty || 0), 0)
-                const est = receive + ret - send - ship
-                const low = est <= 50
-                return (
-                  <tr key={sku.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
-                    <td style={{ padding: '10px 0' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <SkuDot name={sku.color_name} />{sku.color_name}
-                      </span>
-                    </td>
-                    {[receive, send, ret, ship, defect].map((v, i) => (
-                      <td key={i} className="num" style={{ padding: '10px 0', textAlign: 'right', color: [null, 'var(--accent)', 'var(--ok)', 'var(--info)', 'var(--bad)'][i] || 'inherit' }}>{v || '—'}</td>
-                    ))}
-                    <td className="num" style={{ padding: '10px 0', textAlign: 'right', fontWeight: 600, color: low ? 'var(--bad)' : 'var(--text-1)' }}>
-                      {low && <span style={{ color: 'var(--bad)', marginRight: 4 }}>●</span>}{est}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          {part.skus?.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--line-1)' }}>
+                  {['SKU', '進貨', '送加工', '回廠', '出貨', '不良', '估計在庫', ''].map((h, i) => (
+                    <th key={i} style={{ padding: '8px 0', textAlign: h === 'SKU' || h === '' ? 'left' : 'right', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', width: h === '' ? 28 : 'auto' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {part.skus.map(sku => {
+                  const sl = skuLogs(sku.color_name)
+                  const receive = sl.filter(l => l.action_type === 'receive').reduce((s, l) => s + l.qty, 0)
+                  const send = sl.filter(l => l.action_type === 'send').reduce((s, l) => s + l.qty, 0)
+                  const ret = sl.filter(l => l.action_type === 'return').reduce((s, l) => s + l.qty, 0)
+                  const ship = sl.filter(l => l.action_type === 'ship').reduce((s, l) => s + l.qty, 0)
+                  const defect = sl.reduce((s, l) => s + (l.defect_qty || 0), 0)
+                  const est = receive + ret - send - ship
+                  const low = est <= 50
+                  return (
+                    <tr key={sku.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                      <td style={{ padding: '10px 0' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <SkuDot name={sku.color_name} />{sku.color_name}
+                        </span>
+                      </td>
+                      {[receive, send, ret, ship, defect].map((v, i) => (
+                        <td key={i} className="num" style={{ padding: '10px 0', textAlign: 'right', color: [null, 'var(--accent)', 'var(--ok)', 'var(--info)', 'var(--bad)'][i] || 'inherit' }}>{v || '—'}</td>
+                      ))}
+                      <td className="num" style={{ padding: '10px 0', textAlign: 'right', fontWeight: 600, color: low ? 'var(--bad)' : 'var(--text-1)' }}>
+                        {low && <span style={{ color: 'var(--bad)', marginRight: 4 }}>●</span>}{est}
+                      </td>
+                      <td style={{ padding: '10px 0 10px 8px', textAlign: 'right' }}>
+                        <button onClick={() => deleteSku(sku.id, sku.color_name)} style={{
+                          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)',
+                          padding: 2, borderRadius: 4, display: 'inline-grid', placeItems: 'center',
+                        }}
+                          onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+                          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
+                          <Icon.X />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* Add SKU */}
+          {addingSku ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input autoFocus className="input" style={{ flex: 1, fontSize: 13 }} placeholder="顏色名稱，例：鈦"
+                value={newSku} onChange={e => setNewSku(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') createSku(); if (e.key === 'Escape') setAddingSku(false) }} />
+              <button className="btn primary" style={{ fontSize: 13 }} onClick={createSku}>新增</button>
+              <button className="btn" style={{ fontSize: 13 }} onClick={() => { setAddingSku(false); setNewSku('') }}>取消</button>
+            </div>
+          ) : (
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--info)', padding: 0 }}
+              onClick={() => setAddingSku(true)}>
+              ＋ 新增顏色
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1222,12 +1415,9 @@ function OperatorPicker({ onPick, dismissable, onDismiss }) {
 
 // ─── Page: Packaging ─────────────────────────────────────────
 // ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
+function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, onGoToSku }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
   const [newProduct, setNewProduct] = useState({ name: '', description: '', stock: '' })
-  const [allParts, setAllParts] = useState({})
-  const [partInputs, setPartInputs] = useState({})   // productId → input string
-  const [showPartForm, setShowPartForm] = useState({}) // productId → bool
   const [stockEdits, setStockEdits] = useState(() => {
     const map = {}
     products.forEach(p => {
@@ -1238,17 +1428,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     })
     return map
   })
-
-  useEffect(() => { loadAllParts() }, [products])
-
-  async function loadAllParts() {
-    const entries = await Promise.all(products.map(async p => {
-      const res = await apiFetch(`/api/products/${p.id}/parts`)
-      const parts = res.ok ? await res.json() : []
-      return [p.id, parts]
-    }))
-    setAllParts(Object.fromEntries(entries))
-  }
 
   function updateStock(p) {
     const val = Math.max(0, Number(stockEdits[p.id]) || 0)
@@ -1279,15 +1458,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     reload()
   }
 
-  async function createPart(productId) {
-    const name = (partInputs[productId] || '').trim()
-    if (!name) return
-    await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify({ product_id: productId, name }) })
-    setPartInputs(s => ({ ...s, [productId]: '' }))
-    setShowPartForm(s => ({ ...s, [productId]: false }))
-    loadAllParts()
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
       {/* Header row */}
@@ -1301,7 +1471,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
         {products.map(p => {
           const orderCount = orders.filter(o => o.productId === p.id).length
-          const parts = allParts[p.id] || []
           return (
             <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Top: image + info */}
@@ -1336,45 +1505,13 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                 <button className="btn" style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }} onClick={() => updateStock(p)}>更新</button>
               </div>
 
-              {/* Parts list */}
-              <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
-                    零件 ({parts.length})
-                  </span>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--info)', padding: 0 }}
-                    onClick={() => setShowPartForm(s => ({ ...s, [p.id]: !s[p.id] }))}>
-                    {showPartForm[p.id] ? '取消' : '＋ 新增零件'}
-                  </button>
-                </div>
-                {parts.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: showPartForm[p.id] ? 8 : 0 }}>
-                    {parts.map(pt => (
-                      <span key={pt.id} style={{ background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 20, padding: '3px 10px', fontSize: 12, color: 'var(--text-2)' }}>
-                        {pt.name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {parts.length === 0 && !showPartForm[p.id] && (
-                  <p style={{ fontSize: 12, color: 'var(--text-4)', margin: 0 }}>尚未新增零件</p>
-                )}
-                {showPartForm[p.id] && (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <input className="input" style={{ flex: 1, fontSize: 13 }} placeholder="零件名稱"
-                      autoFocus
-                      value={partInputs[p.id] || ''}
-                      onChange={e => setPartInputs(s => ({ ...s, [p.id]: e.target.value }))}
-                      onKeyDown={e => e.key === 'Enter' && createPart(p.id)} />
-                    <button className="btn primary" style={{ fontSize: 12 }} onClick={() => createPart(p.id)}>新增</button>
-                  </div>
-                )}
-              </div>
-
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
                   <Icon.Flow />加工流程
+                </button>
+                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToSku(p)}>
+                  <Icon.Stack />零件管理
                 </button>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
                   <Icon.Order />訂單
