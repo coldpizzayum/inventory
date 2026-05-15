@@ -2,13 +2,20 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 // ─── Icons ───────────────────────────────────────────────────
+const S = { viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"1.6", strokeLinecap:"round", strokeLinejoin:"round" }
 const Icon = {
-  Dashboard: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>),
-  Flow: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="19" cy="12" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M7 11l3-3M14 8l3 3M14 16l3-4M7 13l3 3"/></svg>),
-  Stack: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>),
-  Log: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>),
-  Box: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>),
-  Setting: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.4 1.9l.1.1a2 2 0 11-2.9 2.9l-.1-.1a1.7 1.7 0 00-1.9-.4 1.7 1.7 0 00-1.1 1.6V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.9-2.9l.1-.1a1.7 1.7 0 00.4-1.9 1.7 1.7 0 00-1.6-1.1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1.1 1.7 1.7 0 00-.4-1.9L4.2 6.6a2 2 0 112.9-2.9l.1.1a1.7 1.7 0 001.9.4h.1a1.7 1.7 0 001.1-1.6V3a2 2 0 114 0v.1a1.7 1.7 0 001.1 1.6 1.7 1.7 0 001.9-.4l.1-.1a2 2 0 112.9 2.9l-.1.1a1.7 1.7 0 00-.4 1.9v.1a1.7 1.7 0 001.6 1.1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.6 1.1z"/></svg>),
+  // ti-layout-dashboard
+  Dashboard: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 4h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1"/><path d="M5 16h4a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1"/><path d="M15 12h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1"/><path d="M15 4h4a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1"/></svg>),
+  // ti-arrow-guide
+  Flow: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 5m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 7l0 5a5 5 0 0 0 5 5l2 0"/><path d="M18 14l3 3l-3 3"/></svg>),
+  // ti-components
+  Stack: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12l3 3l3 -3l-3 -3z"/><path d="M15 12l3 3l3 -3l-3 -3z"/><path d="M9 6l3 3l3 -3l-3 -3z"/><path d="M9 18l3 3l3 -3l-3 -3z"/></svg>),
+  // ti-package
+  Log: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"/><path d="M12 12l8 -4.5"/><path d="M12 12l0 9"/><path d="M12 12l-8 -4.5"/><path d="M16 5.25l-8 4.5"/></svg>),
+  // generic box (used in OverviewPage section header)
+  Box: () => (<svg {...S} width="18" height="18"><path d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg>),
+  // ti-cube
+  Setting: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M21 16.008v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-7 4.008c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l7 -4.008c.619 -.355 1 -1.01 1 -1.717z"/><path d="M12 12l9 -5.25"/><path d="M12 12l0 9.5"/><path d="M12 12l-9 -5.25"/></svg>),
   Plus: () => (<svg viewBox="0 0 14 14" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>),
   Export: () => (<svg viewBox="0 0 16 16" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 11V2M5 5l3-3 3 3M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>),
   Warn: () => (<svg viewBox="0 0 14 14" fill="none" width="12" height="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7 1.5l6 11H1l6-11z"/><path d="M7 6v3M7 11h.01"/></svg>),
@@ -17,18 +24,22 @@ const Icon = {
   X: () => (<svg viewBox="0 0 14 14" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>),
   Grip: () => (<svg width="10" height="14" viewBox="0 0 14 14" fill="#B0ADA6"><circle cx="5" cy="3" r="1.1"/><circle cx="9" cy="3" r="1.1"/><circle cx="5" cy="7" r="1.1"/><circle cx="9" cy="7" r="1.1"/><circle cx="5" cy="11" r="1.1"/><circle cx="9" cy="11" r="1.1"/></svg>),
   Check: () => (<svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>),
-  Photo: () => (<svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
-  Order: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>),
-  Brand: () => (<svg viewBox="0 0 24 24" fill="none" width="18" height="18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>),
+  Photo: () => (<svg {...S} width="16" height="16"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
+  // ti-clipboard-list
+  Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
+  // ti-palette
+  Brand: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/><path d="M8.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M16.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>),
 }
 
 const NAV = [
-  { id: 'overview',  label: '生產看板',   icon: Icon.Dashboard },
-  { id: 'process',   label: '加工流程',   icon: Icon.Flow },
-  { id: 'sku',       label: '零件管理',   icon: Icon.Stack },
-  { id: 'log',       label: '進出貨登記', icon: Icon.Log },
-  { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
+  { id: 'overview',  label: '生產看板',     icon: Icon.Dashboard },
+  { id: 'process',   label: '加工流程',     icon: Icon.Flow },
+  { id: 'log',       label: '進出貨登記',   icon: Icon.Log },
+  null,
   { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
+  { id: 'sku',       label: '零件管理',     icon: Icon.Stack },
+  null,
+  { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
 ]
 
@@ -277,18 +288,21 @@ export default function Dashboard() {
         </button>
 
         {/* Nav items */}
-        {NAV.map(n => (
-          <button
-            key={n.id}
-            className={`nav-item ${page === n.id ? 'active' : ''}`}
-            onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens() }}
-            title={collapsed ? n.label : undefined}
-            style={collapsed ? { justifyContent: 'center' } : undefined}
-          >
-            <span className="ic"><n.icon /></span>
-            {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{n.label}</span>}
-          </button>
-        ))}
+        {NAV.map((n, i) => n === null
+          ? <div key={`div-${i}`} style={{ height: '0.5px', background: '#EBEBEB', margin: '6px 4px' }} />
+          : (
+            <button
+              key={n.id}
+              className={`nav-item ${page === n.id ? 'active' : ''}`}
+              onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens() }}
+              title={collapsed ? n.label : undefined}
+              style={collapsed ? { justifyContent: 'center', marginBottom: 2 } : undefined}
+            >
+              <span className="ic"><n.icon /></span>
+              {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}>{n.label}</span>}
+            </button>
+          )
+        )}
 
         {/* User */}
         <div style={{
