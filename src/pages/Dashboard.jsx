@@ -29,6 +29,10 @@ const Icon = {
   Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
   // ti-palette
   Brand: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/><path d="M8.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M16.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>),
+  // ti-settings (gear)
+  Gear: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>),
+  // ti-logout
+  Logout: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>),
 }
 
 const NAV = [
@@ -182,6 +186,23 @@ function ProductImageUpload({ productId, brandColor, initials, width, height, bo
   )
 }
 
+function UserIconBtn({ onClick, title, hoverColor = '#1A1A1A', children }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <button onClick={onClick} title={title}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{
+        width: 28, height: 28, borderRadius: 6, border: 'none', padding: 0,
+        background: hov ? '#EBEBEB' : 'transparent',
+        color: hov ? hoverColor : '#888',
+        cursor: 'pointer', display: 'grid', placeItems: 'center',
+        flexShrink: 0, transition: 'background .12s, color .12s',
+      }}>
+      {children}
+    </button>
+  )
+}
+
 // ─── Dashboard shell ──────────────────────────────────────────
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -304,25 +325,25 @@ export default function Dashboard() {
           )
         )}
 
-        {/* User */}
+        {/* User block */}
         <div style={{
           marginTop: 'auto', borderTop: '1px solid var(--line-1)',
-          display: 'flex', alignItems: 'center', gap: 10, padding: '14px 8px',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 10px',
+          justifyContent: collapsed ? 'center' : 'flex-start',
         }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 999,
-            background: 'var(--bg-3)', display: 'grid', placeItems: 'center',
-            fontSize: 13, fontWeight: 600, color: 'var(--text-2)', flexShrink: 0,
-          }}>老</div>
           {!collapsed && (
-            <>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>老闆</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>明智工業</div>
-              </div>
-              <button className="btn ghost" onClick={logout} style={{ padding: '4px 8px', fontSize: 12 }}>登出</button>
-            </>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#1A1A1A', whiteSpace: 'nowrap', overflow: 'hidden' }}>益成金屬</div>
+              <div style={{ fontSize: 11, color: '#888' }}>管理後台</div>
+            </div>
           )}
+          <UserIconBtn onClick={() => setPage('settings')} title="產品管理">
+            <Icon.Gear />
+          </UserIconBtn>
+          <UserIconBtn onClick={logout} title="登出" hoverColor="#E8461A">
+            <Icon.Logout />
+          </UserIconBtn>
         </div>
       </aside>
 
