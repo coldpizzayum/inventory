@@ -23,7 +23,7 @@ const Icon = {
 }
 
 const NAV = [
-  { id: 'overview',  label: '產品總覽',   icon: Icon.Dashboard },
+  { id: 'overview',  label: '生產看板',   icon: Icon.Dashboard },
   { id: 'process',   label: '加工流程',   icon: Icon.Flow },
   { id: 'sku',       label: '零件管理',   icon: Icon.Stack },
   { id: 'log',       label: '進出貨登記', icon: Icon.Log },
@@ -33,7 +33,7 @@ const NAV = [
 ]
 
 const PAGE_TITLES = {
-  overview:  '產品庫存儀表板',
+  overview:  '生產看板',
   process:   '加工流程看板',
   sku:       '零件管理',
   log:       '進出貨登記',
