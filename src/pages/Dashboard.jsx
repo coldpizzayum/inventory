@@ -343,7 +343,12 @@ export default function Dashboard() {
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
-              {page === 'overview'  && <OverviewPage products={products} partsData={partsData} logs={logs} orders={orders} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} />}
+              {page === 'overview'  && <OverviewPage products={products} logs={logs} orders={orders}
+                onGoToProcess={p => { if (p) { setSelectedProduct(p); loadParts(p.id) } setPage('process') }}
+                onGoToParts={p => { if (p) { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) } setPage('sku') }}
+                onGoToLog={() => setPage('log')}
+                onGoToBrands={() => { loadTokens(); setPage('brands') }}
+              />}
               {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
               {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} reloadParts={() => loadParts(selectedProduct?.id)} reloadLogs={() => loadLogs(selectedProduct?.id)} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
@@ -363,81 +368,199 @@ export default function Dashboard() {
 }
 
 // ─── Page: Overview ───────────────────────────────────────────
-function OverviewPage({ products, partsData, logs, orders, selectedProduct, onSelectProduct }) {
-  const stockCards = products.map(p => {
-    const key = `prod-inv-${p.id}`
-    const stored = (() => { try { return JSON.parse(localStorage.getItem(key) || '{}') } catch { return {} } })()
-    return {
-      ...p,
-      stock: stored.stock ?? p.finished ?? 0,
-      inTransit: stored.inTransit ?? 0,
-      demand: stored.demand ?? p.order_qty ?? 0,
-    }
-  })
-
+// ─── Overview sub-components ──────────────────────────────────
+function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink }) {
   return (
-    <>
-      <SectionHeader title="產品庫存" count={products.length} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {stockCards.map(p => <StockCard key={p.id} p={p} orders={orders.filter(o => o.productId === p.id)} />)}
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 26, height: 26, borderRadius: 6, background: '#FEE9E4', display: 'grid', placeItems: 'center', color: '#E8461A', flexShrink: 0 }}>
+          <IconComp />
+        </div>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{count}</span>
       </div>
-    </>
-  )
-}
-
-function SectionHeader({ title, count, onAction }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{title}</h2>
-        <span className="num" style={{ color: 'var(--text-3)', fontSize: 13 }}>· {count}</span>
-      </div>
-      {onAction}
+      <button onClick={onLink} style={{
+        background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)',
+        padding: 0, fontFamily: 'inherit',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
+        {linkLabel} →
+      </button>
     </div>
   )
 }
 
-function StockCard({ p, orders }) {
-  const stateMap = {
-    wait: 'wait', process: 'process', back: 'back', done: 'done',
-    packaging: 'pack',
-  }
-  const state = stateMap[p.status] || 'process'
-  const skus = (p.skus || []).slice(0, 5)
+function ProductOverviewCard({ product, orders, onClick }) {
+  const [imgSrc, setImgSrc] = useState(null)
+  useEffect(() => {
+    const stored = localStorage.getItem(`prod-img-${product.id}`)
+    if (stored) setImgSrc(stored)
+  }, [product.id])
+
+  const totalQty = orders.reduce((s, o) => s + (o.qty || 0), 0)
+  const totalAlloc = orders.reduce((s, o) => s + (o.alloc || 0), 0)
+  const pct = totalQty > 0 ? Math.round((totalAlloc / totalQty) * 100) : 0
+
+  const status = pct >= 100 ? { label: '完成', color: '#1A7A3C' }
+    : pct >= 80 ? { label: '包裝中', color: '#B07D00' }
+    : { label: '加工中', color: '#E8461A' }
+  const barColor = pct >= 80 ? '#1A7A3C' : '#E8461A'
+
   return (
-    <div style={{
-      background: '#fff', borderRadius: 12,
-      border: '0.5px solid #EBEBEB', boxShadow: 'var(--shadow-1)',
-      display: 'flex', overflow: 'hidden', minHeight: 132,
-    }}>
-      <ProductImageUpload
-        productId={p.id}
-        brandColor={p.brand_color || '#E8461A'}
-        initials={p.initials || p.name?.slice(0, 2)}
-        width={72}
-      />
-      <div style={{ flex: 1, minWidth: 0, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{p.name}</div>
+    <div onClick={onClick} style={{
+      background: '#fff', borderRadius: 10, border: '0.5px solid #EBEBEB',
+      overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.15s',
+    }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = '#E8461A'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = '#EBEBEB'}>
+      <div style={{ height: 60, background: '#F5F4F0', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+        {imgSrc
+          ? <img src={imgSrc} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#C8C6C0" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/>
+            </svg>
+        }
+      </div>
+      <div style={{ padding: '8px 10px 10px' }}>
+        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+          <span style={{ width: 5, height: 5, borderRadius: 999, background: status.color, display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: status.color, fontWeight: 500 }}>{status.label}</span>
+        </div>
+        <div style={{ height: 3, background: '#EBEBEB', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: barColor, borderRadius: 2, transition: 'width 0.3s' }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OrderRow({ order, product }) {
+  const pct = order.qty > 0 ? Math.round((order.alloc / order.qty) * 100) : 0
+  const [badgeBg, badgeColor] =
+    pct >= 100 ? ['#E6F4EC', '#1A7A3C'] :
+    pct >= 80  ? ['#FEF3CD', '#B07D00'] :
+    pct >= 30  ? ['#FEE9E4', '#E8461A'] :
+                 ['#E6F0FB', '#1A5FAD']
+  return (
+    <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
+      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
+      onMouseLeave={e => e.currentTarget.style.background = '#F8F8F6'}>
+      <div style={{ width: 64, fontSize: 12, fontWeight: 500, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {product?.name || '—'}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ height: 4, background: '#E8E6E0', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
+          <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: badgeColor, borderRadius: 2 }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span className="num" style={{ fontSize: 10, color: 'var(--text-3)' }}>{(order.alloc || 0).toLocaleString()} / {(order.qty || 0).toLocaleString()}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-4)' }}>預計 {order.due}</span>
+        </div>
+      </div>
+      <div style={{ flexShrink: 0, background: badgeBg, color: badgeColor, fontSize: 11, fontWeight: 600, padding: '3px 7px', borderRadius: 5, fontFamily: 'var(--font-mono)' }}>
+        {pct}%
+      </div>
+    </div>
+  )
+}
+
+function BrandRow({ brand, products }) {
+  const assignedNames = (brand.products || []).map(p => p.name).join('、') || '—'
+  const initials = brand.name?.slice(0, 1) || '?'
+  return (
+    <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
+      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
+      onMouseLeave={e => e.currentTarget.style.background = '#F8F8F6'}>
+      <div style={{ width: 28, height: 28, borderRadius: 999, background: '#E8461A', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+        {initials}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 500 }}>{brand.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignedNames}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <span style={{ width: 5, height: 5, borderRadius: 999, background: '#1A7A3C', display: 'inline-block' }} />
+        <span style={{ fontSize: 11, color: '#1A7A3C', fontWeight: 500 }}>正常</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page: Overview ───────────────────────────────────────────
+function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands }) {
+  const [brands, setBrands] = useState([])
+  const [brandsLoading, setBrandsLoading] = useState(true)
+
+  useEffect(() => {
+    apiFetch('/api/brands').then(r => r.json()).then(d => setBrands(d)).catch(() => {}).finally(() => setBrandsLoading(false))
+  }, [])
+
+  const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {/* Sub-header */}
+      <div>
+        <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>生產看板</div>
+        <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 3 }}>{today} · 明智工業</div>
+      </div>
+
+      {/* Section 1: Products */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 26, height: 26, borderRadius: 6, background: '#FEE9E4', display: 'grid', placeItems: 'center', color: '#E8461A', flexShrink: 0 }}>
+              <Icon.Box />
+            </div>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>產品總覽</span>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{products.length} 項</span>
           </div>
-          <Badge state={state} />
+          <div style={{ display: 'flex', gap: 20 }}>
+            {[['加工流程', () => onGoToProcess(null)], ['零件管理', () => onGoToParts(null)]].map(([label, fn]) => (
+              <button key={label} onClick={fn} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)', padding: 0, fontFamily: 'inherit' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
+                {label} →
+              </button>
+            ))}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-          <span className="num" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1 }}>{(p.finished || 0).toLocaleString()}</span>
-          <span style={{ fontSize: 12, color: '#888' }}>件</span>
-        </div>
-        <div style={{ fontSize: 10, color: '#888' }}>
-          訂單需求 <span className="num" style={{ color: '#4A4A4A', fontWeight: 500 }}>{(p.order_qty || 0).toLocaleString()}</span> 件
-          {orders.length > 0 && (
-            <>
-              <span style={{ margin: '0 4px', color: '#D8D6D0' }}>·</span>
-              <span style={{ fontWeight: 500, color: '#4A4A4A' }}>{orders.length} 張訂單</span>
-            </>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          {products.map(p => (
+            <ProductOverviewCard key={p.id} product={p} orders={orders.filter(o => o.productId === p.id)} onClick={() => onGoToProcess(p)} />
+          ))}
+          {products.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', padding: '40px 0', color: 'var(--text-4)', fontSize: 13, textAlign: 'center' }}>尚無產品</div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 'auto', paddingTop: 6 }}>
-          {skus.map(s => <SkuDot key={s.id || s.color_name} name={s.color_name || s} size={10} />)}
+      </div>
+
+      {/* Section 2 + 3 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+        {/* Orders */}
+        <div>
+          <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} linkLabel="進出貨登記" onLink={onGoToLog} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {orders.length === 0
+              ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無訂單</div>
+              : orders.map(o => <OrderRow key={o.id} order={o} product={products.find(p => p.id === o.productId)} />)
+            }
+          </div>
+        </div>
+
+        {/* Brands */}
+        <div>
+          <OvSectionHead icon={Icon.Brand} title="品牌總覽" count={`${brands.length} 個`} linkLabel="設計師管理" onLink={onGoToBrands} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {brandsLoading
+              ? [1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F0EFE8' }} />)
+              : brands.length === 0
+                ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無品牌</div>
+                : brands.map(b => <BrandRow key={b.id} brand={b} products={products} />)
+            }
+          </div>
         </div>
       </div>
     </div>
