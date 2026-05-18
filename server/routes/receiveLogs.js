@@ -8,20 +8,24 @@ router.get('/', async (req, res) => {
     const db = getDb()
     const { product_id, date, part_id, limit: limitParam } = req.query
 
-    // Use range filter for cross-DB date compatibility (avoids DATE() dialect issues)
     let sql = `
-      SELECT r.*, p.name as product_name, pt.name as part_name
+      SELECT r.*,
+        w.name  as worker_name,
+        p.name  as product_name,
+        pt.name as part_name,
+        ps.factory_name || ' · ' || ps.action_name as stage_name
       FROM receive_logs r
-      LEFT JOIN products p  ON p.id  = r.product_id
-      LEFT JOIN parts    pt ON pt.id = r.part_id
+      LEFT JOIN workers         w  ON w.id  = r.worker_id
+      LEFT JOIN products        p  ON p.id  = r.product_id
+      LEFT JOIN parts           pt ON pt.id = r.part_id
+      LEFT JOIN process_stages  ps ON ps.id = r.stage_id
       WHERE 1=1
     `
     const params = []
 
-    if (product_id) { sql += ' AND r.product_id=?';  params.push(product_id) }
-    if (part_id)    { sql += ' AND r.part_id=?';      params.push(part_id) }
+    if (product_id) { sql += ' AND r.product_id=?'; params.push(product_id) }
+    if (part_id)    { sql += ' AND r.part_id=?';    params.push(part_id) }
     if (date) {
-      // date = 'YYYY-MM-DD' → filter logged_at in that day
       sql += ' AND r.logged_at >= ? AND r.logged_at < ?'
       params.push(`${date} 00:00:00`, `${date} 23:59:59`)
     }
@@ -37,56 +41,172 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const db = getDb()
-    const { product_id, part_id, sku_color, action_type, qty, defect_qty, note } = req.body
+    const { product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id } = req.body
     if (!action_type || qty === undefined) return res.status(400).json({ error: '缺少必要欄位' })
 
-    const id = await db.transaction(async (txDb) => {
-      const result = await txDb.prepare(
-        'INSERT INTO receive_logs (product_id, part_id, sku_color, action_type, qty, defect_qty, note) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(product_id || null, part_id || null, sku_color || '', action_type, qty, defect_qty || 0, note || '')
+    const dq = Math.max(0, defect_qty || 0)
+    const net = qty - dq
 
-      if (part_id) {
-        const stages = await txDb.prepare(
-          'SELECT * FROM process_stages WHERE part_id=? ORDER BY sort_order'
-        ).all(part_id)
+    const id = await db.transaction(async (tx) => {
+      const result = await tx.prepare(
+        'INSERT INTO receive_logs (product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(product_id || null, part_id || null, stage_id || null, sku_color || '', action_type, qty, dq, note || '', worker_id || null)
 
-        if (stages.length > 0) {
-          const stage = stages[0]
+      const logId = result.lastInsertRowid
 
-          if (action_type === 'receive') {
-            await txDb.prepare(
-              'UPDATE process_stages SET current_stock=current_stock+? WHERE id=?'
-            ).run(qty, stage.id)
+      if (action_type === 'receive') {
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?'
+        ).run(net, dq, dq, part_id)
 
-          } else if (action_type === 'send') {
-            // CASE WHEN avoids MAX(0,x) which is SQLite-only syntax
-            await txDb.prepare(
-              'UPDATE process_stages SET current_stock=CASE WHEN current_stock>=? THEN current_stock-? ELSE 0 END, total_sent=total_sent+? WHERE id=?'
-            ).run(qty, qty, qty, stage.id)
-            if (defect_qty) await txDb.prepare(
-              'UPDATE process_stages SET total_defect=total_defect+? WHERE id=?'
-            ).run(defect_qty, stage.id)
-
-          } else if (action_type === 'return') {
-            await txDb.prepare(
-              'UPDATE process_stages SET current_stock=current_stock+?, total_returned=total_returned+? WHERE id=?'
-            ).run(qty, qty, stage.id)
-            if (defect_qty) await txDb.prepare(
-              'UPDATE process_stages SET total_defect=total_defect+? WHERE id=?'
-            ).run(defect_qty, stage.id)
-
-          } else if (action_type === 'ship') {
-            await txDb.prepare(
-              'UPDATE process_stages SET current_stock=CASE WHEN current_stock>=? THEN current_stock-? ELSE 0 END WHERE id=?'
-            ).run(qty, qty, stage.id)
-          }
+        if (dq > 0) {
+          await tx.prepare(
+            'INSERT INTO defect_logs (product_id, part_id, stage_id, sku_color, qty, status, source, receive_log_id) VALUES (?, ?, NULL, ?, ?, \'pending\', \'incoming\', ?)'
+          ).run(product_id || null, part_id, sku_color || '', dq, logId)
         }
+
+      } else if (action_type === 'send') {
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?'
+        ).run(qty, qty, part_id)
+
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?'
+          ).run(qty, qty, stage_id)
+        }
+
+      } else if (action_type === 'ship') {
+        // Finished goods out to customer — deduct from warehouse
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?'
+        ).run(qty, qty, part_id)
+
+      } else if (action_type === 'return') {
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_returned=total_returned+?, total_defect=total_defect+? WHERE id=?'
+          ).run(qty, qty, qty, dq, stage_id)
+        }
+
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?'
+        ).run(net, dq, dq, part_id)
+
+        if (dq > 0) {
+          await tx.prepare(
+            'INSERT INTO defect_logs (product_id, part_id, stage_id, sku_color, qty, status, source, receive_log_id) VALUES (?, ?, ?, ?, ?, \'pending\', \'return\', ?)'
+          ).run(product_id || null, part_id, stage_id || null, sku_color || '', dq, logId)
+        }
+
+      } else if (action_type === 'rework') {
+        await tx.prepare(
+          'UPDATE parts SET defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END WHERE id=?'
+        ).run(qty, qty, part_id)
+
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?'
+          ).run(qty, qty, stage_id)
+
+          await tx.prepare(`
+            UPDATE defect_logs SET status='reworking'
+            WHERE id IN (
+              SELECT id FROM defect_logs
+              WHERE part_id=? AND status='pending'
+              ORDER BY created_at ASC LIMIT ?
+            )
+          `).run(part_id, qty)
+        }
+
+      } else if (action_type === 'scrap') {
+        await tx.prepare(
+          'UPDATE parts SET defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_scrapped=total_scrapped+? WHERE id=?'
+        ).run(qty, qty, qty, part_id)
+
+        await tx.prepare(`
+          UPDATE defect_logs SET status='scrapped'
+          WHERE id IN (
+            SELECT id FROM defect_logs
+            WHERE part_id=? AND status='pending'
+            ORDER BY created_at ASC LIMIT ?
+          )
+        `).run(part_id, qty)
       }
 
-      return result.lastInsertRowid
+      return logId
     })
 
     res.status(201).json({ id })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.patch('/:id', async (req, res) => {
+  try {
+    const db = getDb()
+    const { note } = req.body
+    await db.prepare('UPDATE receive_logs SET note=? WHERE id=?').run(note ?? '', req.params.id)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const db = getDb()
+    const log = await db.prepare('SELECT * FROM receive_logs WHERE id=?').get(req.params.id)
+    if (!log) return res.status(404).json({ error: '找不到紀錄' })
+
+    await db.transaction(async (tx) => {
+      const { action_type, part_id, stage_id, qty, defect_qty, id } = log
+      const dq = defect_qty || 0
+      const net = qty - dq
+
+      if (action_type === 'receive') {
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
+        ).run(net, net, dq, dq, dq, dq, part_id)
+        await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
+
+      } else if (action_type === 'send') {
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(qty, part_id)
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?'
+          ).run(qty, qty, qty, qty, stage_id)
+        }
+
+      } else if (action_type === 'ship') {
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(qty, part_id)
+
+      } else if (action_type === 'return') {
+        await tx.prepare(
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
+        ).run(net, net, dq, dq, dq, dq, part_id)
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
+          ).run(qty, qty, qty, dq, dq, stage_id)
+        }
+        await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
+
+      } else if (action_type === 'rework') {
+        await tx.prepare('UPDATE parts SET defect_stock=defect_stock+? WHERE id=?').run(qty, part_id)
+        if (stage_id) {
+          await tx.prepare(
+            'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?'
+          ).run(qty, qty, qty, qty, stage_id)
+        }
+
+      } else if (action_type === 'scrap') {
+        await tx.prepare(
+          'UPDATE parts SET defect_stock=defect_stock+?, total_scrapped=CASE WHEN total_scrapped>=? THEN total_scrapped-? ELSE 0 END WHERE id=?'
+        ).run(qty, qty, qty, part_id)
+      }
+
+      await tx.prepare('DELETE FROM receive_logs WHERE id=?').run(id)
+    })
+
+    res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 

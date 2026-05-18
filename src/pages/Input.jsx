@@ -1,300 +1,116 @@
 import { useState, useEffect } from 'react'
 
-const OPERATOR_KEY = 'dicas:operator'
-function loadOperator() {
-  try { return localStorage.getItem(OPERATOR_KEY) || null } catch { return null }
-}
-function saveOperator(name) {
-  try { localStorage.setItem(OPERATOR_KEY, name) } catch {}
-}
-
-const OPERATORS = [
-  { name: '阿明', role: '現場主管' },
-  { name: '小芳', role: '倉務' },
-  { name: '阿勗', role: '倉務' },
-  { name: '小林', role: '品管' },
-]
-
-function darken(hex, amt = 0.88) {
-  const n = parseInt(hex.slice(1), 16)
-  const r = Math.max(0, Math.floor(((n >> 16) & 255) * amt))
-  const g = Math.max(0, Math.floor(((n >> 8) & 255) * amt))
-  const b = Math.max(0, Math.floor((n & 255) * amt))
-  return `rgb(${r},${g},${b})`
+// ─── Shared logic (mirrored in Dashboard) ─────────────────────
+export const ACTION_LABEL = {
+  receive: '進貨（原料）',
+  return:  '進貨（回廠）',
+  send:    '出貨（送加工）',
+  ship:    '出貨（大貨）',
+  rework:  '重工',
+  scrap:   '報廢',
 }
 
-const WORKER_ACTIONS = [
-  {
-    key: '進貨', apiKey: 'receive',
-    sub: '從加工廠收料入庫', color: '#2E7D32',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 21l-8 -4.5v-9l8 -4.5l8 4.5v4.5" />
-        <path d="M12 12l8 -4.5M12 12v9M12 12l-8 -4.5M22 18h-7M18 15l-3 3l3 3" />
-      </svg>
-    ),
-  },
-  {
-    key: '送出加工', apiKey: 'send',
-    sub: '出貨給加工廠加工', color: '#1565C0',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
-        <path d="M5 17h-2v-11a1 1 0 0 1 1 -1h9v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" />
-      </svg>
-    ),
-  },
-  {
-    key: '回廠', apiKey: 'return',
-    sub: '加工完成回到工廠', color: '#E64A19',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 21l-8 -4.5v-9l8 -4.5l8 4.5v4.5" />
-        <path d="M12 12l8 -4.5M12 12v9M12 12l-8 -4.5M15 18h7M19 15l3 3l-3 3" />
-      </svg>
-    ),
-  },
-  {
-    key: '大貨出貨', apiKey: 'ship',
-    sub: '成品出給品牌客戶', color: '#6A1B9A',
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 20a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1" />
-        <path d="M4 18l-1.5 -5h19l-2 4M5 13v-6h8l4 6M7 7v-4h-1" />
-      </svg>
-    ),
-  },
-]
-
-function actionMeta(key) {
-  return WORKER_ACTIONS.find(a => a.key === key) || WORKER_ACTIONS[0]
+export function resolveActionType(direction, source) {
+  if (direction === 'in') return source === 'raw' ? 'receive' : 'return'
+  return source === 'ship' ? 'ship' : 'send'
 }
 
-// ─── Step indicator ───────────────────────────────────────────
-function StepBar({ step }) {
-  const labels = ['選動作', '選零件', '輸入數量']
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)' }}>
-      {labels.map((l, i) => {
-        const done = i + 1 < step, active = i + 1 === step
-        return (
-          <>
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: 14, display: 'grid', placeItems: 'center',
-                fontWeight: 700, fontSize: 13,
-                background: done ? 'var(--ok)' : active ? 'var(--accent)' : 'transparent',
-                color: done || active ? '#fff' : 'var(--text-4)',
-                border: `1.5px solid ${done ? 'var(--ok)' : active ? 'var(--accent)' : 'var(--line-2)'}`,
-              }}>
-                {done
-                  ? <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7l3 3 5-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  : i + 1}
-              </div>
-              <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: active ? 'var(--text-1)' : 'var(--text-4)' }}>{l}</span>
-            </div>
-            {i < 2 && <div style={{ flex: 1, height: 1, background: done ? 'var(--ok)' : 'var(--line-1)' }} />}
-          </>
-        )
-      })}
-    </div>
-  )
+export function resolveStageId(stages, source, actionType) {
+  if (!source || actionType === 'receive' || actionType === 'ship') return null
+  const byFactory = stages.filter(s => s.factory_name === source)
+  if (actionType === 'return') {
+    return byFactory.find(s => (s.in_transit || 0) > 0)?.id ?? null
+  }
+  if (actionType === 'send') {
+    return [...byFactory].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))[0]?.id ?? null
+  }
+  return null
 }
 
-// ─── Color-band action card ───────────────────────────────────
-function ActionCard({ action, selected, onPick }) {
-  const [hover, setHover] = useState(false)
-  return (
-    <button
-      onClick={() => onPick(action.key)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        padding: 0, background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 12,
-        cursor: 'pointer', overflow: 'hidden', textAlign: 'left',
-        display: 'flex', flexDirection: 'column',
-        transform: hover ? 'scale(1.01)' : 'scale(1)',
-        transition: 'transform .12s ease',
-        fontFamily: 'inherit',
-      }}
-    >
-      <div style={{
-        height: 72, background: hover ? darken(action.color) : action.color,
-        color: '#fff', display: 'grid', placeItems: 'center',
-        position: 'relative', transition: 'background .12s',
-      }}>
-        {action.icon}
-        {selected && (
-          <div style={{
-            position: 'absolute', top: 8, right: 8,
-            width: 22, height: 22, borderRadius: 11,
-            background: '#fff', color: action.color,
-            display: 'grid', placeItems: 'center',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
-          }}>
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path d="M3 7l3 3 5-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-        )}
-      </div>
-      <div style={{ padding: 14 }}>
-        <div style={{ fontSize: 16, fontWeight: 500, color: '#1A1A1A', letterSpacing: '-0.005em' }}>{action.key}</div>
-        <div style={{ fontSize: 12, color: '#888', marginTop: 3 }}>{action.sub}</div>
-      </div>
-    </button>
-  )
+function uniqueFactories(stages) {
+  const seen = new Set()
+  const out = []
+  for (const s of stages) {
+    if (!seen.has(s.factory_name)) { seen.add(s.factory_name); out.push(s.factory_name) }
+  }
+  return out
 }
 
-// ─── Step 1 ───────────────────────────────────────────────────
-function StepAction({ value, onPick }) {
-  return (
-    <div style={{ padding: 20 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, fontWeight: 500 }}>選擇要登記的動作</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {WORKER_ACTIONS.map(a => (
-          <ActionCard key={a.key} action={a} selected={value === a.key} onPick={onPick} />
-        ))}
-      </div>
-    </div>
-  )
-}
+// ─── Icons ────────────────────────────────────────────────────
+const IcoIn = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 21l-8-4.5v-9l8-4.5l8 4.5v4.5"/><path d="M12 12l8-4.5M12 12v9M12 12l-8-4.5M22 18h-7M18 15l-3 3 3 3"/>
+  </svg>
+)
+const IcoOut = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>
+    <path d="M5 17h-2v-11a1 1 0 0 1 1-1h9v12m-4 0h6m4 0h2v-6h-8m0-5h5l3 5"/>
+  </svg>
+)
+const IcoRefresh = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+  </svg>
+)
+const IcoTrash = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+  </svg>
+)
+const IcoCheck = () => (
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+    <path d="M3 7l3 3 5-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
 
-// ─── Pill button ──────────────────────────────────────────────
-function Pill({ active, onClick, color = 'var(--accent)', children, big }) {
+// ─── Pill ─────────────────────────────────────────────────────
+function Pill({ active, onClick, color, children, big }) {
   return (
     <button onClick={onClick} style={{
-      border: `1.5px solid ${active ? color : 'var(--line-2)'}`,
-      background: active ? color : 'var(--bg-1)',
-      color: active ? '#fff' : 'var(--text-1)',
-      padding: big ? '14px 20px' : '10px 16px',
-      borderRadius: 999,
-      cursor: 'pointer',
-      fontSize: big ? 17 : 15,
-      fontWeight: active ? 600 : 500,
-      display: 'inline-flex', alignItems: 'center', gap: 10,
-      transition: 'all .12s',
-      fontFamily: 'inherit',
+      border: `1.5px solid ${active ? color : '#E8E6E0'}`,
+      background: active ? color : '#fff',
+      color: active ? '#fff' : '#1A1A1A',
+      padding: big ? '13px 18px' : '9px 14px',
+      borderRadius: 999, cursor: 'pointer',
+      fontSize: big ? 16 : 14, fontWeight: active ? 600 : 500,
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      transition: 'all .12s', fontFamily: 'inherit',
     }}>{children}</button>
   )
 }
 
-// ─── SKU color dot ─────────────────────────────────────────────
-const SKU_PALETTE = {
-  '黑': '#1a1a1a', '白': '#e8e8e8', '紅': '#d63031', '藍': '#2d6ee8',
-  '綠': '#27ae60', '黃': '#f39c12', '橘': '#e67e22', '粉': '#e91e8c',
-  '灰': '#7f8c8d', '棕': '#795548', '米': '#c8b57a', '紫': '#8e44ad',
-  '透明': '#d0d0d0',
+// ─── SKU dot ─────────────────────────────────────────────────
+const SKU_PAL = { '黑':'#1a1a1a','白':'#e8e8e8','鈦':'#5a5550','銀':'#c8c6c0','橘':'#E8461A','藍':'#1A5FAD','硬膜橘':'#E8461A','硬膜鐵灰':'#3a3f48','硬膜銀':'#c8ccd1' }
+function SkuDot({ name, size=14 }) {
+  return <span style={{ display:'inline-block', width:size, height:size, borderRadius:'50%', background:SKU_PAL[name]||'#999', flexShrink:0, border:'1px solid rgba(0,0,0,0.1)' }} />
 }
-function SkuDot({ name, size = 14 }) {
-  const c = SKU_PALETTE[name] || '#999'
+
+// ─── Step bar ─────────────────────────────────────────────────
+function StepBar({ step }) {
+  const labels = ['選動作', '選零件', '輸入數量']
+  const num = { action:1, picks:2, qty:3, confirm:3, done:0 }[step] || 1
   return (
-    <span style={{
-      display: 'inline-block', width: size, height: size, borderRadius: '50%',
-      background: c, flexShrink: 0, border: '1px solid rgba(0,0,0,0.1)',
-    }} />
-  )
-}
-
-function ColorChip({ color, size = 12 }) {
-  return <span style={{ display: 'inline-block', width: size, height: size, background: color, borderRadius: 3, flexShrink: 0 }} />
-}
-
-// ─── Step 2: Pick product / part / SKU ───────────────────────
-function StepPart({ action, products, onBack, onNext }) {
-  const meta = actionMeta(action)
-  const [pid, setPid] = useState(products[0]?.id ?? null)
-  const [parts, setParts] = useState([])
-  const [partId, setPartId] = useState(null)
-  const [sku, setSku] = useState('')
-
-  useEffect(() => {
-    if (!pid) return
-    fetch(`/api/products/${pid}/parts`)
-      .then(r => r.json())
-      .then(data => {
-        setParts(data)
-        const first = data[0]
-        setPartId(first?.id ?? null)
-        setSku(first?.skus?.[0]?.color_name ?? '')
-      })
-  }, [pid])
-
-  useEffect(() => {
-    const part = parts.find(p => p.id === partId)
-    if (part) setSku(part.skus?.[0]?.color_name ?? '')
-  }, [partId])
-
-  const product = products.find(p => p.id === pid)
-  const part = parts.find(p => p.id === partId)
-  const needSku = part?.skus?.length > 0
-  const canNext = !!(pid && partId && (!needSku || sku))
-
-  function handleNext() {
-    if (!canNext) return
-    onNext({ productId: pid, productName: product?.name ?? '', partId, partName: part?.name ?? '', sku })
-  }
-
-  return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 100 }}>
-      {/* Action context bar */}
-      <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <ColorChip color={meta.color} size={14} />
-        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>已選動作</span>
-        <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)' }}>{action}</span>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 10, fontWeight: 500 }}>選擇產品</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {products.map(p => (
-            <Pill key={p.id} big color={meta.color} active={pid === p.id} onClick={() => setPid(p.id)}>{p.name}</Pill>
-          ))}
-        </div>
-      </div>
-
-      {parts.length > 0 && (
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 10, fontWeight: 500 }}>選擇零件</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {parts.map(pt => (
-              <Pill key={pt.id} big color={meta.color} active={partId === pt.id} onClick={() => setPartId(pt.id)}>{pt.name}</Pill>
-            ))}
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 20px', background:'var(--bg-1)', borderBottom:'1px solid var(--line-1)' }}>
+      {labels.map((l, i) => {
+        const done = i+1 < num, active = i+1 === num
+        return (
+          <div key={i} style={{ display:'contents' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:26, height:26, borderRadius:13, display:'grid', placeItems:'center', fontWeight:700, fontSize:12,
+                background: done ? '#2E7D32' : active ? '#E64A19' : 'transparent',
+                color: done||active ? '#fff' : '#C9C7C0',
+                border:`1.5px solid ${done?'#2E7D32':active?'#E64A19':'#EBEBEB'}` }}>
+                {done ? <IcoCheck /> : i+1}
+              </div>
+              <span style={{ fontSize:12, fontWeight:active?600:400, color:active?'#1A1A1A':'#A8A6A0' }}>{l}</span>
+            </div>
+            {i < 2 && <div style={{ flex:1, height:1, background:done?'#2E7D32':'#EBEBEB' }} />}
           </div>
-        </div>
-      )}
-
-      {needSku && (
-        <div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 10, fontWeight: 500 }}>
-            SKU 顏色
-            {part.skus.length === 1 && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-4)' }}>· 只有一種，自動選取</span>}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {part.skus.map(s => (
-              <Pill key={s.id} big color={meta.color} active={sku === s.color_name} onClick={() => setSku(s.color_name)}>
-                <SkuDot name={s.color_name} size={16} />{s.color_name}
-              </Pill>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'var(--bg-0)', borderTop: '1px solid var(--line-1)', display: 'flex', gap: 10 }}>
-        <button onClick={onBack} className="btn" style={{ padding: '14px 22px', fontSize: 15, flex: '0 0 auto' }}>← 上一步</button>
-        <button
-          onClick={handleNext}
-          style={{
-            padding: '14px 22px', fontSize: 15, flex: 1, justifyContent: 'center',
-            background: canNext ? meta.color : 'var(--bg-3)',
-            border: `1.5px solid ${canNext ? meta.color : 'var(--line-2)'}`,
-            color: canNext ? '#fff' : 'var(--text-4)',
-            fontWeight: 600, borderRadius: 8,
-            cursor: canNext ? 'pointer' : 'not-allowed',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontFamily: 'inherit',
-          }}>下一步 →</button>
-      </div>
+        )
+      })}
     </div>
   )
 }
@@ -303,23 +119,21 @@ function StepPart({ action, products, onBack, onNext }) {
 function Keypad({ value, onChange, accent }) {
   const keys = ['7','8','9','4','5','6','1','2','3','00','0','⌫']
   function press(k) {
-    if (k === '⌫') { onChange(value.slice(0, -1)); return }
+    if (k === '⌫') { onChange(value.slice(0,-1)); return }
     if (value.length >= 6) return
     onChange((value === '0' ? '' : value) + k)
   }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
       {keys.map(k => (
         <button key={k} onClick={() => press(k)} style={{
-          height: 60, fontSize: 24, fontFamily: 'var(--font-mono)', fontWeight: 600,
-          border: '0.5px solid #EBEBEB',
-          background: k === '⌫' ? 'var(--bg-2)' : '#fff',
-          color: k === '⌫' ? accent : 'var(--text-1)',
-          borderRadius: 8, cursor: 'pointer', transition: 'background .1s',
+          height:60, fontSize:24, fontFamily:'var(--font-mono)', fontWeight:600,
+          border:'0.5px solid #EBEBEB', background:k==='⌫'?'#F8F8F6':'#fff',
+          color:k==='⌫'?accent:'#1A1A1A', borderRadius:8, cursor:'pointer',
         }}
-        onMouseDown={e => { e.currentTarget.style.background = 'var(--bg-3)' }}
-        onMouseUp={e => { e.currentTarget.style.background = k === '⌫' ? 'var(--bg-2)' : '#fff' }}
-        onMouseLeave={e => { e.currentTarget.style.background = k === '⌫' ? 'var(--bg-2)' : '#fff' }}>
+        onMouseDown={e => e.currentTarget.style.background='#F0EFE8'}
+        onMouseUp={e => e.currentTarget.style.background=k==='⌫'?'#F8F8F6':'#fff'}
+        onMouseLeave={e => e.currentTarget.style.background=k==='⌫'?'#F8F8F6':'#fff'}>
           {k}
         </button>
       ))}
@@ -327,287 +141,489 @@ function Keypad({ value, onChange, accent }) {
   )
 }
 
-// ─── Step 3: Enter quantity ───────────────────────────────────
-function StepQty({ action, picks, onBack, onConfirm, submitting }) {
-  const meta = actionMeta(action)
-  const [qty, setQty] = useState('')
-  const [hasDefect, setHasDefect] = useState(false)
-  const [defect, setDefect] = useState('')
-
-  function handleConfirm() {
-    if (!qty || submitting) return
-    onConfirm({ qty: parseInt(qty), defect: hasDefect ? parseInt(defect || '0') : 0 })
-  }
-
+function SHead({ children }) {
+  return <div style={{ fontSize:12, color:'#888', fontWeight:500, letterSpacing:'0.05em', marginBottom:10 }}>{children}</div>
+}
+function Divider({ label }) {
   return (
-    <div style={{ padding: 20, paddingBottom: 100, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Summary bar */}
-      <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ background: meta.color, color: '#fff', padding: '4px 10px', borderRadius: 4, fontSize: 13, fontWeight: 600 }}>{action}</span>
-        <span style={{ color: 'var(--text-4)' }}>›</span>
-        <span style={{ fontWeight: 600 }}>{picks.productName}</span>
-        <span style={{ color: 'var(--text-4)' }}>›</span>
-        <span>{picks.partName}</span>
-        {picks.sku && (
-          <>
-            <span style={{ color: 'var(--text-4)' }}>›</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={picks.sku} />{picks.sku}</span>
-          </>
-        )}
-      </div>
-
-      {/* Big number + keypad */}
-      <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 12, padding: '18px 20px' }}>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4, fontWeight: 500 }}>數量</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, height: 64, marginBottom: 12 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 58, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, color: qty ? 'var(--text-1)' : 'var(--text-4)' }}>
-            {qty || '0'}
-          </div>
-          <div style={{ fontSize: 17, color: 'var(--text-3)' }}>件</div>
-        </div>
-        <Keypad value={qty} onChange={setQty} accent={meta.color} />
-      </div>
-
-      {/* Defect toggle */}
-      <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 12, padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>有不良品</div>
-            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>需要記錄不良品數量時開啟</div>
-          </div>
-          <button onClick={() => setHasDefect(v => !v)} style={{
-            width: 52, height: 30, borderRadius: 15, border: 'none', cursor: 'pointer', padding: 0,
-            background: hasDefect ? 'var(--bad)' : 'var(--bg-3)',
-            position: 'relative', transition: 'background .15s',
-          }}>
-            <div style={{
-              position: 'absolute', top: 3, left: hasDefect ? 25 : 3,
-              width: 24, height: 24, borderRadius: 12, background: '#fff',
-              transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-            }} />
-          </button>
-        </div>
-        {hasDefect && (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line-1)' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, height: 54, marginBottom: 10 }}>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, color: defect ? 'var(--bad)' : 'var(--text-4)' }}>
-                {defect || '0'}
-              </div>
-              <div style={{ fontSize: 15, color: 'var(--text-3)' }}>件不良</div>
-            </div>
-            <Keypad value={defect} onChange={setDefect} accent="var(--bad)" />
-          </div>
-        )}
-      </div>
-
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'var(--bg-0)', borderTop: '1px solid var(--line-1)', display: 'flex', gap: 10 }}>
-        <button onClick={onBack} className="btn" style={{ padding: '14px 22px', fontSize: 15, flex: '0 0 auto' }}>← 上一步</button>
-        <button
-          onClick={handleConfirm}
-          style={{
-            padding: '14px 22px', fontSize: 15, flex: 1, justifyContent: 'center',
-            background: meta.color, border: `1.5px solid ${meta.color}`,
-            color: '#fff', fontWeight: 600, borderRadius: 8,
-            cursor: qty && !submitting ? 'pointer' : 'not-allowed',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            opacity: qty && !submitting ? 1 : 0.4,
-            fontFamily: 'inherit',
-          }}>{submitting ? '登記中...' : '下一步 →'}</button>
-      </div>
+    <div style={{ display:'flex', alignItems:'center', gap:8, margin:'4px 0' }}>
+      <div style={{ flex:1, height:1, background:'#EBEBEB' }} />
+      <span style={{ fontSize:11, color:'#A8A6A0', whiteSpace:'nowrap' }}>{label}</span>
+      <div style={{ flex:1, height:1, background:'#EBEBEB' }} />
     </div>
   )
 }
 
-// ─── Done screen ──────────────────────────────────────────────
-function StepConfirm({ action, picks, qtys, onSame, onNew }) {
-  const meta = actionMeta(action)
-  const rows = [
-    { l: '動作', v: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><ColorChip color={meta.color} size={12} />{action}</span> },
-    { l: '產品', v: picks.productName },
-    { l: '零件', v: picks.partName },
-    ...(picks.sku ? [{ l: 'SKU', v: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><SkuDot name={picks.sku} size={14} />{picks.sku}</span> }] : []),
-    { l: '數量', v: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: meta.color }}>{qtys.qty.toLocaleString()} 件</span> },
-  ]
+// ─── Fixed bottom nav ─────────────────────────────────────────
+function BottomBar({ onBack, onNext, nextLabel='下一步 →', nextColor, disabled }) {
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18, paddingBottom: 100 }}>
-      <div style={{ textAlign: 'center', padding: '20px 0 4px' }}>
-        <div style={{ width: 64, height: 64, borderRadius: 32, background: meta.color, display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}>
+    <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
+      {onBack && <button onClick={onBack} className="btn" style={{ padding:'14px 20px', fontSize:15, flexShrink:0 }}>← 上一步</button>}
+      <button onClick={onNext} disabled={disabled} style={{
+        flex:1, padding:'14px 20px', fontSize:15, fontWeight:600, borderRadius:8,
+        border:`1.5px solid ${disabled?'#EBEBEB':nextColor||'#E64A19'}`,
+        background:disabled?'#F8F8F6':nextColor||'#E64A19',
+        color:disabled?'#A8A6A0':'#fff', cursor:disabled?'not-allowed':'pointer',
+        display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+        fontFamily:'inherit',
+      }}>{nextLabel}</button>
+    </div>
+  )
+}
+
+// ─── Step 1: Direction ────────────────────────────────────────
+function StepAction({ onPick }) {
+  return (
+    <div style={{ padding:24, display:'flex', flexDirection:'column', gap:14, maxWidth:480, margin:'0 auto', paddingBottom:32 }}>
+      <div style={{ fontSize:13, color:'#888', fontWeight:500, marginBottom:4 }}>這筆是進貨還是出貨？</div>
+      {[
+        { dir:'in',  label:'進貨', sub:'東西進到倉庫', color:'#2E7D32', icon:<IcoIn /> },
+        { dir:'out', label:'出貨', sub:'東西離開倉庫', color:'#E64A19', icon:<IcoOut /> },
+      ].map(d => (
+        <button key={d.dir} onClick={() => onPick(d.dir)} style={{
+          padding:0, background:'#fff', border:'1px solid #EBEBEB', borderRadius:14,
+          cursor:'pointer', overflow:'hidden', textAlign:'left',
+          display:'flex', flexDirection:'column', fontFamily:'inherit', transition:'box-shadow .12s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.08)'}
+        onMouseLeave={e => e.currentTarget.style.boxShadow='none'}>
+          <div style={{ height:80, background:d.color, color:'#fff', display:'grid', placeItems:'center' }}>{d.icon}</div>
+          <div style={{ padding:'14px 18px' }}>
+            <div style={{ fontSize:18, fontWeight:700 }}>{d.label}</div>
+            <div style={{ fontSize:13, color:'#888', marginTop:3 }}>{d.sub}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ─── Step 2: Product / Part / SKU / Source ────────────────────
+function StepPicks({ direction, products, onBack, onNext }) {
+  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const [pid, setPid] = useState(products[0]?.id ?? null)
+  const [parts, setParts] = useState([])
+  const [partId, setPartId] = useState(null)
+  const [sku, setSku] = useState('')
+  const [source, setSource] = useState(null)
+
+  useEffect(() => {
+    if (!pid) return
+    fetch(`/api/products/${pid}/parts`).then(r => r.json()).then(data => {
+      setParts(data)
+      const first = data[0]
+      setPartId(first?.id ?? null)
+      setSku(first?.skus?.length === 1 ? (first.skus[0].color_name ?? '') : '')
+      setSource(null)
+    }).catch(() => {})
+  }, [pid])
+
+  useEffect(() => {
+    const p = parts.find(p => p.id === partId)
+    setSku(p?.skus?.length === 1 ? (p.skus[0].color_name ?? '') : '')
+    setSource(null)
+  }, [partId])
+
+  const part = parts.find(p => p.id === partId)
+  const allStages = part?.stages || []
+  const factories = uniqueFactories(allStages)
+  const needSku = (part?.skus?.length ?? 0) > 1
+  const skuReady = !needSku || sku
+  const canNext = !!(pid && partId && skuReady && source)
+
+  function go() {
+    if (!canNext) return
+    onNext({
+      productId: pid,
+      productName: products.find(p => p.id === pid)?.name ?? '',
+      partId,
+      partName: part?.name ?? '',
+      partStages: allStages,
+      sku: sku || (part?.skus?.[0]?.color_name ?? ''),
+      source,
+    })
+  }
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:22 }}>
+      {/* Product */}
+      <div>
+        <SHead>選擇產品</SHead>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+          {products.map(p => <Pill key={p.id} big color={color} active={pid===p.id} onClick={() => setPid(p.id)}>{p.name}</Pill>)}
+        </div>
+      </div>
+
+      {/* Part */}
+      {parts.length > 0 && (
+        <div>
+          <SHead>選擇零件</SHead>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {parts.map(pt => <Pill key={pt.id} big color={color} active={partId===pt.id} onClick={() => setPartId(pt.id)}>{pt.name}</Pill>)}
+          </div>
+        </div>
+      )}
+
+      {/* SKU (only if >1) */}
+      {partId && needSku && (
+        <div>
+          <SHead>選擇 SKU 顏色</SHead>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {part.skus.map(s => (
+              <Pill key={s.id} big color={color} active={sku===s.color_name} onClick={() => setSku(s.color_name)}>
+                <SkuDot name={s.color_name} size={16} />{s.color_name}
+              </Pill>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Source / Destination */}
+      {partId && skuReady && (
+        <div>
+          <SHead>{direction==='in' ? '來源' : '去向'}</SHead>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <Divider label={direction==='in' ? '── 新原料 ──' : '── 出給客戶 ──'} />
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              <Pill big color={color}
+                active={source==='raw'||source==='ship'}
+                onClick={() => setSource(direction==='in' ? 'raw' : 'ship')}>
+                {direction==='in' ? '原料廠（新原料）' : '大貨出貨（給客戶）'}
+              </Pill>
+            </div>
+            {factories.length > 0 && (
+              <>
+                <Divider label={direction==='in' ? '── 加工回廠 ──' : '── 送去加工 ──'} />
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                  {factories.map(f => (
+                    <Pill key={f} big color={color} active={source===f} onClick={() => setSource(f)}>
+                      {f}（{direction==='in' ? '加工回廠' : '送去加工'}）
+                    </Pill>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <BottomBar onBack={onBack} onNext={go} nextColor={color} disabled={!canNext} />
+    </div>
+  )
+}
+
+// ─── Step 3: Qty + defect handling ───────────────────────────
+function StepQty({ direction, picks, onBack, onNext }) {
+  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const [qty, setQty] = useState('')
+  const [hasDefect, setHasDefect] = useState(false)
+  const [defect, setDefect] = useState('')
+  const [handling, setHandling] = useState(null) // 'rework'|'scrap'|null
+  const [reworkStageId, setReworkStageId] = useState(null)
+  const [reworkStageName, setReworkStageName] = useState(null)
+
+  const defectNum = hasDefect ? (parseInt(defect)||0) : 0
+  const showHandling = direction === 'in' && hasDefect && defectNum > 0
+  const reworkStages = (picks.partStages || []).filter(s => (s.in_transit||0) > 0)
+  const canNext = !!(qty && parseInt(qty)>0) && (handling !== 'rework' || reworkStageId)
+
+  function go() {
+    if (!canNext) return
+    onNext({ qty:parseInt(qty), defectQty:defectNum, handling: showHandling ? handling : null, reworkStageId, reworkStageName })
+  }
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:14 }}>
+      {/* Context bar */}
+      <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:10, padding:'9px 14px', fontSize:13, display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
+        <span style={{ padding:'2px 8px', borderRadius:4, background:color, color:'#fff', fontSize:12, fontWeight:600 }}>
+          {direction==='in'?'進貨':'出貨'}
+        </span>
+        <span style={{ color:'#C9C7C0' }}>·</span>
+        <b>{picks.productName}</b>
+        <span style={{ color:'#C9C7C0' }}>·</span>
+        <span>{picks.partName}</span>
+        {picks.sku && <><span style={{ color:'#C9C7C0' }}>·</span><span>{picks.sku}</span></>}
+        <span style={{ color:'#C9C7C0' }}>·</span>
+        <span style={{ color:'#888' }}>{picks.source==='raw'?'原料廠':picks.source==='ship'?'大貨出貨':picks.source}</span>
+      </div>
+
+      {/* Qty */}
+      <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:'16px 20px' }}>
+        <div style={{ fontSize:12, color:'#888', marginBottom:4, fontWeight:500 }}>數量</div>
+        <div style={{ display:'flex', alignItems:'baseline', gap:8, height:60, marginBottom:12 }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:54, fontWeight:700, letterSpacing:'-0.03em', lineHeight:1, color:qty?'#1A1A1A':'#C9C7C0' }}>
+            {qty||'0'}
+          </div>
+          <span style={{ fontSize:16, color:'#888' }}>件</span>
+        </div>
+        <Keypad value={qty} onChange={setQty} accent={color} />
+      </div>
+
+      {/* Defect toggle (進貨 only) */}
+      {direction === 'in' && (
+        <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600 }}>有不良品</div>
+              <div style={{ fontSize:12, color:'#888', marginTop:2 }}>需要記錄不良品數量時開啟</div>
+            </div>
+            <button onClick={() => { setHasDefect(v => !v); setDefect(''); setHandling(null); setReworkStageId(null) }} style={{
+              width:52, height:30, borderRadius:15, border:'none', cursor:'pointer', padding:0,
+              background:hasDefect?'#E8461A':'#EBEBEB', position:'relative', transition:'background .15s',
+            }}>
+              <div style={{ position:'absolute', top:3, left:hasDefect?25:3, width:24, height:24, borderRadius:12, background:'#fff', transition:'left .15s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }} />
+            </button>
+          </div>
+          {hasDefect && (
+            <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid #EBEBEB' }}>
+              <div style={{ fontSize:12, color:'#888', marginBottom:4, fontWeight:500 }}>不良品數量</div>
+              <div style={{ display:'flex', alignItems:'baseline', gap:8, height:50, marginBottom:10 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:42, fontWeight:700, letterSpacing:'-0.03em', lineHeight:1, color:defect?'#E8461A':'#C9C7C0' }}>
+                  {defect||'0'}
+                </div>
+                <span style={{ fontSize:14, color:'#888' }}>件不良</span>
+              </div>
+              <Keypad value={defect} onChange={v => { setDefect(v); setHandling(null); setReworkStageId(null) }} accent="#E8461A" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Defect handling */}
+      {showHandling && (
+        <div style={{ background:'#FAEEDA', borderRadius:10, padding:'14px 16px' }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:12 }}>這 {defectNum} 件不良品要怎麼處理？</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <button onClick={() => { setHandling(handling==='rework'?null:'rework'); setReworkStageId(null) }} style={{
+              background:handling==='rework'?'#FEF3CD':'#fff',
+              border:`1.5px solid ${handling==='rework'?'#FAC775':'#F0D9A0'}`,
+              borderRadius:10, padding:'12px 14px', cursor:'pointer', fontFamily:'inherit',
+              display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4, textAlign:'left',
+            }}>
+              <span style={{ color:'#B07D00' }}><IcoRefresh /></span>
+              <span style={{ fontSize:14, fontWeight:500 }}>重工</span>
+              <span style={{ fontSize:11, color:'#B07D00' }}>送回加工廠重做</span>
+            </button>
+            <button onClick={() => { setHandling(handling==='scrap'?null:'scrap'); setReworkStageId(null) }} style={{
+              background:handling==='scrap'?'#FCEBEB':'#fff',
+              border:`1.5px solid ${handling==='scrap'?'#F09595':'#F5D0D0'}`,
+              borderRadius:10, padding:'12px 14px', cursor:'pointer', fontFamily:'inherit',
+              display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4, textAlign:'left',
+            }}>
+              <span style={{ color:'#791F1F' }}><IcoTrash /></span>
+              <span style={{ fontSize:14, fontWeight:500 }}>報廢</span>
+              <span style={{ fontSize:11, color:'#791F1F' }}>直接廢棄不處理</span>
+            </button>
+          </div>
+
+          {handling === 'rework' && (
+            <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid #F0D9A0' }}>
+              <div style={{ fontSize:12, color:'#666', marginBottom:8, fontWeight:500 }}>送回哪個加工站？</div>
+              {reworkStages.length === 0
+                ? <span style={{ fontSize:12, color:'#A8A6A0' }}>目前無加工中數量的加工站</span>
+                : (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {reworkStages.map(s => (
+                      <button key={s.id} onClick={() => { setReworkStageId(s.id); setReworkStageName(`${s.factory_name}・${s.action_name}`) }} style={{
+                        padding:'8px 14px', borderRadius:999, cursor:'pointer', fontFamily:'inherit',
+                        border:`1.5px solid ${reworkStageId===s.id?'#B07D00':'#F0D9A0'}`,
+                        background:reworkStageId===s.id?'#FEF3CD':'#fff',
+                        color:reworkStageId===s.id?'#7A5A00':'#555',
+                        fontSize:13, fontWeight:reworkStageId===s.id?600:400,
+                      }}>
+                        {s.factory_name}・{s.action_name}
+                        <span style={{ fontSize:11, opacity:0.7, marginLeft:4 }}>({s.in_transit})</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              }
+            </div>
+          )}
+
+          {!handling && (
+            <div style={{ marginTop:10, fontSize:12, color:'#888', fontStyle:'italic' }}>暫不處理，待主管確認</div>
+          )}
+        </div>
+      )}
+
+      <BottomBar onBack={onBack} onNext={go} nextLabel="預覽確認 →" nextColor={color} disabled={!canNext} />
+    </div>
+  )
+}
+
+// ─── Confirm page ─────────────────────────────────────────────
+function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, submitting }) {
+  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const actionType = resolveActionType(direction, picks.source)
+  const { qty, defectQty, handling, reworkStageName } = qtyData
+
+  const defectDesc = handling === 'rework' ? `重工（${reworkStageName||'—'}）`
+    : handling === 'scrap' ? '報廢'
+    : defectQty > 0 ? '待主管確認' : null
+
+  const rows = [
+    { l:'動作',              v: ACTION_LABEL[actionType] },
+    { l:'產品',              v: picks.productName },
+    { l:'零件',              v: picks.partName },
+    ...(picks.sku           ? [{ l:'SKU',    v: picks.sku }] : []),
+    { l: direction==='in'?'來源':'去向',
+      v: picks.source==='raw'?'原料廠（新原料）': picks.source==='ship'?'大貨出貨（給客戶）': picks.source },
+    { l:'數量',              v: `${qty.toLocaleString()} 件` },
+    ...(defectQty > 0       ? [{ l:'不良品', v:`${defectQty} 件`, red:true }] : []),
+    ...(defectDesc          ? [{ l:'不良品處理', v:defectDesc }] : []),
+    ...(worker              ? [{ l:'登記人', v:worker.name }] : []),
+  ]
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:18 }}>
+      <div style={{ fontSize:16, fontWeight:700 }}>確認內容</div>
+      <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:14, padding:'0 18px' }}>
+        {rows.map((row, i) => (
+          <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'13px 0', borderBottom:i<rows.length-1?'1px solid #F5F4F0':'none' }}>
+            <span style={{ fontSize:12, color:'#888', letterSpacing:'0.04em' }}>{row.l}</span>
+            <span style={{ fontSize:15, fontWeight:500, color:row.red?'#E8461A':'#1A1A1A' }}>{row.v}</span>
+          </div>
+        ))}
+      </div>
+      <BottomBar
+        onBack={onBack}
+        onNext={onSubmit}
+        nextLabel={submitting ? '送出中...' : '確認送出'}
+        nextColor={color}
+        disabled={submitting}
+      />
+    </div>
+  )
+}
+
+// ─── Done page ────────────────────────────────────────────────
+function StepDone({ direction, picks, qtyData, onSame, onNew }) {
+  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const actionType = resolveActionType(direction, picks.source)
+  const { qty, defectQty, handling, reworkStageName } = qtyData
+  const hasPending = defectQty > 0 && !handling
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:18 }}>
+      <div style={{ textAlign:'center', padding:'24px 0 8px' }}>
+        <div style={{ width:64, height:64, borderRadius:32, background:color, display:'grid', placeItems:'center', margin:'0 auto 14px' }}>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
             <path d="M5 12l5 5 9-10" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>登記成功</div>
-        <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>
-          {new Date().toLocaleString('zh-TW', { hour: '2-digit', minute: '2-digit' })} · 已存入系統
+        <div style={{ fontSize:20, fontWeight:700 }}>登記完成</div>
+        <div style={{ fontSize:12, color:'#888', marginTop:4 }}>
+          {new Date().toLocaleString('zh-TW', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}
         </div>
       </div>
 
-      <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 12, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {rows.map((row, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < rows.length - 1 ? 10 : 0, borderBottom: i < rows.length - 1 ? '1px solid var(--line-1)' : 'none' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-3)', letterSpacing: '0.04em' }}>{row.l}</span>
-            <span style={{ fontSize: 16, fontWeight: 500 }}>{row.v}</span>
+      <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16, display:'flex', flexDirection:'column', gap:4 }}>
+        <div style={{ fontSize:14, fontWeight:600 }}>{picks.productName}・{picks.partName}{picks.sku?`・${picks.sku}`:''}</div>
+        <div style={{ fontSize:13, color:'#555' }}>{ACTION_LABEL[actionType]} {qty.toLocaleString()} 件</div>
+        {defectQty > 0 && (
+          <div style={{ fontSize:13, color:'#E8461A' }}>
+            不良品 {defectQty} 件 →{' '}
+            {handling==='rework' ? `重工（${reworkStageName||'—'}）`
+             :handling==='scrap' ? '報廢'
+             :'待主管確認'}
           </div>
-        ))}
-        {qtys.defect > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--bad)', paddingTop: 10, borderTop: '1px solid var(--line-1)' }}>
-            <span style={{ fontSize: 12, letterSpacing: '0.04em' }}>不良品</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700 }}>{qtys.defect} 件</span>
+        )}
+        {hasPending && (
+          <div style={{ marginTop:6, padding:'6px 10px', background:'#FEF6F0', borderRadius:6, fontSize:12, color:'#C84B00' }}>
+            {defectQty} 件不良品已記錄，待主管確認
           </div>
         )}
       </div>
 
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'var(--bg-0)', borderTop: '1px solid var(--line-1)', display: 'flex', gap: 10 }}>
-        <button onClick={onSame} className="btn" style={{ padding: '14px 18px', fontSize: 14, flex: 1, justifyContent: 'center' }}>相同零件繼續</button>
+      <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
+        <button onClick={onSame} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>相同零件繼續</button>
         <button onClick={onNew} style={{
-          padding: '14px 18px', fontSize: 14, flex: 1, justifyContent: 'center',
-          background: meta.color, border: `1.5px solid ${meta.color}`,
-          color: '#fff', fontWeight: 600, borderRadius: 8,
-          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
-          fontFamily: 'inherit',
+          flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
+          background:color, border:`1.5px solid ${color}`, color:'#fff',
+          borderRadius:8, cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit',
         }}>新登記</button>
       </div>
     </div>
   )
 }
 
-// ─── Worker header ────────────────────────────────────────────
-function WorkerHeader({ operator, onSwitch }) {
-  return (
-    <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <img src="/dicas-logo.svg" alt="DiCAS" style={{ height: 26, width: 'auto', display: 'block' }} />
-        <div style={{ fontSize: 14, fontWeight: 700 }}>進出貨登記</div>
-      </div>
-      {operator && (
-        <button onClick={onSwitch} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'var(--bg-0)', border: '1px solid var(--line-1)', borderRadius: 999, cursor: 'pointer', font: 'inherit' }}>
-          <span style={{ width: 24, height: 24, borderRadius: 999, background: '#E8461A', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700 }}>{operator.slice(0, 1)}</span>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{operator}</span>
-          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>切換</span>
-        </button>
-      )}
-    </div>
-  )
-}
+// ─── Worker header & picker ───────────────────────────────────
 
-// ─── Operator picker ──────────────────────────────────────────
-function OperatorPicker({ onPick, dismissable, onDismiss }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,20,0.45)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg-0)', borderRadius: 18, padding: 28, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>你是誰？</div>
-          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>選擇今天的登記人，之後所有動作都會記在名下</div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {OPERATORS.map(op => (
-            <button key={op.name} onClick={() => onPick(op.name)} style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 14, padding: '18px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer', font: 'inherit', transition: 'border-color .12s, background .12s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8461A'; e.currentTarget.style.background = '#fff' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line-1)'; e.currentTarget.style.background = 'var(--bg-1)' }}>
-              <span style={{ width: 44, height: 44, borderRadius: 999, background: '#E8461A', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 18, fontWeight: 700 }}>{op.name.slice(0, 1)}</span>
-              <div style={{ fontSize: 15, fontWeight: 600 }}>{op.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{op.role}</div>
-            </button>
-          ))}
-        </div>
-        {dismissable && (
-          <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', padding: 6, fontSize: 13, color: 'var(--text-3)', cursor: 'pointer', font: 'inherit' }}>取消</button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Main export ──────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────
 export default function Input() {
-  const [step, setStep] = useState(1)
-  const [action, setAction] = useState(null)
+  const [step, setStep] = useState('action')
+  const [direction, setDirection] = useState(null)
   const [picks, setPicks] = useState(null)
-  const [qtys, setQtys] = useState(null)
-  const [done, setDone] = useState(false)
+  const [qtyData, setQtyData] = useState(null)
   const [products, setProducts] = useState([])
-  const [operator, setOperator] = useState(() => loadOperator())
-  const [switching, setSwitching] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     fetch('/api/products').then(r => r.json()).then(setProducts).catch(() => {})
   }, [])
 
-  function reset() { setStep(1); setAction(null); setPicks(null); setQtys(null); setDone(false) }
-  function sameAgain() { setQtys(null); setDone(false); setStep(3) }
-  function pickOperator(name) { setOperator(name); saveOperator(name); setSwitching(false) }
+  function reset() { setStep('action'); setDirection(null); setPicks(null); setQtyData(null) }
+  function sameAgain() { setQtyData(null); setStep('qty') }
 
-  async function confirm(qData) {
-    const meta = actionMeta(action)
+  async function handleSubmit() {
+    if (!picks || !qtyData) return
+    const actionType = resolveActionType(direction, picks.source)
+    const stageId = resolveStageId(picks.partStages, picks.source, actionType)
     setSubmitting(true)
     try {
-      await fetch('/api/receive-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: picks.productId,
-          part_id: picks.partId,
-          sku_color: picks.sku || '',
-          action_type: meta.apiKey,
-          qty: qData.qty,
-          defect_qty: qData.defect || 0,
-          note: '',
-        }),
-      })
-      setQtys(qData)
-      setDone(true)
-    } catch (e) {
-      alert('送出失敗：' + e.message)
-    } finally {
-      setSubmitting(false)
-    }
+      const base = { product_id:picks.productId, part_id:picks.partId, sku_color:picks.sku, worker_id:null }
+
+      // Main log
+      await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ ...base, stage_id:stageId, action_type:actionType, qty:qtyData.qty, defect_qty:qtyData.defectQty||0 }) })
+
+      // Immediate rework of defects
+      if (qtyData.handling === 'rework' && qtyData.reworkStageId) {
+        await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ...base, stage_id:qtyData.reworkStageId, action_type:'rework', qty:qtyData.defectQty, defect_qty:0 }) })
+      }
+
+      // Immediate scrap of defects
+      if (qtyData.handling === 'scrap' && qtyData.defectQty > 0) {
+        await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ...base, stage_id:stageId, action_type:'scrap', qty:qtyData.defectQty, defect_qty:0 }) })
+      }
+
+      setStep('done')
+    } catch (e) { alert('送出失敗：' + e.message) }
+    finally { setSubmitting(false) }
   }
 
-  const showPicker = !operator || switching
-
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)', position: 'relative' }}>
-      <WorkerHeader operator={operator} onSwitch={() => setSwitching(true)} />
-      {!done && <StepBar step={step} />}
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {!done && step === 1 && (
-          <StepAction value={action} onPick={a => { setAction(a); setStep(2) }} />
+    <div style={{ minHeight:'100dvh', display:'flex', flexDirection:'column', background:'var(--bg-0)', position:'relative' }}>
+      <div style={{ padding:'13px 20px', display:'flex', alignItems:'center', background:'var(--bg-1)', borderBottom:'1px solid var(--line-1)' }}>
+        <img src="/dicas-logo.svg" alt="DiCAS" style={{ height:26, width:'auto' }} />
+        <span style={{ fontSize:14, fontWeight:700, marginLeft:10 }}>進出貨登記</span>
+      </div>
+      {step !== 'done' && <StepBar step={step} />}
+      <div style={{ flex:1, overflow:'auto' }}>
+        {step === 'action' && <StepAction onPick={dir => { setDirection(dir); setStep('picks') }} />}
+        {step === 'picks' && direction && (
+          <StepPicks direction={direction} products={products}
+            onBack={() => setStep('action')}
+            onNext={p => { setPicks(p); setStep('qty') }} />
         )}
-        {!done && step === 2 && (
-          <StepPart
-            action={action}
-            products={products}
-            onBack={() => setStep(1)}
-            onNext={p => { setPicks(p); setStep(3) }}
-          />
+        {step === 'qty' && picks && (
+          <StepQty direction={direction} picks={picks}
+            onBack={() => setStep('picks')}
+            onNext={d => { setQtyData(d); setStep('confirm') }} />
         )}
-        {!done && step === 3 && picks && (
-          <StepQty
-            action={action}
-            picks={picks}
-            onBack={() => setStep(2)}
-            onConfirm={confirm}
-            submitting={submitting}
-          />
+        {step === 'confirm' && picks && qtyData && (
+          <StepConfirm direction={direction} picks={picks} qtyData={qtyData} worker={null}
+            onBack={() => setStep('qty')} onSubmit={handleSubmit} submitting={submitting} />
         )}
-        {done && qtys && (
-          <StepConfirm
-            action={action}
-            picks={picks}
-            qtys={qtys}
-            onSame={sameAgain}
-            onNew={reset}
-          />
+        {step === 'done' && picks && qtyData && (
+          <StepDone direction={direction} picks={picks} qtyData={qtyData}
+            onSame={sameAgain} onNew={reset} />
         )}
       </div>
-      {showPicker && (
-        <OperatorPicker
-          onPick={pickOperator}
-          dismissable={!!operator}
-          onDismiss={() => setSwitching(false)}
-        />
-      )}
     </div>
   )
 }

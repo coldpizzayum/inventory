@@ -20,6 +20,9 @@ import designerTokenRoutes from './routes/designerTokens.js'
 import brandRoutes from './routes/brand.js'
 import brandsRoutes from './routes/brands.js'
 import packingItemRoutes from './routes/packingItems.js'
+import workersRoutes from './routes/workers.js'
+import defectLogsRoutes from './routes/defectLogs.js'
+import stockAdjustmentsRoutes from './routes/stockAdjustments.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -37,6 +40,9 @@ app.use('/api/designer-tokens', designerTokenRoutes)
 app.use('/api/brand', brandRoutes)
 app.use('/api/brands', brandsRoutes)
 app.use('/api/packing-items', packingItemRoutes)
+app.use('/api/workers', workersRoutes)
+app.use('/api/defect-logs', defectLogsRoutes)
+app.use('/api/stock-adjustments', stockAdjustmentsRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 

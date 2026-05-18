@@ -33,9 +33,9 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
       <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🏭</div>
-          <h1 className="text-2xl font-bold text-gray-800">工廠庫存管理</h1>
-          <p className="text-gray-500 text-sm mt-1">老闆後台登入</p>
+          <img src="/dicas-logo.svg" alt="Dicas" className="h-12 mx-auto mb-3" />
+          <h1 className="text-2xl font-bold text-gray-800">益成金屬庫存管理系統</h1>
+          <p className="text-gray-500 text-sm mt-1">管理後台登入</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -70,7 +70,7 @@ export default function Login() {
           </button>
         </form>
         <div className="mt-6 pt-6 border-t border-gray-100 text-center space-y-2">
-          <a href="/input" className="block text-sm text-gray-500 hover:text-blue-600">→ 工人登記入口 /input</a>
+          <a href="/input" className="block text-sm text-gray-500 hover:text-blue-600">→ 工作人員入口 /input</a>
         </div>
       </div>
     </div>

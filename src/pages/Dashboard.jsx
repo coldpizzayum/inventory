@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ACTION_LABEL, resolveActionType, resolveStageId } from './Input.jsx'
 
 // ─── Icons ───────────────────────────────────────────────────
 const S = { viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"1.6", strokeLinecap:"round", strokeLinejoin:"round" }
@@ -18,6 +19,7 @@ const Icon = {
   Setting: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M21 16.008v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-7 4.008c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l7 -4.008c.619 -.355 1 -1.01 1 -1.717z"/><path d="M12 12l9 -5.25"/><path d="M12 12l0 9.5"/><path d="M12 12l-9 -5.25"/></svg>),
   Plus: () => (<svg viewBox="0 0 14 14" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M7 2v10M2 7h10"/></svg>),
   Export: () => (<svg viewBox="0 0 16 16" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 11V2M5 5l3-3 3 3M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/></svg>),
+  Trash: () => (<svg viewBox="0 0 16 16" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4h12M5 4V2.5a.5.5 0 01.5-.5h5a.5.5 0 01.5.5V4M6 7v5M10 7v5M3 4l1 9.5a.5.5 0 00.5.5h7a.5.5 0 00.5-.5L13 4"/></svg>),
   Warn: () => (<svg viewBox="0 0 14 14" fill="none" width="12" height="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7 1.5l6 11H1l6-11z"/><path d="M7 6v3M7 11h.01"/></svg>),
   Edit: () => (<svg viewBox="0 0 16 16" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11.5 2.5l2 2-8 8L3 13l.5-2.5 8-8z"/></svg>),
   ChevronLeft: () => (<svg viewBox="0 0 12 12" fill="none" width="12" height="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M7.5 3L4.5 6l3 3"/></svg>),
@@ -41,7 +43,6 @@ const NAV = [
   { id: 'log',       label: '進出貨登記',   icon: Icon.Log },
   null,
   { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
-  { id: 'sku',       label: '零件管理',     icon: Icon.Stack },
   null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
@@ -63,13 +64,6 @@ const SKU_COLORS = {
   '黑': '#1a1a1a', '白': '#f0f0f0', '玫瑰金': '#c98a73',
 }
 
-const OPERATORS = [
-  { name: '阿明', role: '現場主管' },
-  { name: '小芳', role: '倉務' },
-  { name: '阿勗', role: '倉務' },
-  { name: '小林', role: '品管' },
-]
-const OP_KEY = 'dicas:operator'
 
 // ─── API helpers ─────────────────────────────────────────────
 function authHeader() {
@@ -109,10 +103,12 @@ function Badge({ state }) {
 
 function ActionTag({ type }) {
   const map = {
-    receive: { label: '進貨',    color: 'var(--ok)',     tint: 'var(--ok-tint)' },
-    send:    { label: '送出',    color: 'var(--info)',   tint: 'var(--info-tint)' },
-    return:  { label: '回廠',    color: 'var(--accent)', tint: 'var(--accent-tint)' },
-    ship:    { label: '大貨出貨', color: 'var(--purple)', tint: 'var(--purple-tint)' },
+    receive: { label: '進貨',  color: 'var(--ok)',     tint: 'var(--ok-tint)' },
+    return:  { label: '回廠',  color: 'var(--info)',   tint: 'var(--info-tint)' },
+    send:    { label: '送出',  color: 'var(--accent)', tint: 'var(--accent-tint)' },
+    ship:    { label: '大貨',  color: 'var(--purple)', tint: 'var(--purple-tint)' },
+    rework:  { label: '重工',  color: '#6B3FA0',       tint: '#EFE7F8' },
+    scrap:   { label: '報廢',  color: 'var(--bad)',    tint: 'var(--bad-tint)' },
   }
   const a = map[type] || { label: type, color: 'var(--text-3)', tint: 'var(--bg-2)' }
   return (
@@ -224,6 +220,7 @@ export default function Dashboard() {
   })
   const [showNewOrder, setShowNewOrder] = useState(false)
   const [ordersFilter, setOrdersFilter] = useState(null)
+  const [processReloadKey, setProcessReloadKey] = useState(0)
 
   function saveOrders(next) { setOrders(next); localStorage.setItem('dicas:orders', JSON.stringify(next)) }
 
@@ -315,7 +312,7 @@ export default function Dashboard() {
             <button
               key={n.id}
               className={`nav-item ${page === n.id ? 'active' : ''}`}
-              onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens() }}
+              onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens(); if (n.id === 'process') setProcessReloadKey(k => k + 1) }}
               title={collapsed ? n.label : undefined}
               style={collapsed ? { justifyContent: 'center', marginBottom: 2 } : undefined}
             >
@@ -380,17 +377,16 @@ export default function Dashboard() {
             <>
               {page === 'overview'  && <OverviewPage products={products} logs={logs} orders={orders}
                 onGoToProcess={p => { if (p) { setSelectedProduct(p); loadParts(p.id) } setPage('process') }}
-                onGoToParts={p => { if (p) { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) } setPage('sku') }}
+                onGoToParts={p => { if (p) setSelectedProduct(p); setPage('process') }}
                 onGoToLog={() => setPage('log')}
                 onGoToBrands={() => { loadTokens(); setPage('brands') }}
-              />}
-              {page === 'process'   && <ProcessPage product={selectedProduct} headerActionsSlot={headerActionsSlot} />}
-              {page === 'sku'       && <SkuPage parts={partsData} logs={logs} products={products} onSelectProduct={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id) }} selectedProduct={selectedProduct} reloadParts={() => loadParts(selectedProduct?.id)} reloadLogs={() => loadLogs(selectedProduct?.id)} />}
-              {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} />}
-              {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
-                onGoToProcess={p => { setSelectedProduct(p); loadParts(p.id); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
-                onGoToSku={p => { setSelectedProduct(p); loadParts(p.id); loadLogs(p.id); setPage('sku') }}
+              />}
+              {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
+              {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
+              {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
+                onGoToProcess={p => { setSelectedProduct(p); setPage('process') }}
+                onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
               {page === 'brands'    && <BrandsPage products={products} />}
@@ -404,7 +400,17 @@ export default function Dashboard() {
 
 // ─── Page: Overview ───────────────────────────────────────────
 // ─── Overview sub-components ──────────────────────────────────
-function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink }) {
+function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink, link2Label, onLink2 }) {
+  const linkBtn = (label, handler) => (
+    <button onClick={handler} style={{
+      background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)',
+      padding: 0, fontFamily: 'inherit',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
+      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
+      {label} →
+    </button>
+  )
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -414,58 +420,101 @@ function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink }) {
         <span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
         <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{count}</span>
       </div>
-      <button onClick={onLink} style={{
-        background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)',
-        padding: 0, fontFamily: 'inherit',
-      }}
-        onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
-        {linkLabel} →
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {link2Label && onLink2 && linkBtn(link2Label, onLink2)}
+        {linkLabel && onLink && linkBtn(linkLabel, onLink)}
+      </div>
     </div>
   )
 }
 
-function ProductOverviewCard({ product, orders, onClick }) {
+function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
   const [imgSrc, setImgSrc] = useState(null)
   useEffect(() => {
     const stored = localStorage.getItem(`prod-img-${product.id}`)
     if (stored) setImgSrc(stored)
   }, [product.id])
 
+  const orderCount = orders.length
+  const warehouseTotal = product.warehouse_total || 0
+  const inTransitTotal = product.in_transit_total || 0
+
   const totalQty = orders.reduce((s, o) => s + (o.qty || 0), 0)
   const totalAlloc = orders.reduce((s, o) => s + (o.alloc || 0), 0)
   const pct = totalQty > 0 ? Math.round((totalAlloc / totalQty) * 100) : 0
 
-  const status = pct >= 100 ? { label: '完成', color: '#1A7A3C' }
-    : pct >= 80 ? { label: '包裝中', color: '#B07D00' }
-    : { label: '加工中', color: '#E8461A' }
-  const barColor = pct >= 80 ? '#1A7A3C' : '#E8461A'
+  const statusBadge =
+    pct >= 100        ? { label: '完成',    bg: '#E6F4EC', color: '#1A7A3C' }
+    : pct >= 80       ? { label: '包裝中',  bg: '#FEF3CD', color: '#B07D00' }
+    : inTransitTotal > 0 ? { label: '加工中', bg: '#FEE9E4', color: '#E8461A' }
+    : { label: '送加工廠', bg: '#E6F0FB', color: '#1A5FAD' }
 
   return (
-    <div onClick={onClick} style={{
-      background: '#fff', borderRadius: 10, border: '0.5px solid #EBEBEB',
-      overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.15s',
+    <div style={{
+      background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
+      borderRadius: 'var(--r-lg)', overflow: 'hidden',
+      cursor: 'pointer', transition: 'border-color .15s',
     }}
+      onClick={onGoToProcess}
       onMouseEnter={e => e.currentTarget.style.borderColor = '#E8461A'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = '#EBEBEB'}>
-      <div style={{ height: 60, background: '#F5F4F0', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-1)'}>
+
+      {/* Image area */}
+      <div style={{ height: 80, background: 'var(--bg-2)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
         {imgSrc
           ? <img src={imgSrc} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          : <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#C8C6C0" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          : <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--line-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/>
             </svg>
         }
+        <div style={{
+          position: 'absolute', top: 6, right: 6,
+          background: statusBadge.bg, color: statusBadge.color,
+          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, lineHeight: 1.5,
+        }}>{statusBadge.label}</div>
       </div>
-      <div style={{ padding: '8px 10px 10px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-          <span style={{ width: 5, height: 5, borderRadius: 999, background: status.color, display: 'inline-block', flexShrink: 0 }} />
-          <span style={{ fontSize: 11, color: status.color, fontWeight: 500 }}>{status.label}</span>
+
+      {/* Content */}
+      <div style={{ padding: '10px 12px' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 16 }}>
+          {product.description || ''}
         </div>
-        <div style={{ height: 3, background: '#EBEBEB', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: barColor, borderRadius: 2, transition: 'width 0.3s' }} />
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div>
+            <div className="num" style={{ fontSize: 14, fontWeight: 500 }}>{warehouseTotal}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>倉庫庫存</div>
+          </div>
+          <div>
+            <div className="num" style={{ fontSize: 14, fontWeight: 500, color: '#185FA5' }}>{inTransitTotal}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>加工中</div>
+          </div>
         </div>
+      </div>
+
+      {/* Bottom link row */}
+      <div style={{
+        padding: '7px 12px', borderTop: '0.5px solid var(--line-1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[
+            { label: '加工流程', icon: Icon.Flow, action: onGoToProcess },
+            { label: '訂單',     icon: Icon.Order, action: onGoToOrders },
+          ].map(({ label, icon: Ic, action }) => (
+            <button key={label} onClick={e => { e.stopPropagation(); action() }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#E8461A'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+              <Ic />{label}
+            </button>
+          ))}
+        </div>
+        {orderCount > 0 && (
+          <span style={{ background: '#FEE9E4', color: '#E8461A', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, lineHeight: 1.5 }}>
+            訂單 {orderCount}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -504,6 +553,17 @@ function OrderRow({ order, product }) {
 function BrandRow({ brand, products }) {
   const assignedNames = (brand.products || []).map(p => p.name).join('、') || '—'
   const initials = brand.name?.slice(0, 1) || '?'
+  const [copied, setCopied] = useState(false)
+
+  function copyLink(e) {
+    e.stopPropagation()
+    const url = `${window.location.origin}/brand/${brand.token}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    })
+  }
+
   return (
     <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
       onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
@@ -515,16 +575,25 @@ function BrandRow({ brand, products }) {
         <div style={{ fontSize: 12, fontWeight: 500 }}>{brand.name}</div>
         <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignedNames}</div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-        <span style={{ width: 5, height: 5, borderRadius: 999, background: '#1A7A3C', display: 'inline-block' }} />
-        <span style={{ fontSize: 11, color: '#1A7A3C', fontWeight: 500 }}>正常</span>
-      </div>
+      <button onClick={copyLink} title="複製設計師連結" style={{
+        flexShrink: 0, border: copied ? '1px solid #1A7A3C' : '1px solid var(--line-2)',
+        background: copied ? '#E6F4EC' : '#fff', borderRadius: 6,
+        padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+        fontSize: 11, fontWeight: 500, color: copied ? '#1A7A3C' : 'var(--text-2)',
+        transition: 'all 0.15s',
+      }}>
+        {copied
+          ? <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        }
+        {copied ? '已複製' : '分享連結'}
+      </button>
     </div>
   )
 }
 
 // ─── Page: Overview ───────────────────────────────────────────
-function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands }) {
+function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands, onGoToOrders }) {
   const [brands, setBrands] = useState([])
   const [brandsLoading, setBrandsLoading] = useState(true)
 
@@ -562,9 +631,12 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
             ))}
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
           {products.map(p => (
-            <ProductOverviewCard key={p.id} product={p} orders={orders.filter(o => o.productId === p.id)} onClick={() => onGoToProcess(p)} />
+            <ProductOverviewCard key={p.id} product={p} orders={orders.filter(o => o.productId === p.id)}
+              onGoToProcess={() => onGoToProcess(p)}
+              onGoToOrders={() => onGoToOrders(p.id)}
+            />
           ))}
           {products.length === 0 && (
             <div style={{ gridColumn: '1 / -1', padding: '40px 0', color: 'var(--text-4)', fontSize: 13, textAlign: 'center' }}>尚無產品</div>
@@ -576,10 +648,13 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
         {/* Orders */}
         <div>
-          <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} linkLabel="進出貨登記" onLink={onGoToLog} />
+          <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} link2Label="訂單管理" onLink2={() => onGoToOrders(null)} linkLabel="進出貨登記" onLink={onGoToLog} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {orders.length === 0
-              ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無訂單</div>
+              ? <div style={{ padding: '24px 16px', background: '#F8F8F6', borderRadius: 8, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
+                  <button onClick={onGoToLog} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
+                </div>
               : orders.map(o => <OrderRow key={o.id} order={o} product={products.find(p => p.id === o.productId)} />)
             }
           </div>
@@ -757,107 +832,813 @@ function NewOrderDrawer({ products, onClose, onCreate }) {
 }
 
 // ─── Page: Process (flow board) ───────────────────────────────
-const PROCESS_DATA_INIT = {
-  default: {
-    rows: [],
-  }
+function partsToRows(data) {
+  return data.map(part => {
+    const stages = part.stages || []
+    const stations = stages.map(st => {
+      const inTransit = st.in_transit || 0
+      const defectRate = (st.total_returned || 0) > 0
+        ? (st.total_defect || 0) / st.total_returned * 100
+        : null
+      return {
+        id: st.id,
+        vendor: st.factory_name,
+        action: st.action_name,
+        inTransit,
+        totalSent: st.total_sent || 0,
+        totalReturned: st.total_returned || 0,
+        defectRate,
+        status: inTransit > 0 ? 'current' : (st.total_returned > 0 ? 'done' : ((st.total_sent || 0) > 0 ? 'current' : 'wait')),
+      }
+    })
+
+    const warehouseStock = part.warehouse_stock || 0
+    const defectStock = part.defect_stock || 0
+    const lastStage = stages[stages.length - 1]
+    const anyInTransit = stations.some(s => s.inTransit > 0)
+    const lastReturned = lastStage?.total_returned || 0
+    const lastSent = lastStage?.total_sent || 0
+
+    let state
+    if (lastSent > 0 && lastReturned >= lastSent && warehouseStock > 0) {
+      state = 'complete'
+    } else if (!anyInTransit && warehouseStock > 0 && lastReturned > 0) {
+      state = 'done'
+    } else if (anyInTransit) {
+      state = 'process'
+    } else {
+      state = 'wait'
+    }
+
+    return {
+      id: part.id,
+      name: part.name,
+      skus: part.skus?.map(s => s.color_name) || [],
+      rawSkus: part.skus || [],
+      warehouseStock,
+      defectStock,
+      state,
+      stations,
+      finished: warehouseStock,
+      complete: state === 'complete',
+    }
+  })
 }
 
-function ProcessPage({ product, headerActionsSlot }) {
-  const [partsData, setPartsData] = useState([])
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(null)
+function StageCard({ stage }) {
+  const [hovered, setHovered] = useState(false)
+  const cardRef = useRef(null)
 
-  useEffect(() => {
-    if (!product) return
-    apiFetch(`/api/products/${product.id}/parts`).then(r => r.json()).then(data => {
-      // Convert API parts to process rows format
-      const rows = data.map(part => {
-        const stations = (part.stages || []).map((st, i) => {
-          const next = part.stages[i + 1]
-          const isDone = st.current_stock > 0 && (next ? next.current_stock > 0 : true)
-          const isCurrent = st.current_stock > 0 && (!next || next.current_stock === 0)
-          return {
-            vendor: st.factory_name,
-            action: st.action_name,
-            qty: st.current_stock > 0 ? st.current_stock : null,
-            status: isDone ? 'done' : isCurrent ? 'current' : 'wait',
-          }
-        })
-        const lastStage = part.stages?.[part.stages.length - 1]
-        const finished = lastStage?.current_stock || 0
-        const allDone = stations.every(s => s.status === 'done')
-        return {
-          name: part.name,
-          skus: part.skus?.map(s => s.color_name) || [],
-          state: allDone ? 'done' : stations.some(s => s.status === 'current') ? 'process' : 'wait',
-          stations,
-          finished,
-          complete: allDone,
-        }
-      })
-      setPartsData(rows)
-    }).catch(() => setPartsData([]))
-  }, [product?.id])
+  const inTransit = stage.in_transit || 0
+  const totalReturned = stage.total_returned || 0
+  const totalSent = stage.total_sent || 0
+  const totalDefect = stage.total_defect || 0
+  const hasData = totalSent > 0
 
-  const startEdit = () => { setDraft(JSON.parse(JSON.stringify(partsData))); setEditing(true) }
-  const cancelEdit = () => { setDraft(null); setEditing(false) }
-  const saveEdit = () => { setPartsData(draft); setDraft(null); setEditing(false) }
+  const isDone = hasData && inTransit === 0 && totalReturned > 0
+  const isCurrent = inTransit > 0
+  const defectRate = totalReturned > 0 ? (totalDefect / totalReturned * 100) : null
+  const defectDisplay = defectRate !== null ? `${defectRate.toFixed(1)}%` : '—'
 
-  useEffect(() => {
-    if (!headerActionsSlot) return
-    headerActionsSlot.set(
-      editing ? (
-        <>
-          <button className="btn" onClick={cancelEdit}>取消</button>
-          <button className="btn primary" onClick={saveEdit}>儲存變更</button>
-        </>
-      ) : (
-        <button onClick={startEdit} style={{
-          appearance: 'none', font: 'inherit', fontWeight: 500, fontSize: 14,
-          padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
-          background: '#fff', border: '1px solid #E8461A', color: '#E8461A',
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-        }}>
-          <Icon.Edit />編輯流程
-        </button>
-      )
+  const tooltipRect = hovered && cardRef.current ? cardRef.current.getBoundingClientRect() : null
+
+  if (!hasData) {
+    return (
+      <div style={{
+        width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
+        borderRadius: 'var(--r-md)', padding: '9px 11px',
+        background: 'var(--bg-1)', border: '0.5px dashed var(--line-2)',
+        opacity: 0.7, display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+          <span style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--text-3)', display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-3)' }}>等待中</span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+        <div className="num" style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-3)' }}>—</div>
+      </div>
     )
-    return () => headerActionsSlot.set(null)
-  }, [editing, headerActionsSlot])
+  }
 
-  const rows = editing ? draft : partsData
-  const imgSrc = product ? localStorage.getItem(`prod-img-${product.id}`) : null
+  const bg = isDone ? 'var(--bg-2)' : isCurrent ? '#FEF6F4' : 'var(--bg-1)'
+  const border = isCurrent ? '1.5px solid #E8461A' : '0.5px solid var(--line-1)'
+  const dotColor = isDone ? '#1A7A3C' : isCurrent ? '#E8461A' : 'var(--text-4)'
+  const statusLabel = isDone ? '完成' : isCurrent ? '加工中' : '等待中'
+  const statusColor = isDone ? '#1A7A3C' : isCurrent ? '#E8461A' : 'var(--text-4)'
+  const mainNum = isDone ? totalReturned : isCurrent ? inTransit : null
+  const mainNumColor = isCurrent ? '#E8461A' : 'var(--text-1)'
+  const mainLabel = isDone ? '回廠件數' : isCurrent ? '加工中件數' : '尚未送出'
+
+  return (
+    <div
+      ref={cardRef}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative', width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
+        borderRadius: 'var(--r-md)', padding: '9px 11px', border, background: bg,
+        display: 'flex', flexDirection: 'column',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+        <span style={{ width: 5, height: 5, borderRadius: 999, background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+        <span style={{ fontSize: 10, fontWeight: 500, color: statusColor }}>{statusLabel}</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+        <span className="num" style={{ fontSize: 18, fontWeight: 500, color: mainNumColor }}>
+          {mainNum !== null ? mainNum.toLocaleString() : '—'}
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{mainLabel}</div>
+
+      {tooltipRect && (
+        <div style={{
+          position: 'fixed', left: tooltipRect.left, top: tooltipRect.bottom + 5,
+          background: 'var(--text-1)', color: 'var(--bg-1)',
+          borderRadius: 'var(--r-md)', padding: '8px 10px',
+          fontSize: 11, zIndex: 50, pointerEvents: 'none', whiteSpace: 'nowrap',
+          opacity: 1, transition: 'opacity 150ms ease',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+            <span style={{ opacity: 0.65 }}>送出</span>
+            <span className="num">{totalSent} 件</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 3 }}>
+            <span style={{ opacity: 0.65 }}>回廠</span>
+            <span className="num">{totalReturned} 件</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 3 }}>
+            <span style={{ opacity: 0.65 }}>不良</span>
+            <span className="num">{defectDisplay}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InTransitSummary({ parts }) {
+  const factoryMap = {}
+  for (const part of parts) {
+    for (const stage of (part.stages || [])) {
+      if ((stage.in_transit || 0) > 0) {
+        factoryMap[stage.factory_name] = (factoryMap[stage.factory_name] || 0) + stage.in_transit
+      }
+    }
+  }
+  const entries = Object.entries(factoryMap)
+  if (entries.length === 0) return null
+  return (
+    <div style={{
+      background: '#FEF6F4', border: '0.5px solid #E8461A', borderRadius: 'var(--r-md)',
+      padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, flexShrink: 0 }}>加工中總覽</span>
+      {entries.flatMap(([name, qty], i) => [
+        ...(i > 0 ? [<span key={`sep${i}`} style={{ width: 1, height: 12, background: 'var(--line-1)', flexShrink: 0, display: 'inline-block' }} />] : []),
+        <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{name}</span>
+          <span className="num" style={{ fontSize: 12, fontWeight: 500, color: '#E8461A' }}>{qty}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>件</span>
+        </div>,
+      ])}
+    </div>
+  )
+}
+
+function calcPartStatus(stages) {
+  if (stages.some(s => (s.in_transit || 0) > 0)) return 'processing'
+  if (stages.some(s => (s.total_returned || 0) > 0)) return 'returned'
+  if (stages.some(s => (s.total_sent || 0) > 0)) return 'sent'
+  return 'pending'
+}
+
+function SkuAddPopover({ rect, onAdd, onClose }) {
+  const [input, setInput] = useState('')
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const submit = (name) => { if (name.trim()) { onAdd(name.trim()); setInput('') } }
+
+  return (
+    <div ref={ref} style={{
+      position: 'fixed', left: rect.left, top: rect.bottom + 6,
+      background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+      borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-pop)',
+      padding: '10px', zIndex: 200, width: 200,
+    }}>
+      <input
+        autoFocus className="input"
+        style={{ fontSize: 13, padding: '6px 10px', marginBottom: 8 }}
+        placeholder="顏色名稱"
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(input); if (e.key === 'Escape') onClose() }}
+      />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+        {Object.entries(SKU_COLORS).map(([name, color]) => (
+          <button key={name} title={name} onClick={() => submit(name)} style={{
+            width: 20, height: 20, borderRadius: '50%',
+            border: '1px solid rgba(0,0,0,0.12)', background: color,
+            cursor: 'pointer', flexShrink: 0, padding: 0,
+          }} />
+        ))}
+      </div>
+      <button className="btn primary" style={{ fontSize: 12, padding: '5px 0', width: '100%' }}
+        onClick={() => submit(input)}>新增</button>
+    </div>
+  )
+}
+
+function StageOrderModal({ parts, mode, onClose, onReload }) {
+  const [selectedPartId, setSelectedPartId] = useState(parts[0]?.id || '')
+  const [localStages, setLocalStages] = useState([])
+  const [newFactory, setNewFactory] = useState('')
+  const [newAction, setNewAction] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+
+  useEffect(() => {
+    if (!selectedPartId) return
+    const part = parts.find(p => p.id === selectedPartId)
+    const stages = [...(part?.stages || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    setLocalStages(stages)
+    setConfirmDeleteId(null)
+  }, [selectedPartId])
+
+  const moveUp = (i) => {
+    if (i === 0) return
+    setLocalStages(s => { const a = [...s]; [a[i-1], a[i]] = [a[i], a[i-1]]; return a })
+  }
+  const moveDown = (i) => {
+    if (i >= localStages.length - 1) return
+    setLocalStages(s => { const a = [...s]; [a[i], a[i+1]] = [a[i+1], a[i]]; return a })
+  }
+
+  const saveOrder = async () => {
+    setSaving(true)
+    try {
+      for (let i = 0; i < localStages.length; i++) {
+        const st = localStages[i]
+        await apiFetch(`/api/parts/${selectedPartId}/stages/${st.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ factory_name: st.factory_name, action_name: st.action_name, sort_order: i }),
+        })
+      }
+      onReload(); onClose()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const addStage = async () => {
+    if (!newFactory.trim() || !newAction.trim()) return
+    setSaving(true)
+    try {
+      const res = await apiFetch(`/api/parts/${selectedPartId}/stages`, {
+        method: 'POST',
+        body: JSON.stringify({ factory_name: newFactory.trim(), action_name: newAction.trim(), sort_order: localStages.length }),
+      })
+      const data = await res.json()
+      setLocalStages(s => [...s, { id: data.id, factory_name: newFactory.trim(), action_name: newAction.trim(), sort_order: s.length }])
+      setNewFactory(''); setNewAction('')
+      onReload()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const deleteStage = async (stageId) => {
+    setSaving(true)
+    try {
+      await apiFetch(`/api/parts/${selectedPartId}/stages/${stageId}`, { method: 'DELETE' })
+      setLocalStages(s => s.filter(st => st.id !== stageId))
+      setConfirmDeleteId(null)
+      onReload()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const title = mode === 'add' ? '新增加工站' : '調整加工站順序'
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{
+        background: 'var(--bg-1)', borderRadius: 'var(--r-xl)', width: '100%', maxWidth: 460,
+        maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        boxShadow: 'var(--shadow-pop)',
+      }}>
+        {/* header */}
+        <div style={{ padding: '14px 20px', borderBottom: '0.5px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
+          <button className="btn ghost" style={{ padding: '4px 8px' }} onClick={onClose}><Icon.X /></button>
+        </div>
+
+        {/* part picker */}
+        <div style={{ padding: '12px 20px', borderBottom: '0.5px solid var(--line-1)' }}>
+          <label style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>選擇零件</label>
+          <select className="select" style={{ fontSize: 13 }} value={selectedPartId}
+            onChange={e => setSelectedPartId(e.target.value)}>
+            {parts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+
+        {/* stage list */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {localStages.length === 0 ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工站</div>
+          ) : localStages.map((stage, i) => (
+            <div key={stage.id} style={{
+              padding: '9px 20px', display: 'flex', alignItems: 'center', gap: 10,
+              borderBottom: '0.5px solid var(--line-1)',
+              background: confirmDeleteId === stage.id ? 'var(--bad-tint)' : 'transparent',
+            }}>
+              <Icon.Grip />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{stage.factory_name}</div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{stage.action_name}</div>
+              </div>
+              {confirmDeleteId === stage.id ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: 'var(--bad)', whiteSpace: 'nowrap' }}>確定刪除?</span>
+                  <button className="btn danger" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => deleteStage(stage.id)} disabled={saving}>刪除</button>
+                  <button className="btn ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setConfirmDeleteId(null)}>取消</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <button className="btn ghost" style={{ padding: '3px 7px', fontSize: 13, lineHeight: 1 }} onClick={() => moveUp(i)} disabled={i === 0}>↑</button>
+                  <button className="btn ghost" style={{ padding: '3px 7px', fontSize: 13, lineHeight: 1 }} onClick={() => moveDown(i)} disabled={i >= localStages.length - 1}>↓</button>
+                  <button className="btn ghost" style={{ padding: '3px 6px', color: 'var(--text-4)' }} onClick={() => setConfirmDeleteId(stage.id)}><Icon.X /></button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* add form */}
+        {mode === 'add' && (
+          <div style={{ padding: '12px 20px', borderTop: '0.5px solid var(--line-1)', background: 'var(--bg-2)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontWeight: 500 }}>新增加工站</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input className="input" placeholder="加工廠名稱" value={newFactory}
+                onChange={e => setNewFactory(e.target.value)} style={{ fontSize: 13, flex: 1 }} />
+              <input className="input" placeholder="動作名稱" value={newAction}
+                onChange={e => setNewAction(e.target.value)} style={{ fontSize: 13, flex: 1 }}
+                onKeyDown={e => { if (e.key === 'Enter') addStage() }} />
+            </div>
+            <button className="btn primary" style={{ fontSize: 13 }} onClick={addStage}
+              disabled={saving || !newFactory.trim() || !newAction.trim()}>
+              {saving ? '儲存中…' : '新增'}
+            </button>
+          </div>
+        )}
+
+        {/* footer */}
+        <div style={{ padding: '12px 20px', borderTop: '0.5px solid var(--line-1)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {mode === 'reorder' ? (
+            <>
+              <button className="btn" onClick={onClose}>取消</button>
+              <button className="btn primary" onClick={saveOrder} disabled={saving}>{saving ? '儲存中…' : '儲存順序'}</button>
+            </>
+          ) : (
+            <button className="btn" onClick={onClose}>關閉</button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PartView({ parts, skuEditMode, onReload }) {
+  const [editingNameId, setEditingNameId] = useState(null)
+  const [editNameVal, setEditNameVal] = useState('')
+  const [skuPopover, setSkuPopover] = useState(null) // null | { partId, rect }
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!skuEditMode) { setEditingNameId(null); setEditNameVal(''); setSkuPopover(null) }
+  }, [skuEditMode])
+
+  async function saveName(partId) {
+    if (!editNameVal.trim()) return
+    setSaving(true)
+    try {
+      await apiFetch(`/api/parts/${partId}`, { method: 'PUT', body: JSON.stringify({ name: editNameVal.trim() }) })
+      setEditingNameId(null)
+      onReload?.()
+    } finally { setSaving(false) }
+  }
+
+  async function deleteSku(partId, skuId) {
+    setSaving(true)
+    try {
+      await apiFetch(`/api/parts/${partId}/skus/${skuId}`, { method: 'DELETE' })
+      onReload?.()
+    } finally { setSaving(false) }
+  }
+
+  async function addSku(partId, colorName) {
+    setSaving(true)
+    try {
+      await apiFetch(`/api/parts/${partId}/skus`, { method: 'POST', body: JSON.stringify({ color_name: colorName }) })
+      setSkuPopover(null)
+      onReload?.()
+    } finally { setSaving(false) }
+  }
+
+  const statusConfig = {
+    processing: { label: '加工中', bg: '#FEE9E4', color: '#E8461A' },
+    returned:   { label: '已回廠', bg: 'var(--ok-tint)', color: 'var(--ok)' },
+    sent:       { label: '已送出', bg: 'var(--accent-tint)', color: 'var(--accent)' },
+    pending:    { label: '等待中', bg: 'var(--bg-3)', color: 'var(--text-4)' },
+  }
+  return (
+    <div>
+      {parts.map(part => {
+        const stages = part.stages || []
+        const status = calcPartStatus(stages)
+        const badge = statusConfig[status]
+        return (
+          <div key={part.id} style={{
+            background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
+            borderRadius: 'var(--r-lg)', marginBottom: 8, overflow: 'hidden',
+            opacity: status === 'pending' ? 0.82 : 1,
+          }}>
+            <div style={{
+              padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: '0.5px solid var(--line-1)',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Part name */}
+                {skuEditMode && editingNameId === part.id ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <input autoFocus className="input" style={{ fontSize: 13, padding: '4px 8px', width: 150 }}
+                      value={editNameVal}
+                      onChange={e => setEditNameVal(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveName(part.id); if (e.key === 'Escape') setEditingNameId(null) }}
+                    />
+                    <button className="btn primary" style={{ padding: '4px 10px', fontSize: 12 }}
+                      onClick={() => saveName(part.id)} disabled={saving}>儲存</button>
+                    <button className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }}
+                      onClick={() => setEditingNameId(null)}>取消</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: skuEditMode ? 6 : 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>{part.name}</span>
+                    {skuEditMode && (
+                      <button className="btn ghost" style={{ padding: '2px 5px' }}
+                        onClick={() => { setEditingNameId(part.id); setEditNameVal(part.name) }}>
+                        <Icon.Edit />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {/* SKUs row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', position: 'relative' }}>
+                  {(part.skus || []).map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <SkuDot name={s.color_name} size={7} />
+                      {skuEditMode && (
+                        <button onClick={() => deleteSku(part.id, s.id)} style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          color: 'var(--text-4)', display: 'flex', alignItems: 'center', lineHeight: 1,
+                        }} disabled={saving}><Icon.X /></button>
+                      )}
+                    </div>
+                  ))}
+                  {skuEditMode && (
+                    <button className="btn ghost" style={{ padding: '1px 7px', fontSize: 11, gap: 3, display: 'inline-flex', alignItems: 'center' }}
+                      onClick={e => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setSkuPopover(skuPopover?.partId === part.id ? null : { partId: part.id, rect })
+                      }}>
+                      <Icon.Plus />SKU
+                    </button>
+                  )}
+                  {skuPopover?.partId === part.id && (
+                    <SkuAddPopover rect={skuPopover.rect} onAdd={(c) => addSku(part.id, c)} onClose={() => setSkuPopover(null)} />
+                  )}
+                  {(part.warehouse_stock || 0) > 0 && (
+                    <span style={{ fontSize: 9, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 5px', borderRadius: 3 }}>倉 {part.warehouse_stock}</span>
+                  )}
+                  {(part.defect_stock || 0) > 0 && (
+                    <span style={{ fontSize: 9, color: 'var(--bad)', background: 'var(--bad-tint)', padding: '1px 5px', borderRadius: 3 }}>⚠ {part.defect_stock}</span>
+                  )}
+                </div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 9px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0, marginLeft: 8 }}>
+                {badge.label}
+              </span>
+            </div>
+            {stages.length > 0 && (
+              <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                {stages.flatMap((stage, i) => {
+                  const hasData = (stage.total_sent || 0) > 0
+                  const nextHasData = i < stages.length - 1 && (stages[i + 1]?.total_sent || 0) > 0
+                  return [
+                    <StageCard key={stage.id} stage={stage} />,
+                    ...(i < stages.length - 1 ? [
+                      <span key={`a${i}`} style={{
+                        color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                        fontSize: hasData || nextHasData ? 14 : 12,
+                        opacity: hasData || nextHasData ? 1 : 0.3,
+                      }}>›</span>,
+                    ] : []),
+                  ]
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function calcFactoryGroups(parts) {
+  const map = new Map()
+  for (const part of parts) {
+    for (const stage of (part.stages || [])) {
+      const fname = stage.factory_name
+      if (!map.has(fname)) {
+        map.set(fname, { name: fname, totalInTransit: 0, partsInTransit: [], actionNamesInTransit: new Set(), hasSent: false })
+      }
+      const g = map.get(fname)
+      g.totalInTransit += (stage.in_transit || 0)
+      if ((stage.in_transit || 0) > 0 && !g.partsInTransit.find(p => p.id === part.id)) {
+        g.partsInTransit.push(part)
+        g.actionNamesInTransit.add(stage.action_name)
+      }
+      if ((stage.total_sent || 0) > 0) g.hasSent = true
+    }
+  }
+  const result = []
+  for (const [, g] of map) {
+    const isActive = g.totalInTransit > 0
+    const isDone = !isActive && g.hasSent
+    if (isActive || isDone) {
+      result.push({ name: g.name, totalInTransit: g.totalInTransit, partsInTransit: g.partsInTransit, actionNames: [...g.actionNamesInTransit], isActive, isDone })
+    }
+  }
+  return result.sort((a, b) => a.isActive === b.isActive ? b.totalInTransit - a.totalInTransit : a.isActive ? -1 : 1)
+}
+
+function FactoryView({ parts }) {
+  const groups = calcFactoryGroups(parts)
+  if (groups.length === 0) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工中或已完成的加工廠資料</div>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {groups.map(({ name, totalInTransit, partsInTransit, actionNames, isActive, isDone }) => (
+        <div key={name} style={{ opacity: isDone ? 0.6 : 1 }}>
+          <div style={{
+            padding: '9px 13px', background: 'var(--bg-1)',
+            border: '0.5px solid var(--line-1)',
+            borderRadius: isDone ? 'var(--r-lg)' : 'var(--r-lg) var(--r-lg) 0 0',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <div style={{ width: 24, height: 24, display: 'grid', placeItems: 'center', color: 'var(--text-3)', flexShrink: 0 }}>
+              <svg viewBox="0 0 24 24" fill="none" width="15" height="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 21v-13l9-4 9 4v13"/><path d="M13 21v-4a2 2 0 0 0-4 0v4"/><path d="M9 9v.01"/><path d="M15 9v.01"/><path d="M9 13v.01"/><path d="M15 13v.01"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
+                {isActive ? `${actionNames.join('・')}・${partsInTransit.length} 個零件加工中` : '本批已完成'}
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              {isActive && (
+                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: '#FEE9E4', color: '#E8461A' }}>
+                  ● 加工中 {totalInTransit} 件
+                </span>
+              )}
+              {isDone && (
+                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: 'var(--ok-tint)', color: 'var(--ok)' }}>
+                  ✓ 已完成
+                </span>
+              )}
+            </div>
+          </div>
+          {isActive && (
+            <div style={{ border: '0.5px solid var(--line-1)', borderTop: 'none', borderRadius: '0 0 var(--r-lg) var(--r-lg)', background: 'var(--bg-1)' }}>
+              {partsInTransit.map((part, pi) => (
+                <div key={part.id} style={{ borderBottom: pi < partsInTransit.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
+                  <div style={{ padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
+                    {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+                    {(part.warehouse_stock || 0) > 0 && (
+                      <span style={{ fontSize: 9, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 5px', borderRadius: 3 }}>倉 {part.warehouse_stock}</span>
+                    )}
+                  </div>
+                  <div style={{ padding: '0 13px 12px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                    {(part.stages || []).flatMap((stage, i, arr) => {
+                      const hasData = (stage.total_sent || 0) > 0
+                      const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
+                      return [
+                        <StageCard key={stage.id} stage={stage} />,
+                        ...(i < arr.length - 1 ? [
+                          <span key={`a${i}`} style={{
+                            color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                            fontSize: hasData || nextHasData ? 14 : 12,
+                            opacity: hasData || nextHasData ? 1 : 0.3,
+                          }}>›</span>,
+                        ] : []),
+                      ]
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ProcessPage({ products, selectedProduct, onSelectProduct, headerActionsSlot, reloadKey }) {
+  const [rawParts, setRawParts] = useState([])
+  const [viewMode, setViewMode] = useState('factory')
+  const [editMenuOpen, setEditMenuOpen] = useState(false)
+  const [skuEditMode, setSkuEditMode] = useState(false)
+  const [stageModal, setStageModal] = useState(null) // null | { mode: 'reorder' | 'add' }
+  const menuRef = useRef(null)
+
+  const curProd = selectedProduct || products[0]
+
+  useEffect(() => {
+    if (!curProd) return
+    loadParts(curProd.id)
+  }, [curProd?.id, reloadKey])
+
+  // clear any legacy header slot
+  useEffect(() => {
+    if (headerActionsSlot) headerActionsSlot.set(null)
+    return () => { if (headerActionsSlot) headerActionsSlot.set(null) }
+  }, [headerActionsSlot])
+
+  // close dropdown on outside click
+  useEffect(() => {
+    if (!editMenuOpen) return
+    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setEditMenuOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [editMenuOpen])
+
+  async function loadParts(pid) {
+    if (!pid) return
+    const data = await apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).catch(() => [])
+    setRawParts(data)
+  }
+
+  const handleMenuSelect = (action) => {
+    setEditMenuOpen(false)
+    if (action === 'sku') { setSkuEditMode(true); setViewMode('part') }
+    if (action === 'reorder') setStageModal({ mode: 'reorder' })
+    if (action === 'add') setStageModal({ mode: 'add' })
+  }
+
+  const menuItems = [
+    { key: 'sku',     label: '編輯零件名稱 / SKU' },
+    { key: 'reorder', label: '調整加工站順序' },
+    { key: 'add',     label: '新增加工站' },
+  ]
 
   return (
     <>
-      {editing && (
+      {/* Product tabs + controls row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        {products.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {products.map(p => {
+              const active = curProd?.id === p.id
+              return (
+                <button key={p.id} onClick={() => onSelectProduct(p)} style={{
+                  padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+                  background: active ? 'var(--text-1)' : 'var(--bg-1)',
+                  color: active ? 'var(--bg-1)' : 'var(--text-3)',
+                  border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+                  font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+                  transition: 'background .12s, color .12s, border-color .12s',
+                }}>{p.name}</button>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+          {/* view toggle */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[
+              { mode: 'factory', label: '以廠商', icon: <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21v-13l9-4 9 4v13"/><path d="M13 21v-4a2 2 0 0 0-4 0v4"/><path d="M9 9v.01"/><path d="M15 9v.01"/></svg> },
+              { mode: 'part',    label: '以零件', icon: <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l3 3l3-3l-3-3z"/><path d="M15 12l3 3l3-3l-3-3z"/><path d="M9 6l3 3l3-3l-3-3z"/><path d="M9 18l3 3l3-3l-3-3z"/></svg> },
+            ].map(({ mode, label, icon }) => {
+              const active = viewMode === mode
+              return (
+                <button key={mode} onClick={() => setViewMode(mode)} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', font: 'inherit',
+                  fontSize: 12, fontWeight: 500,
+                  background: active ? 'var(--text-1)' : 'var(--bg-1)',
+                  color: active ? 'var(--bg-1)' : 'var(--text-3)',
+                  border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+                  transition: 'background .12s, color .12s',
+                }}>
+                  {icon}{label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* edit dropdown */}
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button onClick={() => setEditMenuOpen(v => !v)} style={{
+              appearance: 'none', font: 'inherit', fontWeight: 500, fontSize: 13,
+              padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+              background: 'var(--bg-1)', border: '1px solid var(--line-2)', color: 'var(--text-2)',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              transition: 'background .12s',
+            }}>
+              <Icon.Edit />編輯流程
+              <svg viewBox="0 0 10 10" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3.5l3 3 3-3"/>
+              </svg>
+            </button>
+            {editMenuOpen && (
+              <div style={{
+                position: 'absolute', right: 0, top: 'calc(100% + 4px)',
+                background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+                borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-pop)',
+                minWidth: 190, zIndex: 20, overflow: 'hidden',
+              }}>
+                {menuItems.map(item => (
+                  <button key={item.key} onClick={() => handleMenuSelect(item.key)} style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    padding: '9px 14px', fontSize: 13, font: 'inherit',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    color: 'var(--text-1)', borderBottom: item.key !== 'add' ? '0.5px solid var(--line-1)' : 'none',
+                    transition: 'background .1s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >{item.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* SKU edit mode banner */}
+      {skuEditMode && (
         <div style={{
-          background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 16,
-          display: 'flex', alignItems: 'center', gap: 8,
-          fontSize: 13, color: '#C53A12',
+          background: 'var(--accent-tint)', border: '1px solid var(--accent-tint-hi)',
+          borderRadius: 'var(--r-md)', padding: '9px 14px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          fontSize: 13,
         }}>
-          <Icon.Edit />
-          <span style={{ fontWeight: 500 }}>編輯模式</span>
-          <span style={{ color: '#5F5E5A' }}>— 拖拉欄位調整加工順序，拖拉左側 grip 調整零件順序</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon.Edit />
+            <span style={{ fontWeight: 500, color: 'var(--accent)' }}>編輯零件名稱 / SKU</span>
+            <span style={{ color: 'var(--text-3)' }}>— 點擊名稱旁鉛筆圖示修改名稱，點擊 × 刪除色號</span>
+          </div>
+          <button className="btn" style={{ padding: '4px 12px', fontSize: 12 }}
+            onClick={() => setSkuEditMode(false)}>完成編輯</button>
         </div>
       )}
 
-      {rows.length === 0 ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-3)' }}>
-          <p>尚無加工站資料，請前往「產品管理」新增零件與加工站</p>
-        </div>
+      <InTransitSummary parts={rawParts} />
+
+      {viewMode === 'factory' ? (
+        <FactoryView parts={rawParts} />
       ) : (
-        <ProcessTable rows={rows} edit={editing} productImgSrc={imgSrc} onMutate={setDraft} />
+        <PartView parts={rawParts} skuEditMode={skuEditMode} onReload={() => loadParts(curProd?.id)} />
+      )}
+
+      {stageModal && (
+        <StageOrderModal
+          parts={rawParts}
+          mode={stageModal.mode}
+          onClose={() => setStageModal(null)}
+          onReload={() => loadParts(curProd?.id)}
+        />
       )}
     </>
   )
 }
 
-const CELL_H = 52, CELL_W = 90, NAME_W = 120, FIN_W = 80
+const CELL_H = 52, CELL_W = 110, NAME_W = 160
 
-function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
+function ProcessTable({ rows, edit, productImgSrc, onMutate, reloadParts, productId }) {
   const colCount = rows.reduce((m, r) => Math.max(m, r.stations.length), 0)
   const padded = rows.map(r => {
     const sts = r.stations.slice()
@@ -865,32 +1646,99 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
     return { ...r, stations: sts }
   })
 
+  // drag-edit state
   const [colDrag, setColDrag] = useState(null)
   const [colHover, setColHover] = useState(null)
   const [rowDrag, setRowDrag] = useState(null)
   const [rowHover, setRowHover] = useState(null)
   const [delColAt, setDelColAt] = useState(null)
 
+  // inline expand/edit state
+  const [expandedIdx, setExpandedIdx] = useState(null)
+  const [editMap, setEditMap] = useState({}) // partId → { name, removedIds: [], newNames: [], addInput: '' }
+  const [savingId, setSavingId] = useState(null)
+
+  // new part state
+  const [addingPart, setAddingPart] = useState(false)
+  const [newPartName, setNewPartName] = useState('')
+  const [newPartSkus, setNewPartSkus] = useState([])
+  const [newSkuInput, setNewSkuInput] = useState('')
+
+  function openExpand(ri, row) {
+    if (expandedIdx === ri) { setExpandedIdx(null); return }
+    if (!editMap[row.id]) {
+      setEditMap(m => ({ ...m, [row.id]: { name: row.name, removedIds: [], newNames: [], addInput: '' } }))
+    }
+    setExpandedIdx(ri)
+  }
+
+  function toggleSkuRemove(partId, skuId) {
+    setEditMap(m => {
+      const e = m[partId]
+      const removedIds = e.removedIds.includes(skuId)
+        ? e.removedIds.filter(id => id !== skuId)
+        : [...e.removedIds, skuId]
+      return { ...m, [partId]: { ...e, removedIds } }
+    })
+  }
+
+  function addNewSkuToEdit(partId) {
+    const name = (editMap[partId]?.addInput || '').trim()
+    if (!name) return
+    setEditMap(m => ({ ...m, [partId]: { ...m[partId], newNames: [...m[partId].newNames, name], addInput: '' } }))
+  }
+
+  async function savePart(row) {
+    const e = editMap[row.id]
+    if (!e) return
+    setSavingId(row.id)
+    try {
+      const calls = []
+      if (e.name !== row.name) calls.push(apiFetch(`/api/parts/${row.id}`, { method: 'PUT', body: JSON.stringify({ name: e.name }) }))
+      for (const skuId of e.removedIds) calls.push(apiFetch(`/api/parts/${row.id}/skus/${skuId}`, { method: 'DELETE' }))
+      for (const skuName of e.newNames) calls.push(apiFetch(`/api/parts/${row.id}/skus`, { method: 'POST', body: JSON.stringify({ color_name: skuName }) }))
+      await Promise.all(calls)
+      setExpandedIdx(null)
+      reloadParts()
+    } finally { setSavingId(null) }
+  }
+
+  async function deletePart(row) {
+    if (!confirm(`確認刪除零件「${row.name}」？其所有 SKU 也會一併刪除。`)) return
+    setSavingId(row.id)
+    try {
+      await apiFetch(`/api/parts/${row.id}`, { method: 'DELETE' })
+      setExpandedIdx(null)
+      reloadParts()
+    } finally { setSavingId(null) }
+  }
+
+  async function saveNewPart() {
+    const name = newPartName.trim()
+    if (!name || !productId) return
+    setSavingId('new')
+    try {
+      const res = await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify({ product_id: productId, name }) })
+      const { id: partId } = await res.json()
+      for (const skuName of newPartSkus) {
+        await apiFetch(`/api/parts/${partId}/skus`, { method: 'POST', body: JSON.stringify({ color_name: skuName }) })
+      }
+      setAddingPart(false); setNewPartName(''); setNewPartSkus([]); setNewSkuInput('')
+      reloadParts()
+    } finally { setSavingId(null) }
+  }
+
   const moveCol = (from, to) => {
     if (from == null || from === to) return
-    const next = padded.map(r => {
+    onMutate(padded.map(r => {
       const sts = r.stations.slice()
       const [m] = sts.splice(from, 1)
       sts.splice(from < to ? to - 1 : to, 0, m)
       return { ...r, stations: sts }
-    })
-    onMutate(next)
+    }))
   }
-
-  const deleteCol = i => {
-    onMutate(padded.map(r => ({ ...r, stations: r.stations.filter((_, ci) => ci !== i) })))
-    setDelColAt(null)
-  }
-
-  const addCol = () => {
-    onMutate(padded.map(r => ({ ...r, stations: [...r.stations, { vendor: '—', action: '新加工站', qty: null, status: 'wait' }] })))
-  }
-
+  const deleteCol = i => { onMutate(padded.map(r => ({ ...r, stations: r.stations.filter((_, ci) => ci !== i) }))); setDelColAt(null) }
+  const addCol = () => { onMutate(padded.map(r => ({ ...r, stations: [...r.stations, { vendor: '—', action: '新加工站', qty: null, status: 'wait' }] }))) }
   const moveRow = (from, to) => {
     if (from == null || from === to) return
     const rs = padded.slice()
@@ -898,6 +1746,24 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
     rs.splice(from < to ? to - 1 : to, 0, m)
     onMutate(rs)
   }
+
+  const totalCols = colCount + 1 + (edit ? 1 : 0)
+
+  // shared expand row styles
+  const expandRow = {
+    background: '#F5F4F0',
+    borderTop: '0.5px solid #E8E6E0',
+    padding: '10px 14px',
+    display: 'flex', alignItems: 'flex-start', gap: 16,
+  }
+  const expandLabel = { fontSize: 10, color: '#888', marginBottom: 4 }
+  const expandInput = { fontSize: 12, padding: '5px 8px', border: '0.5px solid #DDDBD3', borderRadius: 6, fontFamily: 'inherit', background: '#fff', outline: 'none' }
+  const skuPill = (bg, border, color) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    padding: '3px 8px 3px 6px', borderRadius: 999,
+    background: bg, border: `0.5px solid ${border}`,
+    fontSize: 11, color,
+  })
 
   return (
     <>
@@ -927,19 +1793,10 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
                     {edit && <Icon.Grip />}
                     <span>站 {i + 1}</span>
                     {edit && (
-                      <button
-                        onClick={e => { e.stopPropagation(); setDelColAt(i) }}
-                        className="proc-delx"
-                        style={{
-                          position: 'absolute', top: 4, right: 4,
-                          width: 16, height: 16, borderRadius: 999,
-                          background: '#fff', border: '0.5px solid #EBEBEB',
-                          color: '#9A9A95', cursor: 'pointer', padding: 0,
-                          display: 'none', placeItems: 'center',
-                        }}
+                      <button onClick={e => { e.stopPropagation(); setDelColAt(i) }} className="proc-delx"
+                        style={{ position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: 999, background: '#fff', border: '0.5px solid #EBEBEB', color: '#9A9A95', cursor: 'pointer', padding: 0, display: 'none', placeItems: 'center' }}
                         onMouseEnter={e => { e.currentTarget.style.color = '#C53A12'; e.currentTarget.style.borderColor = '#C53A12' }}
-                        onMouseLeave={e => { e.currentTarget.style.color = '#9A9A95'; e.currentTarget.style.borderColor = '#EBEBEB' }}
-                      >
+                        onMouseLeave={e => { e.currentTarget.style.color = '#9A9A95'; e.currentTarget.style.borderColor = '#EBEBEB' }}>
                         <Icon.X />
                       </button>
                     )}
@@ -949,76 +1806,204 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate }) {
               {edit && (
                 <th style={{ width: 56, padding: 0, borderLeft: '0.5px solid #F0EFE8', background: '#F8F8F6' }}>
                   <div style={{ height: 36, display: 'grid', placeItems: 'center' }}>
-                    <button onClick={addCol} style={{
-                      appearance: 'none', font: 'inherit', cursor: 'pointer',
-                      background: '#fff', border: '1px dashed #C9C7C0', color: '#888',
-                      borderRadius: 6, padding: '3px 8px', fontSize: 11,
-                    }}
+                    <button onClick={addCol} style={{ appearance: 'none', font: 'inherit', cursor: 'pointer', background: '#fff', border: '1px dashed #C9C7C0', color: '#888', borderRadius: 6, padding: '3px 8px', fontSize: 11 }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8461A'; e.currentTarget.style.color = '#E8461A' }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = '#C9C7C0'; e.currentTarget.style.color = '#888' }}
-                    >+ 新增</button>
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = '#C9C7C0'; e.currentTarget.style.color = '#888' }}>
+                      + 新增
+                    </button>
                   </div>
                 </th>
               )}
-              <th style={{ width: FIN_W, padding: '10px 8px', textAlign: 'center', fontSize: 10, fontWeight: 500, color: '#888', borderLeft: '0.5px solid #EBEBEB', background: '#F8F8F6' }}>成品</th>
             </tr>
           </thead>
           <tbody>
             {padded.map((row, ri) => {
               const isDragging = rowDrag === ri
               const isHover = edit && rowHover === ri && rowDrag != null && rowDrag !== ri
+              const isExpanded = !edit && expandedIdx === ri
+              const e = editMap[row.id]
               return (
-                <tr
-                  key={row.name + ri}
-                  onDragOver={edit ? e => { e.preventDefault(); setRowHover(ri) } : undefined}
-                  onDrop={edit ? e => { e.preventDefault(); moveRow(rowDrag, ri); setRowDrag(null); setRowHover(null) } : undefined}
-                  style={{ borderTop: '0.5px solid #F0EFE8', background: isHover ? '#EEF4FA' : 'transparent', opacity: isDragging ? 0.4 : 1 }}
-                >
-                  <td style={{ width: NAME_W, padding: '0 14px', verticalAlign: 'middle' }}>
-                    <div style={{ height: CELL_H, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {edit && (
-                        <span
-                          draggable
-                          onDragStart={e => { setRowDrag(ri) }}
-                          onDragEnd={() => { setRowDrag(null); setRowHover(null) }}
-                          style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'inline-flex' }}
-                        ><Icon.Grip /></span>
-                      )}
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 3 }}>
-                          {row.skus.slice(0, 4).map(s => <SkuDot key={s} name={s} size={7} />)}
-                          {row.skus.length > 4 && <span style={{ fontSize: 10, color: '#888' }}>+{row.skus.length - 4}</span>}
+                <>
+                  <tr
+                    key={row.id + ri}
+                    onDragOver={edit ? ev => { ev.preventDefault(); setRowHover(ri) } : undefined}
+                    onDrop={edit ? ev => { ev.preventDefault(); moveRow(rowDrag, ri); setRowDrag(null); setRowHover(null) } : undefined}
+                    style={{ borderTop: '0.5px solid #F0EFE8', background: isHover ? '#EEF4FA' : isExpanded ? '#FAFAF8' : 'transparent', opacity: isDragging ? 0.4 : 1 }}
+                  >
+                    <td style={{ width: NAME_W, padding: '0 10px 0 14px', verticalAlign: 'middle' }}>
+                      <div style={{ height: CELL_H, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {edit ? (
+                          <span draggable onDragStart={() => setRowDrag(ri)} onDragEnd={() => { setRowDrag(null); setRowHover(null) }}
+                            style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'inline-flex', flexShrink: 0 }}>
+                            <Icon.Grip />
+                          </span>
+                        ) : (
+                          <button onClick={() => openExpand(ri, row)} title="展開編輯" style={{
+                            background: 'none', border: 'none', padding: 2, cursor: 'pointer', flexShrink: 0,
+                            color: isExpanded ? '#4A4A4A' : '#C8C6C0', display: 'grid', placeItems: 'center',
+                            borderRadius: 4, transition: 'color .1s',
+                          }}
+                            onMouseEnter={e => e.currentTarget.style.color = '#4A4A4A'}
+                            onMouseLeave={e => e.currentTarget.style.color = isExpanded ? '#4A4A4A' : '#C8C6C0'}
+                          >
+                            <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+                              style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>
+                              <path d="M4 2l4 4-4 4"/>
+                            </svg>
+                          </button>
+                        )}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                            {row.skus.slice(0, 4).map(s => <SkuDot key={s} name={s} size={7} />)}
+                            {row.skus.length > 4 && <span style={{ fontSize: 10, color: '#888' }}>+{row.skus.length - 4}</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
+                            {row.warehouseStock > 0 && (
+                              <span style={{ fontSize: 9, color: '#888', background: '#F5F4F0', padding: '1px 4px', borderRadius: 3, lineHeight: 1.5 }}>
+                                倉 {row.warehouseStock}
+                              </span>
+                            )}
+                            {row.defectStock > 0 && (
+                              <span style={{ fontSize: 9, color: '#C53A12', background: '#FEE9E4', padding: '1px 4px', borderRadius: 3, lineHeight: 1.5 }}>
+                                ⚠ {row.defectStock}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  {row.stations.map((st, ci) => <StationCell key={ci} st={st} />)}
-                  {edit && <td style={{ width: 56, borderLeft: '0.5px solid #F0EFE8' }}><div style={{ height: CELL_H }} /></td>}
-                  <td style={{ width: FIN_W, padding: 0, verticalAlign: 'middle', borderLeft: '0.5px solid #EBEBEB', background: '#FAF9F5' }}>
-                    <div style={{ height: CELL_H, padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <div style={{
-                        height: 22, borderRadius: 4, overflow: 'hidden',
-                        background: row.complete ? '#E6F4EC' : '#F0EFE8',
-                        display: 'grid', placeItems: 'center',
-                        color: row.complete ? '#1A7A3C' : '#A8A6A0',
-                      }}>
-                        {row.complete
-                          ? <Icon.Check />
-                          : productImgSrc
-                            ? <img src={productImgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : <Icon.Photo />
-                        }
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-                        <span className="num" style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{(row.finished || 0).toLocaleString()}</span>
-                        <span style={{ fontSize: 10, color: '#888' }}>件</span>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    {row.stations.map((st, ci) => <StationCell key={ci} st={st} />)}
+                    {edit && <td style={{ width: 56, borderLeft: '0.5px solid #F0EFE8' }}><div style={{ height: CELL_H }} /></td>}
+                  </tr>
+
+                  {/* Expanded inline edit row */}
+                  {isExpanded && e && (
+                    <tr key={`exp-${row.id}`}>
+                      <td colSpan={totalCols} style={{ padding: 0 }}>
+                        <div style={expandRow}>
+                          {/* Part name */}
+                          <div style={{ flexShrink: 0 }}>
+                            <div style={expandLabel}>零件名稱</div>
+                            <input value={e.name} onChange={ev => setEditMap(m => ({ ...m, [row.id]: { ...m[row.id], name: ev.target.value } }))}
+                              style={{ ...expandInput, width: 120 }} />
+                          </div>
+
+                          {/* SKU colours */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={expandLabel}>SKU 顏色</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                              {row.rawSkus.map(sku => {
+                                const removed = e.removedIds.includes(sku.id)
+                                return (
+                                  <span key={sku.id} style={skuPill(removed ? '#F0EFE8' : '#fff', removed ? '#DDDBD3' : '#C9C8C2', removed ? '#A8A6A0' : '#1A1A1A')}>
+                                    <SkuDot name={sku.color_name} size={6} />
+                                    <span style={{ textDecoration: removed ? 'line-through' : 'none' }}>{sku.color_name}</span>
+                                    <button onClick={() => toggleSkuRemove(row.id, sku.id)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: removed ? '#A8A6A0' : '#9A9A95', display: 'grid', placeItems: 'center', marginLeft: 2 }}>
+                                      <Icon.X />
+                                    </button>
+                                  </span>
+                                )
+                              })}
+                              {e.newNames.map((name, ni) => (
+                                <span key={`new-${ni}`} style={skuPill('#FEE9E4', '#FCD6CC', '#E8461A')}>
+                                  <SkuDot name={name} size={6} />
+                                  {name}
+                                  <button onClick={() => setEditMap(m => ({ ...m, [row.id]: { ...m[row.id], newNames: m[row.id].newNames.filter((_, j) => j !== ni) } }))}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#E8461A', display: 'grid', placeItems: 'center', marginLeft: 2 }}>
+                                    <Icon.X />
+                                  </button>
+                                </span>
+                              ))}
+                              <input placeholder="＋ 新增顏色"
+                                value={e.addInput}
+                                onChange={ev => setEditMap(m => ({ ...m, [row.id]: { ...m[row.id], addInput: ev.target.value } }))}
+                                onKeyDown={ev => { if (ev.key === 'Enter') addNewSkuToEdit(row.id) }}
+                                style={{ width: 88, fontSize: 11, padding: '3px 8px', border: '0.5px dashed #C9C8C2', borderRadius: 999, fontFamily: 'inherit', outline: 'none', background: '#fff' }} />
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                            <button onClick={() => deletePart(row)} disabled={savingId === row.id}
+                              style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid #DDDBD3', background: '#fff', cursor: 'pointer', fontSize: 11, color: '#C53A12', fontFamily: 'inherit' }}>
+                              刪除
+                            </button>
+                            <button onClick={() => setExpandedIdx(null)}
+                              style={{ padding: '5px 12px', borderRadius: 6, border: '0.5px solid #DDDBD3', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#4A4A4A', fontFamily: 'inherit' }}>
+                              取消
+                            </button>
+                            <button onClick={() => savePart(row)} disabled={savingId === row.id || !e.name.trim()}
+                              style={{ padding: '5px 12px', borderRadius: 6, border: '0.5px solid #1A7A3C', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#1A7A3C', fontFamily: 'inherit', fontWeight: 500 }}>
+                              {savingId === row.id ? '儲存中...' : '儲存'}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )
             })}
+
+            {/* New part row */}
+            {!edit && (
+              <tr>
+                <td colSpan={totalCols} style={{ padding: 0 }}>
+                  {addingPart ? (
+                    <div style={{ ...expandRow, borderTop: '0.5px dashed #DDDBD3' }}>
+                      <div style={{ flexShrink: 0 }}>
+                        <div style={expandLabel}>零件名稱</div>
+                        <input autoFocus value={newPartName} onChange={e => setNewPartName(e.target.value)} placeholder="例：外殼"
+                          style={{ ...expandInput, width: 120 }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={expandLabel}>SKU 顏色（選填）</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {newPartSkus.map((name, ni) => (
+                            <span key={ni} style={skuPill('#FEE9E4', '#FCD6CC', '#E8461A')}>
+                              <SkuDot name={name} size={6} />
+                              {name}
+                              <button onClick={() => setNewPartSkus(s => s.filter((_, j) => j !== ni))}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#E8461A', display: 'grid', placeItems: 'center', marginLeft: 2 }}>
+                                <Icon.X />
+                              </button>
+                            </span>
+                          ))}
+                          <input placeholder="＋ 新增顏色"
+                            value={newSkuInput} onChange={e => setNewSkuInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { const n = e.target.value.trim(); if (n) { setNewPartSkus(s => [...s, n]); setNewSkuInput('') } } }}
+                            style={{ width: 88, fontSize: 11, padding: '3px 8px', border: '0.5px dashed #C9C8C2', borderRadius: 999, fontFamily: 'inherit', outline: 'none', background: '#fff' }} />
+                        </div>
+                      </div>
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                        <button onClick={() => { setAddingPart(false); setNewPartName(''); setNewPartSkus([]); setNewSkuInput('') }}
+                          style={{ padding: '5px 12px', borderRadius: 6, border: '0.5px solid #DDDBD3', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#4A4A4A', fontFamily: 'inherit' }}>
+                          取消
+                        </button>
+                        <button onClick={saveNewPart} disabled={savingId === 'new' || !newPartName.trim()}
+                          style={{ padding: '5px 12px', borderRadius: 6, border: '0.5px solid #1A7A3C', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#1A7A3C', fontFamily: 'inherit', fontWeight: 500 }}>
+                          {savingId === 'new' ? '新增中...' : '新增零件'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingPart(true)} style={{
+                      width: '100%', background: 'none', border: 'none', padding: '10px 14px',
+                      cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      borderTop: '0.5px dashed #DDDBD3', color: '#9A9A95', fontSize: 12,
+                      display: 'flex', alignItems: 'center', gap: 6, transition: 'background .1s, color .1s',
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#F8F7F2'; e.currentTarget.style.color = '#4A4A4A' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#9A9A95' }}
+                    >
+                      <span style={{ fontSize: 16, lineHeight: 1, marginTop: -1 }}>+</span> 新增零件
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1050,18 +2035,25 @@ function StationCell({ st }) {
   const isWait = st.status === 'wait'
   const bg = isDone ? '#F0FBF4' : isCurrent ? '#FEF6F4' : '#FFFFFF'
   const statusColor = isDone ? '#1A7A3C' : isCurrent ? '#E8461A' : '#888'
-  const qtyColor = isCurrent ? '#E8461A' : '#1A1A1A'
+  const qtyColor = isCurrent ? '#E8461A' : '#6B6B6B'
+  const rate = st.defectRate
+  const rateColor = rate === null ? null : rate > 5 ? '#E8461A' : rate > 2 ? '#B07D00' : '#1A7A3C'
   return (
     <td style={{ width: CELL_W, padding: 0, verticalAlign: 'middle', borderLeft: '0.5px solid #F0EFE8' }}>
-      <div style={{ height: CELL_H, padding: '6px 8px', background: bg, opacity: isWait ? 0.35 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+      <div style={{ height: CELL_H, padding: '5px 8px', background: bg, opacity: isWait ? 0.3 : 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, position: 'relative' }}>
         <div style={{ fontSize: 9, fontWeight: 500, color: statusColor, display: 'flex', alignItems: 'center', gap: 3, lineHeight: 1 }}>
           {isDone && <span style={{ fontSize: 10 }}>✓</span>}
-          {isCurrent && <span style={{ width: 5, height: 5, borderRadius: 999, background: statusColor, display: 'inline-block' }} />}
+          {isCurrent && <span style={{ width: 5, height: 5, borderRadius: 999, background: statusColor, display: 'inline-block', flexShrink: 0 }} />}
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.action}</span>
         </div>
-        <div className="num" style={{ fontSize: 13, fontWeight: 600, color: qtyColor, letterSpacing: '-0.01em' }}>
-          {st.qty == null ? '—' : st.qty.toLocaleString()}
+        <div className="num" style={{ fontSize: 14, fontWeight: 700, color: qtyColor, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+          {st.inTransit > 0 ? st.inTransit.toLocaleString() : '—'}
         </div>
+        {rate !== null && (
+          <div style={{ fontSize: 9, color: rateColor, lineHeight: 1, position: 'absolute', bottom: 4, right: 6 }}>
+            {rate.toFixed(1)}%
+          </div>
+        )}
       </div>
     </td>
   )
@@ -1344,277 +2336,767 @@ function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
 }
 
 // ─── Page: Log entry ──────────────────────────────────────────
-function LogPage({ products, selectedProduct, logs, reload }) {
-  const [action, setAction] = useState('receive')
+function uniqueFactoriesFromStages(stages) {
+  const seen = new Set()
+  const out = []
+  for (const s of stages) {
+    if (!seen.has(s.factory_name)) { seen.add(s.factory_name); out.push(s.factory_name) }
+  }
+  return out
+}
+
+function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
+  const [direction, setDirection] = useState('in')
+  const [source, setSource] = useState(null)
   const [pid, setPid] = useState(selectedProduct?.id || '')
   const [partName, setPartName] = useState('')
+  const [partsData, setPartsData] = useState([])
+  const [stages, setStages] = useState([])
   const [sku, setSku] = useState('')
   const [qty, setQty] = useState('')
-  const [defect, setDefect] = useState('')
+  const [defectQty, setDefectQty] = useState('')
   const [note, setNote] = useState('')
-  const [hover, setHover] = useState(null)
-  const [operator, setOperator] = useState(() => { try { return localStorage.getItem(OP_KEY) } catch { return null } })
-  const [switching, setSwitching] = useState(false)
-  const [partsData, setPartsData] = useState([])
+  const [handling, setHandling] = useState('none')
+  const [reworkStageId, setReworkStageId] = useState(null)
+  const [workers, setWorkers] = useState([])
+  const [workerId, setWorkerId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [editNoteId, setEditNoteId] = useState(null)
+  const [editNoteVal, setEditNoteVal] = useState('')
+  const [pendingDefects, setPendingDefects] = useState([])
+  const [reworkModal, setReworkModal] = useState(null)
+  const [reworkSel, setReworkSel] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
+  const [batchNoteMode, setBatchNoteMode] = useState(false)
+  const [batchNote, setBatchNote] = useState('')
 
-  const showPicker = !operator || switching
+  const dq = Math.max(0, parseInt(defectQty, 10) || 0)
+  const actionType = source ? resolveActionType(direction, source) : null
+  const stageId = (actionType && stages.length) ? resolveStageId(stages, source, actionType) : null
+  const part = partsData.find(p => p.name === partName)
+  const showDefectHandling = direction === 'in' && dq > 0
+  const reworkStages = stages.filter(s => (s.in_transit || 0) > 0)
+  const factories = uniqueFactoriesFromStages(stages)
+  const sourceOptions = direction === 'in'
+    ? [{ value: 'raw', label: '原料（倉庫）' }, ...factories.map(f => ({ value: f, label: f }))]
+    : [{ value: 'ship', label: '大貨出貨' }, ...factories.map(f => ({ value: f, label: f }))]
 
   useEffect(() => {
-    if (pid) apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).then(d => { setPartsData(d); setPartName(d[0]?.name || ''); setSku(d[0]?.skus?.[0]?.color_name || '') })
+    fetch('/api/workers').then(r => r.json()).then(setWorkers).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!pid) return
+    apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).then(d => {
+      setPartsData(d)
+      const first = d[0]
+      setPartName(first?.name || '')
+      setStages(first?.stages || [])
+      setSku(first?.skus?.[0]?.color_name || '')
+      setSource(null)
+    })
   }, [pid])
 
-  useEffect(() => {
-    if (selectedProduct) setPid(selectedProduct.id)
-  }, [selectedProduct?.id])
+  useEffect(() => { if (selectedProduct) setPid(selectedProduct.id) }, [selectedProduct?.id])
+  useEffect(() => { setSource(null); setHandling('none'); setReworkStageId(null) }, [direction])
+  useEffect(() => { if (dq === 0) { setHandling('none'); setReworkStageId(null) } }, [dq])
 
-  const product = products.find(p => p.id === pid)
-  const part = partsData.find(p => p.name === partName)
+  async function loadPendingDefects() {
+    if (!pid) return
+    const res = await apiFetch(`/api/defect-logs?status=pending&product_id=${pid}`)
+    if (res.ok) setPendingDefects(await res.json())
+  }
+  useEffect(() => { loadPendingDefects() }, [pid])
 
-  const ACTIONS = [
-    { key: 'receive', label: '進貨',    color: 'var(--ok)',     tint: 'var(--ok-tint)',     hint: '原料或半成品從加工廠送回我們倉庫' },
-    { key: 'send',    label: '送出',    color: 'var(--info)',   tint: 'var(--info-tint)',   hint: '把零件送去外部加工廠處理' },
-    { key: 'return',  label: '回廠',    color: 'var(--accent)', tint: 'var(--accent-tint)', hint: '外部加工完成的零件回到倉庫，會記錄不良品' },
-    { key: 'ship',    label: '大貨出貨', color: 'var(--purple)', tint: 'var(--purple-tint)', hint: '成品出貨給品牌客戶或通路' },
-  ]
-  const shown = ACTIONS.find(a => a.key === (hover || action))
+  async function deleteLog(id) {
+    if (!confirm('確認刪除此紀錄？庫存數量將自動回滾。')) return
+    try {
+      const res = await apiFetch(`/api/receive-logs/${id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
+      reload(); onLogSubmit?.()
+    } catch (e) { alert('刪除失敗：' + e.message) }
+  }
+
+  async function saveNote(id) {
+    try {
+      await apiFetch(`/api/receive-logs/${id}`, { method: 'PATCH', body: JSON.stringify({ note: editNoteVal }) })
+      setEditNoteId(null); reload()
+    } catch (e) { alert('儲存失敗：' + e.message) }
+  }
+
+  const visibleLogs = logs.slice(0, 50)
+  const allVisible = visibleLogs.length > 0 && visibleLogs.every(l => selected.has(l.id))
+  const someVisible = visibleLogs.some(l => selected.has(l.id))
+
+  function toggleSelect(id) {
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleSelectAll() {
+    if (allVisible) setSelected(new Set())
+    else setSelected(new Set(visibleLogs.map(l => l.id)))
+  }
+
+  async function batchDelete() {
+    const ids = [...selected]
+    if (!confirm(`確認刪除 ${ids.length} 筆紀錄？庫存數量將自動回滾。`)) return
+    let failed = 0
+    for (const id of ids) {
+      try {
+        const res = await apiFetch(`/api/receive-logs/${id}`, { method: 'DELETE' })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    setSelected(new Set()); reload(); onLogSubmit?.()
+    if (failed > 0) alert(`${failed} 筆刪除失敗，其餘已完成。`)
+  }
+
+  async function batchSetNote() {
+    const ids = [...selected]
+    for (const id of ids) {
+      try { await apiFetch(`/api/receive-logs/${id}`, { method: 'PATCH', body: JSON.stringify({ note: batchNote }) }) } catch {}
+    }
+    setBatchNoteMode(false); setBatchNote(''); reload()
+  }
+
+  function exportCSV() {
+    const rows = visibleLogs.filter(l => selected.has(l.id))
+    const headers = ['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良品', '備註']
+    const lines = [
+      headers.join(','),
+      ...rows.map(l => [
+        l.logged_at?.slice(0, 16).replace('T', ' ') || '',
+        ACTION_LABEL[l.action_type] || l.action_type,
+        l.worker_name || '',
+        l.part_name || '',
+        l.stage_name || '',
+        l.sku_color || '',
+        l.qty,
+        l.defect_qty || 0,
+        `"${(l.note || '').replace(/"/g, '""')}"`,
+      ].join(','))
+    ]
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
+    a.download = `進出貨紀錄_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click(); URL.revokeObjectURL(a.href)
+  }
 
   async function submit() {
-    if (!qty || isNaN(+qty)) return alert('請輸入正確數量')
+    if (!qty || isNaN(+qty) || +qty <= 0) return alert('請輸入正確數量')
+    if (!source) return alert('請選擇來源／去向')
+    if (showDefectHandling && handling === 'rework' && !reworkStageId) return alert('請選擇重工站')
     setSubmitting(true)
     try {
       await apiFetch('/api/receive-logs', {
         method: 'POST',
         body: JSON.stringify({
-          product_id: pid, part_id: part?.id,
-          sku_color: sku || '', action_type: action,
-          qty: +qty, defect_qty: defect ? +defect : 0, note,
-          operator,
-        })
+          product_id: pid, part_id: part?.id, stage_id: stageId,
+          sku_color: sku || '', action_type: actionType,
+          qty: +qty, defect_qty: dq, note, worker_id: workerId || null,
+        }),
       })
-      setQty(''); setDefect(''); setNote('')
-      reload()
+      if (showDefectHandling && handling === 'rework' && dq > 0 && reworkStageId) {
+        await apiFetch('/api/receive-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            product_id: pid, part_id: part?.id, stage_id: reworkStageId,
+            sku_color: sku || '', action_type: 'rework',
+            qty: dq, defect_qty: 0, note: '（自動重工）', worker_id: workerId || null,
+          }),
+        })
+      }
+      if (showDefectHandling && handling === 'scrap' && dq > 0) {
+        await apiFetch('/api/receive-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            product_id: pid, part_id: part?.id, stage_id: null,
+            sku_color: sku || '', action_type: 'scrap',
+            qty: dq, defect_qty: 0, note: '（自動報廢）', worker_id: workerId || null,
+          }),
+        })
+      }
+      setQty(''); setDefectQty(''); setNote(''); setHandling('none'); setReworkStageId(null)
+      reload(); loadPendingDefects(); onLogSubmit?.()
     } catch (e) { alert('送出失敗：' + e.message) }
     finally { setSubmitting(false) }
   }
 
-  function pickOp(name) {
-    setOperator(name)
-    try { localStorage.setItem(OP_KEY, name) } catch {}
-    setSwitching(false)
+  async function handleDefectRework(defect, rStageId) {
+    try {
+      await apiFetch('/api/receive-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: defect.product_id, part_id: defect.part_id, stage_id: rStageId,
+          sku_color: defect.sku_color || '', action_type: 'rework',
+          qty: defect.qty, defect_qty: 0, note: '', worker_id: null,
+        }),
+      })
+      setReworkModal(null); loadPendingDefects(); reload(); onLogSubmit?.()
+    } catch (e) { alert('送出失敗：' + e.message) }
+  }
+
+  async function handleDefectScrap(defect) {
+    if (!confirm(`確認報廢 ${defect.qty} 件？`)) return
+    try {
+      await apiFetch('/api/receive-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: defect.product_id, part_id: defect.part_id, stage_id: null,
+          sku_color: defect.sku_color || '', action_type: 'scrap',
+          qty: defect.qty, defect_qty: 0, note: '', worker_id: null,
+        }),
+      })
+      loadPendingDefects(); reload(); onLogSubmit?.()
+    } catch (e) { alert('送出失敗：' + e.message) }
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
-      {/* Form */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18, position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
+
+        {/* Form */}
+        <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>新增登記</h3>
-          {operator && (
-            <button onClick={() => setSwitching(true)} style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-              background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 999,
-              cursor: 'pointer', font: 'inherit',
-            }}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700 }}>{operator.slice(0, 1)}</span>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{operator}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>切換</span>
-            </button>
-          )}
-        </div>
 
-        {showPicker && <OperatorPicker onPick={pickOp} dismissable={!!operator} onDismiss={() => setSwitching(false)} />}
-
-        <div className="field">
-          <label>動作類型</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {ACTIONS.map(a => (
-              <button key={a.key}
-                onClick={() => setAction(a.key)}
-                onMouseEnter={() => setHover(a.key)}
-                onMouseLeave={() => setHover(null)}
-                style={{
-                  padding: '12px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 500,
-                  border: `1px solid ${action === a.key ? a.color : 'var(--line-2)'}`,
-                  background: action === a.key ? a.tint : 'var(--bg-1)',
-                  color: action === a.key ? a.color : 'var(--text-2)',
-                  display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
-                }}>
-                <span style={{ width: 6, height: 6, borderRadius: 3, background: a.color }} />{a.label}
-              </button>
-            ))}
-          </div>
-          {shown && (
-            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 6, background: 'var(--bg-2)', border: '1px solid var(--line-1)', fontSize: 12, color: 'var(--text-2)' }}>
-              <b style={{ color: 'var(--text-1)' }}>{shown.label}</b> · {shown.hint}
-            </div>
-          )}
-        </div>
-
-        <div className="field">
-          <label>產品</label>
-          <select className="select" value={pid} onChange={e => setPid(e.target.value)}>
-            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-
-        <div className="field">
-          <label>零件</label>
-          <select className="select" value={partName} onChange={e => { setPartName(e.target.value); const np = partsData.find(x => x.name === e.target.value); setSku(np?.skus?.[0]?.color_name || '') }}>
-            {partsData.map(p => <option key={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-
-        {part?.skus?.length > 0 && (
+          {/* Direction */}
           <div className="field">
-            <label>SKU 顏色</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {part.skus.map(s => (
-                <button key={s.id} onClick={() => setSku(s.color_name)} style={{
-                  padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 13,
-                  border: `1px solid ${sku === s.color_name ? 'var(--accent)' : 'var(--line-2)'}`,
-                  background: sku === s.color_name ? 'var(--accent-tint)' : 'var(--bg-1)',
-                  color: sku === s.color_name ? 'var(--accent)' : 'var(--text-2)',
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                }}>
-                  <SkuDot name={s.color_name} />{s.color_name}
-                </button>
+            <label>方向</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                { key: 'in',  label: '進貨', color: '#2E7D32', tint: '#E8F5E9' },
+                { key: 'out', label: '出貨', color: '#E64A19', tint: '#FBE9E7' },
+              ].map(d => (
+                <button key={d.key} onClick={() => setDirection(d.key)} style={{
+                  padding: '14px', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 600,
+                  border: `1.5px solid ${direction === d.key ? d.color : 'var(--line-2)'}`,
+                  background: direction === d.key ? d.tint : 'var(--bg-1)',
+                  color: direction === d.key ? d.color : 'var(--text-2)',
+                }}>{d.label}</button>
               ))}
             </div>
           </div>
-        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {/* Source / destination */}
           <div className="field">
-            <label>數量</label>
-            <input className="input num" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" />
+            <label>{direction === 'in' ? '來源' : '去向'}</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {sourceOptions.map(opt => (
+                <button key={opt.value} onClick={() => setSource(opt.value)} style={{
+                  padding: '6px 14px', borderRadius: 999, cursor: 'pointer', fontSize: 13,
+                  border: `1px solid ${source === opt.value ? 'var(--accent)' : 'var(--line-2)'}`,
+                  background: source === opt.value ? 'var(--accent-tint)' : 'var(--bg-1)',
+                  color: source === opt.value ? 'var(--accent)' : 'var(--text-2)',
+                }}>{opt.label}</button>
+              ))}
+            </div>
+            {actionType && (
+              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-3)' }}>
+                → {ACTION_LABEL[actionType]}
+              </div>
+            )}
           </div>
+
+          {/* Product */}
           <div className="field">
-            <label>不良品數量</label>
-            <input className="input num" type="number" value={defect} onChange={e => setDefect(e.target.value)} placeholder="0" />
+            <label>產品</label>
+            <select className="select" value={pid} onChange={e => setPid(e.target.value)}>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
+
+          {/* Part */}
+          <div className="field">
+            <label>零件</label>
+            <select className="select" value={partName} onChange={e => {
+              const name = e.target.value
+              setPartName(name)
+              const p = partsData.find(x => x.name === name)
+              setStages(p?.stages || [])
+              setSku(p?.skus?.[0]?.color_name || '')
+              setSource(null)
+            }}>
+              {partsData.map(p => <option key={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {/* SKU */}
+          {part?.skus?.length > 1 && (
+            <div className="field">
+              <label>SKU 顏色</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {part.skus.map(s => (
+                  <button key={s.id} onClick={() => setSku(s.color_name)} style={{
+                    padding: '6px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 13,
+                    border: `1px solid ${sku === s.color_name ? 'var(--accent)' : 'var(--line-2)'}`,
+                    background: sku === s.color_name ? 'var(--accent-tint)' : 'var(--bg-1)',
+                    color: sku === s.color_name ? 'var(--accent)' : 'var(--text-2)',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <SkuDot name={s.color_name} />{s.color_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Worker */}
+          <div className="field">
+            <label>登記人</label>
+            <select className="select" value={workerId ?? ''} onChange={e => setWorkerId(e.target.value ? +e.target.value : null)}>
+              <option value="">（選填）</option>
+              {workers.filter(w => w.is_active).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+
+          {/* Qty */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field">
+              <label>數量</label>
+              <input className="input num" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" />
+            </div>
+            <div className="field">
+              <label>不良品數量</label>
+              <input className="input num" type="number" value={defectQty} onChange={e => setDefectQty(e.target.value)} placeholder="0" />
+            </div>
+          </div>
+
+          {/* Defect handling */}
+          {showDefectHandling && (
+            <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--bad-tint)', border: '1px solid #FCD6CC' }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--bad)', marginBottom: 10 }}>
+                不良品 {dq} 件 — 如何處理？
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {[
+                  { key: 'none',   label: '暫不處理' },
+                  { key: 'rework', label: '送重工' },
+                  { key: 'scrap',  label: '報廢' },
+                ].map(h => (
+                  <button key={h.key} onClick={() => { setHandling(h.key); setReworkStageId(null) }} style={{
+                    padding: '5px 14px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
+                    border: `1px solid ${handling === h.key ? 'var(--bad)' : '#FCD6CC'}`,
+                    background: handling === h.key ? 'var(--bad)' : '#fff',
+                    color: handling === h.key ? '#fff' : 'var(--text-2)',
+                    fontWeight: handling === h.key ? 600 : 400,
+                  }}>{h.label}</button>
+                ))}
+              </div>
+              {handling === 'rework' && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>選擇重工站</div>
+                  {reworkStages.length === 0
+                    ? <span style={{ fontSize: 12, color: 'var(--text-3)' }}>目前無加工中零件可重工</span>
+                    : <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {reworkStages.map(s => (
+                          <button key={s.id} onClick={() => setReworkStageId(s.id)} style={{
+                            padding: '5px 12px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
+                            border: `1px solid ${reworkStageId === s.id ? 'var(--accent)' : 'var(--line-2)'}`,
+                            background: reworkStageId === s.id ? 'var(--accent-tint)' : '#fff',
+                            color: reworkStageId === s.id ? 'var(--accent)' : 'var(--text-2)',
+                          }}>
+                            {s.factory_name} · {s.action_name}
+                            <span style={{ color: 'var(--text-3)', marginLeft: 4 }}>({s.in_transit})</span>
+                          </button>
+                        ))}
+                      </div>
+                  }
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Note */}
+          <div className="field">
+            <label>備註</label>
+            <input className="input" placeholder="（選填）" value={note} onChange={e => setNote(e.target.value)} />
+          </div>
+
+          <button className="btn primary" onClick={submit} disabled={submitting}
+            style={{ width: '100%', padding: 14, justifyContent: 'center', fontSize: 15 }}>
+            {submitting ? '送出中...' : '確認送出'}
+          </button>
         </div>
 
-        <div className="field">
-          <label>備註</label>
-          <input className="input" placeholder="（選填）" value={note} onChange={e => setNote(e.target.value)} />
+        {/* Log table */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Table header */}
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10, minHeight: 56 }}>
+            {someVisible ? (
+              <>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>已選 {selected.size} 筆</span>
+                {batchNoteMode ? (
+                  <>
+                    <input autoFocus value={batchNote} onChange={e => setBatchNote(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') batchSetNote(); if (e.key === 'Escape') setBatchNoteMode(false) }}
+                      placeholder="統一備註內容…" style={{ fontSize: 13, padding: '5px 10px', border: '1px solid var(--accent)', borderRadius: 6, outline: 'none', width: 200 }} />
+                    <button onClick={batchSetNote} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 500 }}>套用</button>
+                    <button onClick={() => setBatchNoteMode(false)} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 12, background: 'none', border: '1px solid var(--line-2)', cursor: 'pointer', color: 'var(--text-2)' }}>取消</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={batchDelete} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--bad-tint)', color: 'var(--bad)', border: '1px solid #FCD6CC', cursor: 'pointer', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <Icon.Trash />刪除
+                    </button>
+                    <button onClick={() => { setBatchNoteMode(true); setBatchNote('') }} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--bg-2)', color: 'var(--text-1)', border: '1px solid var(--line-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <Icon.Edit />編輯備註
+                    </button>
+                    <button onClick={exportCSV} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--bg-2)', color: 'var(--text-1)', border: '1px solid var(--line-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <Icon.Export />匯出 CSV
+                    </button>
+                    <button onClick={() => setSelected(new Set())} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>取消選取</button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, flex: 1 }}>最近紀錄</h3>
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{logs.length} 筆</span>
+              </>
+            )}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 860 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-2)' }}>
+                  <th style={{ padding: '10px 10px 10px 16px', borderBottom: '1px solid var(--line-1)', width: 32 }}>
+                    <input type="checkbox" checked={allVisible} ref={el => { if (el) el.indeterminate = someVisible && !allVisible }}
+                      onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
+                  </th>
+                  {['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良', '備註', ''].map((h, i) => (
+                    <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {logs.length === 0 && <tr><td colSpan={11} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
+                {visibleLogs.map(log => {
+                  const isEditing = editNoteId === log.id
+                  const isSel = selected.has(log.id)
+                  return (
+                    <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)', background: isSel ? 'var(--accent-tint)' : undefined }}>
+                      <td style={{ padding: '10px 10px 10px 16px' }}>
+                        <input type="checkbox" checked={isSel} onChange={() => toggleSelect(log.id)}
+                          style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
+                      </td>
+                      <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{log.logged_at?.slice(0, 16).replace('T', ' ')}</td>
+                      <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.worker_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{log.stage_name || '—'}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {log.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>}
+                      </td>
+                      <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
+                      <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
+                      <td style={{ padding: '8px 14px', minWidth: 120 }}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input autoFocus value={editNoteVal} onChange={e => setEditNoteVal(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveNote(log.id); if (e.key === 'Escape') setEditNoteId(null) }}
+                              style={{ flex: 1, fontSize: 12, padding: '3px 6px', border: '1px solid var(--accent)', borderRadius: 4, outline: 'none', minWidth: 0 }} />
+                            <button onClick={() => saveNote(log.id)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer' }}>存</button>
+                            <button onClick={() => setEditNoteId(null)} style={{ padding: '3px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>取消</button>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{log.note || ''}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <button title="編輯備註"
+                            onClick={() => { setEditNoteId(log.id); setEditNoteVal(log.note || '') }}
+                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' }}>
+                            <Icon.Edit />
+                          </button>
+                          <button title="刪除紀錄" onClick={() => deleteLog(log.id)}
+                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#FEE9E4'; e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.borderColor = '#FCD6CC' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}>
+                            <Icon.Trash />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-
-        <button className="btn primary" onClick={submit} disabled={submitting} style={{ width: '100%', padding: 14, justifyContent: 'center', fontSize: 15 }}>
-          {submitting ? '送出中...' : '確認送出'}
-        </button>
       </div>
 
-      {/* Recent logs */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>最近紀錄</h3>
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{logs.length} 筆</span>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
+      {/* Pending defects */}
+      {pendingDefects.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>待處理不良品</h3>
+            <span style={{ fontSize: 12, color: 'var(--bad)', background: 'var(--bad-tint)', padding: '2px 8px', borderRadius: 10, fontWeight: 500 }}>
+              {pendingDefects.length} 筆
+            </span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--bg-2)' }}>
-                {['時間', '登記人', '動作', '零件', 'SKU', '數量', '不良'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)' }}>{h}</th>
+                {['時間', '零件', '來源站', 'SKU', '數量', '操作'].map((h, i) => (
+                  <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {logs.length === 0 && <tr><td colSpan={7} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
-              {logs.slice(0, 50).map(log => (
-                <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
-                  <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{log.logged_at?.slice(0, 16).replace('T', ' ')}</td>
-                  <td style={{ padding: '12px 14px' }}>{log.operator || log.who || '—'}</td>
-                  <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
-                  <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
-                  <td style={{ padding: '12px 14px' }}>
-                    {log.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>}
+              {pendingDefects.map(d => (
+                <tr key={d.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                  <td className="num" style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{d.created_at?.slice(0, 16).replace('T', ' ')}</td>
+                  <td style={{ padding: '10px 14px' }}>{d.part_name || '—'}</td>
+                  <td style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12 }}>{d.stage_name || '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    {d.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={d.sku_color} />{d.sku_color}</span>}
                   </td>
-                  <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
-                  <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
+                  <td className="num" style={{ padding: '10px 14px', color: 'var(--bad)', fontWeight: 500 }}>{d.qty}</td>
+                  <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => { setReworkModal(d); setReworkSel(null) }} style={{
+                        padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: '1px solid var(--accent)', background: 'var(--accent-tint)', color: 'var(--accent)', fontWeight: 500,
+                      }}>送重工</button>
+                      <button onClick={() => handleDefectScrap(d)} style={{
+                        padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: '1px solid var(--line-2)', background: 'none', color: 'var(--bad)',
+                      }}>報廢</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      )}
+
+      {/* Rework stage picker modal */}
+      {reworkModal && (() => {
+        const defectPart = partsData.find(p => p.id === reworkModal.part_id)
+        const modalStages = (defectPart?.stages || []).filter(s => (s.in_transit || 0) > 0)
+        return (
+          <ModalOverlay onClose={() => setReworkModal(null)}>
+            <div style={{ width: 440, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>選擇重工站</div>
+                <button onClick={() => setReworkModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-3)' }}><Icon.X /></button>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                {reworkModal.part_name} · 不良品 {reworkModal.qty} 件
+              </div>
+              {modalStages.length === 0
+                ? <div style={{ fontSize: 13, color: 'var(--text-3)' }}>目前無加工中零件可重工</div>
+                : <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {modalStages.map(s => (
+                        <button key={s.id} onClick={() => setReworkSel(s.id)} style={{
+                          padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                          border: `1.5px solid ${reworkSel === s.id ? 'var(--accent)' : 'var(--line-2)'}`,
+                          background: reworkSel === s.id ? 'var(--accent-tint)' : 'var(--bg-1)',
+                          color: reworkSel === s.id ? 'var(--accent)' : 'var(--text-2)',
+                        }}>
+                          {s.factory_name} · {s.action_name}
+                          <span style={{ color: 'var(--text-3)', marginLeft: 6, fontSize: 12 }}>({s.in_transit} 件)</span>
+                        </button>
+                      ))}
+                    </div>
+                    {reworkSel && (
+                      <button className="btn primary" onClick={() => handleDefectRework(reworkModal, reworkSel)}
+                        style={{ justifyContent: 'center', padding: '12px 0' }}>
+                        確認送重工
+                      </button>
+                    )}
+                  </>
+              }
+            </div>
+          </ModalOverlay>
+        )
+      })()}
     </div>
   )
 }
 
-// ─── Operator picker modal ────────────────────────────────────
-function OperatorPicker({ onPick, dismissable, onDismiss }) {
-  return (
-    <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,20,20,0.45)', display: 'grid', placeItems: 'center', zIndex: 200, borderRadius: 16, padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>你是誰？</div>
-          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>選擇今天的登記人</div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {OPERATORS.map(op => (
-            <button key={op.name} onClick={() => onPick(op.name)}
-              style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 12, padding: '14px 10px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, font: 'inherit' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = '#fff' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line-1)'; e.currentTarget.style.background = 'var(--bg-1)' }}
-            >
-              <span style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: 700 }}>{op.name.slice(0, 1)}</span>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{op.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{op.role}</div>
-            </button>
-          ))}
-        </div>
-        {dismissable && <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', padding: 4, fontSize: 12, color: 'var(--text-3)', cursor: 'pointer' }}>取消</button>}
-      </div>
-    </div>
-  )
-}
 
 // ─── Page: Packaging ─────────────────────────────────────────
-// ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, onGoToSku }) {
-  const [showNewProduct, setShowNewProduct] = useState(false)
-  const [newProduct, setNewProduct] = useState({ name: '', description: '', stock: '' })
-  const [stockEdits, setStockEdits] = useState(() => {
-    const map = {}
-    products.forEach(p => {
-      try {
-        const stored = JSON.parse(localStorage.getItem(`prod-inv-${p.id}`) || '{}')
-        map[p.id] = String(stored.stock ?? p.finished ?? 0)
-      } catch { map[p.id] = '0' }
-    })
-    return map
-  })
 
-  function updateStock(p) {
-    const val = Math.max(0, Number(stockEdits[p.id]) || 0)
+// ─── Helpers ─────────────────────────────────────────────────
+function timeAgo(dateStr) {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  const diff = Math.floor((Date.now() - d) / 1000)
+  if (diff < 60) return '剛剛'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分鐘前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小時前`
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`
+  return d.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' })
+}
+
+function StockAdjustModal({ product, onClose, onReload }) {
+  const current = product.warehouse_total || 0
+  const [newQty, setNewQty] = useState(String(current))
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const QUICK = ['盤點後修正', '輸入錯誤更正', '系統資料同步', '其他']
+  const numQty = Math.max(0, parseInt(newQty) || 0)
+  const diff = numQty - current
+
+  async function submit() {
+    if (!reason.trim()) return
+    setSaving(true)
     try {
-      const stored = JSON.parse(localStorage.getItem(`prod-inv-${p.id}`) || '{}')
-      localStorage.setItem(`prod-inv-${p.id}`, JSON.stringify({ ...stored, stock: val }))
-      setStockEdits(s => ({ ...s, [p.id]: String(val) }))
-    } catch {}
+      await apiFetch('/api/stock-adjustments', {
+        method: 'POST',
+        body: JSON.stringify({ product_id: product.id, new_qty: numQty, reason: reason.trim() }),
+      })
+      onReload(); onClose()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{
+        background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 18,
+        width: 400, border: '0.5px solid var(--line-1)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+        display: 'flex', flexDirection: 'column', gap: 14,
+      }}>
+        {/* Title */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500 }}>手動修正庫存</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{product.name}・倉庫庫存</div>
+          </div>
+          <button className="btn ghost" style={{ padding: '4px 8px', marginTop: -2 }} onClick={onClose}><Icon.X /></button>
+        </div>
+
+        {/* Current value block */}
+        <div style={{
+          background: 'var(--bg-2)', borderRadius: 'var(--r-md)', padding: '10px 12px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 3 }}>系統計算值</div>
+            <div className="num" style={{ fontSize: 18, fontWeight: 500 }}>{current} 件</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 3 }}>最後更新</div>
+            <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{timeAgo(product.last_receive_at)}</div>
+          </div>
+        </div>
+
+        {/* New qty */}
+        <div className="field">
+          <label>修正後數量</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="number" min="0" className="input num"
+              style={{ fontSize: 16, padding: '8px 12px', flex: 1 }}
+              value={newQty}
+              onChange={e => setNewQty(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && reason.trim() && submit()}
+            />
+            <span style={{ fontSize: 13, color: 'var(--text-3)', flexShrink: 0 }}>件</span>
+            {diff !== 0 && (
+              <span style={{
+                fontSize: 13, fontWeight: 600, flexShrink: 0,
+                color: diff > 0 ? 'var(--ok)' : 'var(--bad)',
+              }}>
+                {diff > 0 ? `+${diff}` : diff} 件
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Reason */}
+        <div className="field">
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            修正原因
+            <span style={{ fontSize: 10, color: 'var(--bad)', fontWeight: 500 }}>必填</span>
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            {QUICK.map(q => (
+              <button key={q} onClick={() => setReason(q)} style={{
+                padding: '4px 12px', borderRadius: 999, font: 'inherit', fontSize: 12, cursor: 'pointer',
+                background: reason === q ? 'var(--text-1)' : 'var(--bg-2)',
+                color: reason === q ? 'var(--bg-1)' : 'var(--text-2)',
+                border: `1px solid ${reason === q ? 'var(--text-1)' : 'var(--line-2)'}`,
+                transition: 'background .1s, color .1s',
+              }}>{q}</button>
+            ))}
+          </div>
+          <input className="input" placeholder="或自行輸入原因…"
+            value={reason} onChange={e => setReason(e.target.value)} />
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={submit}
+            disabled={saving || !reason.trim()}>
+            {saving ? '儲存中…' : '確認修正'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page: Settings ───────────────────────────────────────────
+function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
+  const [showNewProduct, setShowNewProduct] = useState(false)
+  const [newProduct, setNewProduct] = useState({ name: '', description: '', initialStock: '' })
+  const [adjustModal, setAdjustModal] = useState(null) // product | null
+  const [expandedHistoryId, setExpandedHistoryId] = useState(null)
+  const [historyData, setHistoryData] = useState({}) // productId → rows
+
+  async function loadHistory(productId) {
+    const res = await apiFetch(`/api/stock-adjustments?product_id=${productId}&limit=5`)
+    const data = await res.json().catch(() => [])
+    setHistoryData(h => ({ ...h, [productId]: data }))
+  }
+
+  function toggleHistory(productId) {
+    if (expandedHistoryId === productId) { setExpandedHistoryId(null); return }
+    setExpandedHistoryId(productId)
+    loadHistory(productId)
   }
 
   async function createProduct() {
     if (!newProduct.name) return alert('請填寫產品名稱')
     const res = await apiFetch('/api/products', { method: 'POST', body: JSON.stringify({ name: newProduct.name, description: newProduct.description }) })
     const { id } = await res.json()
-    if (newProduct.stock) {
-      const val = Math.max(0, Number(newProduct.stock) || 0)
-      localStorage.setItem(`prod-inv-${id}`, JSON.stringify({ stock: val }))
+    const initStock = Math.max(0, parseInt(newProduct.initialStock) || 0)
+    if (initStock > 0) {
+      await apiFetch('/api/stock-adjustments', {
+        method: 'POST',
+        body: JSON.stringify({ product_id: id, new_qty: initStock, reason: '初始庫存設定' }),
+      }).catch(() => {})
     }
-    setNewProduct({ name: '', description: '', stock: '' })
+    setNewProduct({ name: '', description: '', initialStock: '' })
     setShowNewProduct(false); reload()
   }
 
   async function deleteProduct(p) {
     if (!confirm(`確認刪除「${p.name}」？此操作無法復原，該產品的所有零件也會一併刪除。`)) return
     await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' })
-    localStorage.removeItem(`prod-inv-${p.id}`)
     localStorage.removeItem(`prod-img-${p.id}`)
     reload()
   }
+
+  // ti-adjustments-horizontal icon
+  const AdjustIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="14" cy="6" r="2"/><path d="M4 6h8m4 0h4"/>
+      <circle cx="8" cy="12" r="2"/><path d="M4 12h2m4 0h10"/>
+      <circle cx="17" cy="18" r="2"/><path d="M4 18h11m4 0h1"/>
+    </svg>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
@@ -1629,6 +3111,8 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, o
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
         {products.map(p => {
           const orderCount = orders.filter(o => o.productId === p.id).length
+          const adjCount = p.adjustment_count || 0
+          const historyRows = historyData[p.id] || []
           return (
             <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Top: image + info */}
@@ -1652,24 +3136,46 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, o
                 </div>
               </div>
 
-              {/* Stock row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', borderTop: '1px solid var(--line-1)' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>庫存量</span>
-                <input className="input num" type="number" style={{ flex: 1, padding: '5px 8px', fontSize: 14 }}
-                  value={stockEdits[p.id] ?? '0'}
-                  onChange={e => setStockEdits(s => ({ ...s, [p.id]: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && updateStock(p)} />
-                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>件</span>
-                <button className="btn" style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }} onClick={() => updateStock(p)}>更新</button>
+              {/* Stock summary row */}
+              <div style={{ padding: '10px 0', borderTop: '1px solid var(--line-1)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 20 }}>
+                    <div>
+                      <div className="num" style={{ fontSize: 16, fontWeight: 500 }}>{p.warehouse_total || 0}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>倉庫庫存</div>
+                    </div>
+                    <div>
+                      <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#185FA5' }}>{p.in_transit_total || 0}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>加工中數量</div>
+                    </div>
+                    {(p.defect_total || 0) > 0 && (
+                      <div>
+                        <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#E8461A' }}>{p.defect_total}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>待處理不良</div>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setAdjustModal(p)}
+                    title="手動修正倉庫庫存"
+                    style={{
+                      appearance: 'none', border: '1px solid var(--line-2)', background: 'var(--bg-1)',
+                      borderRadius: 'var(--r-sm)', padding: '4px 9px', cursor: 'pointer', font: 'inherit',
+                      fontSize: 11, color: 'var(--text-3)',
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      transition: 'color .1s, border-color .1s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.borderColor = 'var(--line-3)' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}
+                  >
+                    <AdjustIcon />手動修正
+                  </button>
+                </div>
               </div>
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
                   <Icon.Flow />加工流程
-                </button>
-                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToSku(p)}>
-                  <Icon.Stack />零件管理
                 </button>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
                   <Icon.Order />訂單
@@ -1680,6 +3186,38 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, o
                   )}
                 </button>
               </div>
+
+              {/* Adjustment history */}
+              {adjCount > 0 && (
+                <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 8 }}>
+                  <button className="btn ghost" style={{ fontSize: 11, color: 'var(--text-3)', padding: '2px 6px', gap: 4 }}
+                    onClick={() => toggleHistory(p.id)}>
+                    <svg viewBox="0 0 12 12" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+                      style={{ transform: expandedHistoryId === p.id ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>
+                      <path d="M2 4l4 4 4-4"/>
+                    </svg>
+                    查看修正紀錄 {adjCount} 筆
+                  </button>
+                  {expandedHistoryId === p.id && historyRows.length > 0 && (
+                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {historyRows.map(adj => (
+                        <div key={adj.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '5px 8px', background: 'var(--bg-2)', borderRadius: 6,
+                          fontSize: 11,
+                        }}>
+                          <span style={{ color: 'var(--text-4)', flexShrink: 0, minWidth: 52 }}>{timeAgo(adj.adjusted_at)}</span>
+                          <span className="num" style={{ color: 'var(--text-2)', flexShrink: 0 }}>{adj.previous_qty} → {adj.new_qty}</span>
+                          <span style={{ fontWeight: 600, color: adj.diff > 0 ? 'var(--ok)' : 'var(--bad)', flexShrink: 0 }}>
+                            {adj.diff > 0 ? `+${adj.diff}` : adj.diff}
+                          </span>
+                          <span style={{ color: 'var(--text-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adj.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -1696,7 +3234,17 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, o
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="field"><label>產品名稱 *</label><input autoFocus className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createProduct()} /></div>
               <div className="field"><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
-              <div className="field"><label>庫存數量</label><input type="number" className="input num" value={newProduct.stock} onChange={e => setNewProduct(p => ({ ...p, stock: e.target.value }))} /></div>
+              <div className="field">
+                <label>初始倉庫庫存（選填）</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="number" min="0" className="input num" style={{ flex: 1 }}
+                    value={newProduct.initialStock}
+                    onChange={e => setNewProduct(p => ({ ...p, initialStock: e.target.value }))}
+                    placeholder="0"
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-3)' }}>件</span>
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn" onClick={() => setShowNewProduct(false)}>取消</button>
@@ -1705,9 +3253,23 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders, o
           </div>
         </ModalOverlay>
       )}
+
+      {/* Stock adjust modal */}
+      {adjustModal && (
+        <StockAdjustModal
+          product={adjustModal}
+          onClose={() => setAdjustModal(null)}
+          onReload={() => {
+            setHistoryData(h => { const n = { ...h }; delete n[adjustModal.id]; return n })
+            if (expandedHistoryId === adjustModal.id) setExpandedHistoryId(null)
+            reload()
+          }}
+        />
+      )}
     </div>
   )
 }
+
 
 // ─── Page: Orders ─────────────────────────────────────────────
 function OrdersPage({ orders, saveOrders, products, showNew, setShowNew, filterProductId, setFilterProductId }) {

@@ -73,4 +73,14 @@ router.delete('/:partId/stages/:stageId', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+router.put('/:partId/stages/:stageId', requireAuth, async (req, res) => {
+  try {
+    const db = getDb()
+    const { factory_name, action_name, sort_order } = req.body
+    await db.prepare('UPDATE process_stages SET factory_name=?, action_name=?, sort_order=? WHERE id=? AND part_id=?')
+      .run(factory_name, action_name, sort_order ?? 0, req.params.stageId, req.params.partId)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 export default router

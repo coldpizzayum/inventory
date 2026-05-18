@@ -45,6 +45,10 @@ const SQLITE_SCHEMA = `
     product_id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
+    warehouse_stock INTEGER DEFAULT 0,
+    defect_stock INTEGER DEFAULT 0,
+    total_defect INTEGER DEFAULT 0,
+    total_scrapped INTEGER DEFAULT 0,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
   CREATE TABLE IF NOT EXISTS part_skus (
@@ -60,10 +64,25 @@ const SQLITE_SCHEMA = `
     action_name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
     current_stock INTEGER DEFAULT 0,
+    in_transit INTEGER DEFAULT 0,
     total_sent INTEGER DEFAULT 0,
     total_returned INTEGER DEFAULT 0,
     total_defect INTEGER DEFAULT 0,
     FOREIGN KEY (part_id) REFERENCES parts(id)
+  );
+  CREATE TABLE IF NOT EXISTS defect_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id TEXT,
+    part_id TEXT,
+    stage_id INTEGER,
+    sku_color TEXT,
+    qty INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    source TEXT NOT NULL,
+    receive_log_id INTEGER,
+    worker_id INTEGER,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS packing_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,15 +95,23 @@ const SQLITE_SCHEMA = `
     defect INTEGER DEFAULT 0,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+  CREATE TABLE IF NOT EXISTS workers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS receive_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id TEXT,
     part_id TEXT,
+    stage_id INTEGER,
     sku_color TEXT,
     action_type TEXT NOT NULL,
     qty INTEGER NOT NULL,
     defect_qty INTEGER DEFAULT 0,
     note TEXT,
+    operator TEXT,
     logged_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS designer_tokens (
@@ -109,6 +136,17 @@ const SQLITE_SCHEMA = `
     FOREIGN KEY (product_id) REFERENCES products(id),
     UNIQUE(brand_id, product_id)
   );
+  CREATE TABLE IF NOT EXISTS stock_adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id TEXT NOT NULL,
+    previous_qty INTEGER NOT NULL,
+    new_qty INTEGER NOT NULL,
+    diff INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    adjusted_by TEXT DEFAULT 'admin',
+    adjusted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
 `
 
 const PG_SCHEMA = `
@@ -126,6 +164,10 @@ const PG_SCHEMA = `
     product_id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
+    warehouse_stock INTEGER DEFAULT 0,
+    defect_stock INTEGER DEFAULT 0,
+    total_defect INTEGER DEFAULT 0,
+    total_scrapped INTEGER DEFAULT 0,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
   CREATE TABLE IF NOT EXISTS part_skus (
@@ -141,10 +183,25 @@ const PG_SCHEMA = `
     action_name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
     current_stock INTEGER DEFAULT 0,
+    in_transit INTEGER DEFAULT 0,
     total_sent INTEGER DEFAULT 0,
     total_returned INTEGER DEFAULT 0,
     total_defect INTEGER DEFAULT 0,
     FOREIGN KEY (part_id) REFERENCES parts(id)
+  );
+  CREATE TABLE IF NOT EXISTS defect_logs (
+    id SERIAL PRIMARY KEY,
+    product_id TEXT,
+    part_id TEXT,
+    stage_id INTEGER,
+    sku_color TEXT,
+    qty INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    source TEXT NOT NULL,
+    receive_log_id INTEGER,
+    worker_id INTEGER,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
   );
   CREATE TABLE IF NOT EXISTS packing_items (
     id SERIAL PRIMARY KEY,
@@ -157,15 +214,23 @@ const PG_SCHEMA = `
     defect INTEGER DEFAULT 0,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+  CREATE TABLE IF NOT EXISTS workers (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
   CREATE TABLE IF NOT EXISTS receive_logs (
     id SERIAL PRIMARY KEY,
     product_id TEXT,
     part_id TEXT,
+    stage_id INTEGER,
     sku_color TEXT,
     action_type TEXT NOT NULL,
     qty INTEGER NOT NULL,
     defect_qty INTEGER DEFAULT 0,
     note TEXT,
+    operator TEXT,
     logged_at TIMESTAMP DEFAULT NOW()
   );
   CREATE TABLE IF NOT EXISTS designer_tokens (
@@ -190,6 +255,17 @@ const PG_SCHEMA = `
     FOREIGN KEY (product_id) REFERENCES products(id),
     UNIQUE(brand_id, product_id)
   );
+  CREATE TABLE IF NOT EXISTS stock_adjustments (
+    id SERIAL PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    previous_qty INTEGER NOT NULL,
+    new_qty INTEGER NOT NULL,
+    diff INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    adjusted_by TEXT DEFAULT 'admin',
+    adjusted_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
 `
 
 // ─── SQLite adapter ───────────────────────────────────────────────────────
@@ -202,6 +278,34 @@ function createSqliteAdapter() {
   raw.pragma('journal_mode = WAL')
   raw.pragma('foreign_keys = ON')
   raw.exec(SQLITE_SCHEMA)
+
+  // Migrations — add columns that may not exist in older DBs
+  try { raw.exec('ALTER TABLE receive_logs ADD COLUMN operator TEXT') } catch (_) {}
+  try { raw.exec('ALTER TABLE receive_logs ADD COLUMN stage_id INTEGER') } catch (_) {}
+  try { raw.exec('ALTER TABLE receive_logs ADD COLUMN worker_id INTEGER') } catch (_) {}
+  try { raw.exec('ALTER TABLE parts ADD COLUMN warehouse_stock INTEGER DEFAULT 0') } catch (_) {}
+  try { raw.exec('ALTER TABLE parts ADD COLUMN defect_stock INTEGER DEFAULT 0') } catch (_) {}
+  try { raw.exec('ALTER TABLE parts ADD COLUMN total_defect INTEGER DEFAULT 0') } catch (_) {}
+  try { raw.exec('ALTER TABLE parts ADD COLUMN total_scrapped INTEGER DEFAULT 0') } catch (_) {}
+  try { raw.exec('ALTER TABLE process_stages ADD COLUMN in_transit INTEGER DEFAULT 0') } catch (_) {}
+  try { raw.exec('ALTER TABLE defect_logs ADD COLUMN receive_log_id INTEGER') } catch (_) {}
+  try { raw.exec('ALTER TABLE defect_logs ADD COLUMN worker_id INTEGER') } catch (_) {}
+  try { raw.exec('ALTER TABLE defect_logs ADD COLUMN note TEXT') } catch (_) {}
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS defect_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT, part_id TEXT, stage_id INTEGER, sku_color TEXT,
+      qty INTEGER NOT NULL, status TEXT DEFAULT 'pending', source TEXT NOT NULL,
+      receive_log_id INTEGER, worker_id INTEGER, note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // Seed default workers if table is empty
+  const workerCount = raw.prepare('SELECT COUNT(*) as n FROM workers').get()
+  if (workerCount.n === 0) {
+    raw.exec("INSERT INTO workers (name) VALUES ('阿明'), ('小芳'), ('阿勗'), ('小林')")
+  }
 
   function makeStmt(sql) {
     const stmt = raw.prepare(sql)
@@ -245,6 +349,34 @@ async function createPgAdapter() {
   // Split schema by ; and run each statement
   const stmts = PG_SCHEMA.split(';').map(s => s.trim()).filter(Boolean)
   for (const s of stmts) await pool.query(s)
+
+  // Migrations — add columns that may not exist in older DBs
+  await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS operator TEXT')
+  await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS stage_id INTEGER')
+  await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS worker_id INTEGER')
+  await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS warehouse_stock INTEGER DEFAULT 0')
+  await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS defect_stock INTEGER DEFAULT 0')
+  await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_defect INTEGER DEFAULT 0')
+  await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_scrapped INTEGER DEFAULT 0')
+  await pool.query('ALTER TABLE process_stages ADD COLUMN IF NOT EXISTS in_transit INTEGER DEFAULT 0')
+  await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS receive_log_id INTEGER')
+  await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS worker_id INTEGER')
+  await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS note TEXT')
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS defect_logs (
+      id SERIAL PRIMARY KEY,
+      product_id TEXT, part_id TEXT, stage_id INTEGER, sku_color TEXT,
+      qty INTEGER NOT NULL, status TEXT DEFAULT 'pending', source TEXT NOT NULL,
+      receive_log_id INTEGER, worker_id INTEGER, note TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  // Seed default workers if table is empty
+  const { rows: wc } = await pool.query('SELECT COUNT(*) as n FROM workers')
+  if (parseInt(wc[0].n) === 0) {
+    await pool.query("INSERT INTO workers (name) VALUES ('阿明'), ('小芳'), ('阿勗'), ('小林')")
+  }
 
   // Convert ? placeholders → $1, $2, ...
   function toPg(sql) {
