@@ -601,14 +601,11 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
     apiFetch('/api/brands').then(r => r.json()).then(d => setBrands(d)).catch(() => {}).finally(() => setBrandsLoading(false))
   }, [])
 
-  const today = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
       {/* Sub-header */}
       <div>
         <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em' }}>生產看板</div>
-        <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 3 }}>{today} · 明智工業</div>
       </div>
 
       {/* Section 1: Products */}
