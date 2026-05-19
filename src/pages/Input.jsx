@@ -80,20 +80,20 @@ function ProductCard({ product, active, color, onClick }) {
   return (
     <div onClick={onClick} style={{
       border: borderStyle, borderRadius: 10, overflow: 'hidden',
-      cursor: 'pointer', height: 100, background: '#fff',
+      cursor: 'pointer', height: 130, background: '#fff',
       position: 'relative', transition: 'border-color .12s',
     }}
       onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = '#B0ADA8' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = '#E8E6E0' }}>
       {/* Image area */}
-      <div style={{ height: 60, background: imgSrc ? '#000' : '#E8461A', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+      <div style={{ height: 88, background: '#F8F8F6', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
         {imgSrc
-          ? <img src={imgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          : <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{initials}</span>
+          ? <img src={imgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', padding: 6, boxSizing: 'border-box', background: '#F8F8F6' }} />
+          : <span style={{ fontSize: 14, fontWeight: 500, color: '#E8461A' }}>{product.name?.slice(0, 1)}</span>
         }
       </div>
       {/* Name */}
-      <div style={{ padding: '6px 10px', fontSize: 13, fontWeight: 500, color: '#1A1A1A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div style={{ height: 42, padding: '8px 10px', fontSize: 13, fontWeight: 500, color: '#1A1A1A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center' }}>
         {product.name}
       </div>
       {/* Check badge */}
