@@ -1451,12 +1451,7 @@ function FactoryView({ parts }) {
           : isDone
             ? { label: '✓ 已完成', bg: 'var(--ok-tint)', color: 'var(--ok)' }
             : { label: '— 等待中', bg: 'var(--bg-3)', color: 'var(--text-3)' }
-        const activePartCount = allParts.filter(p => p.hasInTransit).length
-        const subtitle = actionNames.join('・') + '・' + (
-          isActive ? `${activePartCount} 個零件加工中`
-          : isDone ? '本批已完成'
-          : '尚未送出'
-        )
+        const subtitle = isActive ? `目前加工中 ${totalInTransit} 件` : isDone ? '本批已完成' : '尚未送出'
         return (
           <div key={name}>
             <div style={{
@@ -1481,7 +1476,7 @@ function FactoryView({ parts }) {
             {allParts.length > 0 && (
               <div style={{ border: '0.5px solid var(--line-1)', borderTop: 'none', borderRadius: '0 0 var(--r-lg) var(--r-lg)', background: 'var(--bg-1)' }}>
                 {allParts.map(({ part, hasInTransit }, pi) => (
-                  <div key={part.id} style={{ opacity: hasInTransit ? 1 : 0.5, borderBottom: pi < allParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
+                  <div key={part.id} style={{ opacity: hasInTransit ? 1 : 0.45, borderBottom: pi < allParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
                     <div style={{ padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
                       {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
@@ -1516,47 +1511,204 @@ function FactoryView({ parts }) {
   )
 }
 
+function PartViewExpandable({ parts }) {
+  const [expanded, setExpanded] = useState({})
+  const statusConfig = {
+    processing: { label: '加工中', bg: '#FEE9E4', color: '#E8461A' },
+    returned:   { label: '已回廠', bg: 'var(--ok-tint)', color: 'var(--ok)' },
+    sent:       { label: '已送出', bg: 'var(--accent-tint)', color: 'var(--accent)' },
+    pending:    { label: '等待中', bg: 'var(--bg-3)', color: 'var(--text-4)' },
+  }
+  if (!parts.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無零件資料</div>
+  }
+  return (
+    <div>
+      {parts.map(part => {
+        const stages = part.stages || []
+        const status = calcPartStatus(stages)
+        const badge = statusConfig[status]
+        const isOpen = expanded[part.id] ?? false
+        return (
+          <div key={part.id} style={{
+            background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
+            borderRadius: 'var(--r-lg)', marginBottom: 8, overflow: 'hidden',
+          }}>
+            <div
+              onClick={() => setExpanded(e => ({ ...e, [part.id]: !isOpen }))}
+              style={{
+                padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                cursor: 'pointer', borderBottom: isOpen && stages.length > 0 ? '0.5px solid var(--line-1)' : 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
+                <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 9px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>{badge.label}</span>
+                {(part.skus || []).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0, marginLeft: 8 }}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
+            {isOpen && stages.length > 0 && (
+              <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                {stages.flatMap((stage, i, arr) => {
+                  const hasData = (stage.total_sent || 0) > 0
+                  const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
+                  return [
+                    <StageCard key={stage.id} stage={stage} />,
+                    ...(i < arr.length - 1 ? [
+                      <span key={`a${i}`} style={{
+                        color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                        fontSize: hasData || nextHasData ? 14 : 12, opacity: hasData || nextHasData ? 1 : 0.3,
+                      }}>›</span>,
+                    ] : []),
+                  ]
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EditProductPicker({ products, action, onSelect, onClose }) {
+  const labels = {
+    sku:     '選擇要編輯零件名稱 / SKU 的產品',
+    reorder: '選擇要調整加工站順序的產品',
+    add:     '選擇要新增加工站的產品',
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'grid', placeItems: 'center', zIndex: 100 }}>
+      <div style={{
+        background: 'var(--bg-1)', borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-pop)',
+        padding: '20px 22px', width: 340, maxWidth: '90vw',
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>選擇產品</div>
+        <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 16 }}>{labels[action]}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {products.map(p => (
+            <button key={p.id} onClick={() => onSelect(p, action)} style={{
+              padding: '10px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+              background: 'var(--bg-2)', border: '0.5px solid var(--line-1)',
+              font: 'inherit', fontSize: 13, fontWeight: 500, textAlign: 'left', color: 'var(--text-1)',
+              transition: 'background .1s',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-2)'}
+            >{p.name}</button>
+          ))}
+        </div>
+        <button className="btn ghost" style={{ marginTop: 12, width: '100%', fontSize: 13 }} onClick={onClose}>取消</button>
+      </div>
+    </div>
+  )
+}
+
 function ProcessPage({ products, selectedProduct, onSelectProduct, headerActionsSlot, reloadKey }) {
-  const [rawParts, setRawParts] = useState([])
-  const [viewMode, setViewMode] = useState('factory')
+  const [tab, setTab] = useState('factory')
+  const [allParts, setAllParts] = useState([])
+  const [tabBProd, setTabBProd] = useState(null)
+  const [tabBParts, setTabBParts] = useState([])
+  const [tabCParts, setTabCParts] = useState([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [skuEditMode, setSkuEditMode] = useState(false)
-  const [stageModal, setStageModal] = useState(null) // null | { mode: 'reorder' | 'add' }
+  const [stageModal, setStageModal] = useState(null) // { mode, parts, onReload }
+  const [editPicker, setEditPicker] = useState(null) // action string
   const menuRef = useRef(null)
 
   const curProd = selectedProduct || products[0]
 
   useEffect(() => {
-    if (!curProd) return
-    loadParts(curProd.id)
-  }, [curProd?.id, reloadKey])
+    if (!products.length) return
+    if (tab === 'factory') _loadAllParts()
+    else if (tab === 'part') {
+      if (!tabBProd && products[0]) setTabBProd(products[0])
+      else if (tabBProd) _loadTabB(tabBProd.id)
+    } else if (tab === 'product' && curProd) _loadTabC(curProd.id)
+  }, [tab, reloadKey, products.length])
 
-  // clear any legacy header slot
+  useEffect(() => {
+    if (tab === 'product' && curProd) _loadTabC(curProd.id)
+  }, [curProd?.id])
+
+  useEffect(() => {
+    if (tabBProd) _loadTabB(tabBProd.id)
+  }, [tabBProd?.id])
+
   useEffect(() => {
     if (headerActionsSlot) headerActionsSlot.set(null)
     return () => { if (headerActionsSlot) headerActionsSlot.set(null) }
   }, [headerActionsSlot])
 
-  // close dropdown on outside click
   useEffect(() => {
     if (!editMenuOpen) return
-    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setEditMenuOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const h = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setEditMenuOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
   }, [editMenuOpen])
 
-  async function loadParts(pid) {
-    if (!pid) return
+  async function _loadAllParts() {
+    const results = await Promise.all(
+      products.map(p => apiFetch(`/api/products/${p.id}/parts`).then(r => r.json()).catch(() => []))
+    )
+    setAllParts(results.flat())
+  }
+  async function _loadTabB(pid) {
     const data = await apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).catch(() => [])
-    setRawParts(data)
+    setTabBParts(data)
+  }
+  async function _loadTabC(pid) {
+    const data = await apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).catch(() => [])
+    setTabCParts(data)
   }
 
-  const handleMenuSelect = (action) => {
-    setEditMenuOpen(false)
-    if (action === 'sku') { setSkuEditMode(true); setViewMode('part') }
-    if (action === 'reorder') setStageModal({ mode: 'reorder' })
-    if (action === 'add') setStageModal({ mode: 'add' })
+  function handleTabChange(newTab) {
+    if (newTab !== 'product') setSkuEditMode(false)
+    if (newTab === 'part' && !tabBProd && products.length) setTabBProd(products[0])
+    setTab(newTab)
   }
+
+  function handleMenuSelect(action) {
+    setEditMenuOpen(false)
+    if (tab === 'product' && curProd) {
+      if (action === 'sku') setSkuEditMode(true)
+      else setStageModal({ mode: action === 'reorder' ? 'reorder' : 'add', parts: tabCParts, onReload: () => _loadTabC(curProd.id) })
+    } else {
+      setEditPicker(action)
+    }
+  }
+
+  async function handleEditPickerSelect(prod, action) {
+    setEditPicker(null)
+    const parts = await apiFetch(`/api/products/${prod.id}/parts`).then(r => r.json()).catch(() => [])
+    if (action === 'sku') {
+      onSelectProduct(prod)
+      setTabCParts(parts)
+      setTab('product')
+      setSkuEditMode(true)
+    } else {
+      setStageModal({
+        mode: action === 'reorder' ? 'reorder' : 'add',
+        parts,
+        onReload: async () => {
+          const updated = await apiFetch(`/api/products/${prod.id}/parts`).then(r => r.json()).catch(() => [])
+          setStageModal(m => m ? { ...m, parts: updated } : null)
+          if (tab === 'factory') _loadAllParts()
+          else if (tab === 'part' && tabBProd?.id === prod.id) setTabBParts(updated)
+          else if (tab === 'product' && curProd?.id === prod.id) setTabCParts(updated)
+        },
+      })
+    }
+  }
+
+  const sortedTabBParts = [...tabBParts].sort((a, b) => {
+    const ord = { processing: 0, sent: 1, pending: 2, returned: 3 }
+    return (ord[calcPartStatus(a.stages || [])] ?? 2) - (ord[calcPartStatus(b.stages || [])] ?? 2)
+  })
 
   const menuItems = [
     { key: 'sku',     label: '編輯零件名稱 / SKU' },
@@ -1564,124 +1716,130 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
     { key: 'add',     label: '新增加工站' },
   ]
 
+  const ProdPill = ({ p, active, onClick }) => (
+    <button onClick={onClick} style={{
+      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      background: active ? 'var(--text-1)' : 'var(--bg-1)',
+      color: active ? 'var(--bg-1)' : 'var(--text-3)',
+      border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+      font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+      transition: 'background .12s, color .12s',
+    }}>{p.name}</button>
+  )
+
   return (
     <>
-      {/* Product tabs + controls row */}
+      {/* Tab pills + edit dropdown */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {products.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {products.map(p => {
-              const active = curProd?.id === p.id
-              return (
-                <button key={p.id} onClick={() => onSelectProduct(p)} style={{
-                  padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
-                  background: active ? 'var(--text-1)' : 'var(--bg-1)',
-                  color: active ? 'var(--bg-1)' : 'var(--text-3)',
-                  border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
-                  font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
-                  transition: 'background .12s, color .12s, border-color .12s',
-                }}>{p.name}</button>
-              )
-            })}
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[
+            { key: 'factory', label: '追廠商' },
+            { key: 'part',    label: '追零件' },
+            { key: 'product', label: '追產品' },
+          ].map(({ key, label }) => {
+            const active = tab === key
+            return (
+              <button key={key} onClick={() => handleTabChange(key)} style={{
+                padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+                background: active ? 'var(--text-1)' : 'var(--bg-1)',
+                color: active ? 'var(--bg-1)' : 'var(--text-3)',
+                border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+                font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+                transition: 'background .12s, color .12s',
+              }}>{label}</button>
+            )
+          })}
+        </div>
 
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-          {/* view toggle */}
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[
-              { mode: 'factory', label: '以廠商', icon: <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21v-13l9-4 9 4v13"/><path d="M13 21v-4a2 2 0 0 0-4 0v4"/><path d="M9 9v.01"/><path d="M15 9v.01"/></svg> },
-              { mode: 'part',    label: '以零件', icon: <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l3 3l3-3l-3-3z"/><path d="M15 12l3 3l3-3l-3-3z"/><path d="M9 6l3 3l3-3l-3-3z"/><path d="M9 18l3 3l3-3l-3-3z"/></svg> },
-            ].map(({ mode, label, icon }) => {
-              const active = viewMode === mode
-              return (
-                <button key={mode} onClick={() => setViewMode(mode)} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', font: 'inherit',
-                  fontSize: 12, fontWeight: 500,
-                  background: active ? 'var(--text-1)' : 'var(--bg-1)',
-                  color: active ? 'var(--bg-1)' : 'var(--text-3)',
-                  border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
-                  transition: 'background .12s, color .12s',
-                }}>
-                  {icon}{label}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* edit dropdown */}
-          <div ref={menuRef} style={{ position: 'relative' }}>
-            <button onClick={() => setEditMenuOpen(v => !v)} style={{
-              appearance: 'none', font: 'inherit', fontWeight: 500, fontSize: 13,
-              padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-              background: 'var(--bg-1)', border: '1px solid var(--line-2)', color: 'var(--text-2)',
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              transition: 'background .12s',
+        <div ref={menuRef} style={{ position: 'relative' }}>
+          <button onClick={() => setEditMenuOpen(v => !v)} style={{
+            appearance: 'none', font: 'inherit', fontWeight: 500, fontSize: 13,
+            padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+            background: 'var(--bg-1)', border: '1px solid var(--line-2)', color: 'var(--text-2)',
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+          }}>
+            <Icon.Edit />編輯流程
+            <svg viewBox="0 0 10 10" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3.5l3 3 3-3"/>
+            </svg>
+          </button>
+          {editMenuOpen && (
+            <div style={{
+              position: 'absolute', right: 0, top: 'calc(100% + 4px)',
+              background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+              borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-pop)',
+              minWidth: 190, zIndex: 20, overflow: 'hidden',
             }}>
-              <Icon.Edit />編輯流程
-              <svg viewBox="0 0 10 10" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 3.5l3 3 3-3"/>
-              </svg>
-            </button>
-            {editMenuOpen && (
-              <div style={{
-                position: 'absolute', right: 0, top: 'calc(100% + 4px)',
-                background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
-                borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-pop)',
-                minWidth: 190, zIndex: 20, overflow: 'hidden',
-              }}>
-                {menuItems.map(item => (
-                  <button key={item.key} onClick={() => handleMenuSelect(item.key)} style={{
-                    display: 'block', width: '100%', textAlign: 'left',
-                    padding: '9px 14px', fontSize: 13, font: 'inherit',
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-1)', borderBottom: item.key !== 'add' ? '0.5px solid var(--line-1)' : 'none',
-                    transition: 'background .1s',
-                  }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >{item.label}</button>
-                ))}
-              </div>
-            )}
-          </div>
+              {menuItems.map(item => (
+                <button key={item.key} onClick={() => handleMenuSelect(item.key)} style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '9px 14px', fontSize: 13, font: 'inherit',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-1)', borderBottom: item.key !== 'add' ? '0.5px solid var(--line-1)' : 'none',
+                  transition: 'background .1s',
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >{item.label}</button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* SKU edit mode banner */}
-      {skuEditMode && (
+      {/* SKU edit banner — Tab C only */}
+      {skuEditMode && tab === 'product' && (
         <div style={{
           background: 'var(--accent-tint)', border: '1px solid var(--accent-tint-hi)',
           borderRadius: 'var(--r-md)', padding: '9px 14px', marginBottom: 12,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          fontSize: 13,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Icon.Edit />
             <span style={{ fontWeight: 500, color: 'var(--accent)' }}>編輯零件名稱 / SKU</span>
             <span style={{ color: 'var(--text-3)' }}>— 點擊名稱旁鉛筆圖示修改名稱，點擊 × 刪除色號</span>
           </div>
-          <button className="btn" style={{ padding: '4px 12px', fontSize: 12 }}
-            onClick={() => setSkuEditMode(false)}>完成編輯</button>
+          <button className="btn" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => setSkuEditMode(false)}>完成編輯</button>
         </div>
       )}
 
-      <InTransitSummary parts={rawParts} />
+      {/* Tab A: 追廠商 */}
+      {tab === 'factory' && (
+        <>
+          <InTransitSummary parts={allParts} />
+          <FactoryView parts={allParts} />
+        </>
+      )}
 
-      {viewMode === 'factory' ? (
-        <FactoryView parts={rawParts} />
-      ) : (
-        <PartView parts={rawParts} skuEditMode={skuEditMode} onReload={() => loadParts(curProd?.id)} />
+      {/* Tab B: 追零件 */}
+      {tab === 'part' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={tabBProd?.id === p.id} onClick={() => setTabBProd(p)} />)}
+          </div>
+          {tabBProd
+            ? <PartViewExpandable parts={sortedTabBParts} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件加工進度</div>
+          }
+        </>
+      )}
+
+      {/* Tab C: 追產品 */}
+      {tab === 'product' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={curProd?.id === p.id} onClick={() => onSelectProduct(p)} />)}
+          </div>
+          <PartView parts={tabCParts} skuEditMode={skuEditMode} onReload={() => _loadTabC(curProd?.id)} />
+        </>
+      )}
+
+      {editPicker && (
+        <EditProductPicker products={products} action={editPicker} onSelect={handleEditPickerSelect} onClose={() => setEditPicker(null)} />
       )}
 
       {stageModal && (
-        <StageOrderModal
-          parts={rawParts}
-          mode={stageModal.mode}
-          onClose={() => setStageModal(null)}
-          onReload={() => loadParts(curProd?.id)}
-        />
+        <StageOrderModal parts={stageModal.parts} mode={stageModal.mode} onClose={() => setStageModal(null)} onReload={stageModal.onReload} />
       )}
     </>
   )
