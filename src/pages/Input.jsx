@@ -66,6 +66,48 @@ const IcoCheck = () => (
   </svg>
 )
 
+// ─── ProductCard ──────────────────────────────────────────────
+function ProductCard({ product, active, color, onClick }) {
+  const [imgSrc, setImgSrc] = useState(null)
+  useEffect(() => {
+    const stored = localStorage.getItem(`prod-img-${product.id}`)
+    if (stored) setImgSrc(stored)
+  }, [product.id])
+
+  const initials = product.name?.slice(0, 2) || '?'
+  const borderStyle = active ? `2px solid ${color}` : '0.5px solid #E8E6E0'
+
+  return (
+    <div onClick={onClick} style={{
+      border: borderStyle, borderRadius: 10, overflow: 'hidden',
+      cursor: 'pointer', height: 100, background: '#fff',
+      position: 'relative', transition: 'border-color .12s',
+    }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = '#B0ADA8' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = '#E8E6E0' }}>
+      {/* Image area */}
+      <div style={{ height: 60, background: imgSrc ? '#000' : '#E8461A', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+        {imgSrc
+          ? <img src={imgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{initials}</span>
+        }
+      </div>
+      {/* Name */}
+      <div style={{ padding: '6px 10px', fontSize: 13, fontWeight: 500, color: '#1A1A1A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {product.name}
+      </div>
+      {/* Check badge */}
+      {active && (
+        <div style={{ position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 10, background: '#fff', display: 'grid', placeItems: 'center', color }}>
+          <svg viewBox="0 0 14 14" width="12" height="12" fill="none">
+            <path d="M3 7l3 3 5-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Pill ─────────────────────────────────────────────────────
 function Pill({ active, onClick, color, children, big }) {
   return (
@@ -249,8 +291,8 @@ function StepPicks({ direction, products, onBack, onNext }) {
       {/* Product */}
       <div>
         <SHead>選擇產品</SHead>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-          {products.map(p => <Pill key={p.id} big color={color} active={pid===p.id} onClick={() => setPid(p.id)}>{p.name}</Pill>)}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:8 }}>
+          {products.map(p => <ProductCard key={p.id} product={p} color={color} active={pid===p.id} onClick={() => setPid(p.id)} />)}
         </div>
       </div>
 
