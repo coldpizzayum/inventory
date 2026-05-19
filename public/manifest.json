@@ -1,0 +1,17 @@
+{
+  "name": "Inventory OS",
+  "short_name": "Inventory",
+  "description": "工廠庫存管理系統",
+  "start_url": "/input",
+  "display": "standalone",
+  "background_color": "#F5F4F0",
+  "theme_color": "#E8461A",
+  "icons": [
+    {
+      "src": "/dicas-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

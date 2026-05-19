@@ -2,9 +2,43 @@
 <html lang="zh-TW">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/dicas-logo.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Inventory OS — 生產看板</title>
+    <link rel="apple-touch-icon" href="/dicas-logo.svg" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#E8461A" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Inventory OS" />
+
+    <!-- Default title & description -->
+    <title>Inventory OS — 益成金屬庫存管理系統</title>
+    <meta name="description" content="工廠生產看板、加工流程追蹤、進出貨登記，即時掌握每個零件的加工進度與庫存狀況。" />
+
+    <!-- 工廠內部系統：不要被 Google 索引 -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Inventory OS" />
+    <meta property="og:title" content="Inventory OS — 生產看板" />
+    <meta property="og:description" content="即時掌握加工進度、庫存狀況與訂單達成率" />
+    <meta property="og:image" content="/api/og" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Inventory OS 工廠庫存管理系統" />
+    <meta property="og:locale" content="zh_TW" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Inventory OS — 生產看板" />
+    <meta name="twitter:description" content="即時掌握加工進度、庫存狀況與訂單達成率" />
+    <meta name="twitter:image" content="/api/og" />
   </head>
   <body>
     <div id="root"></div>
