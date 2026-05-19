@@ -520,32 +520,62 @@ function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
   )
 }
 
-function OrderRow({ order, product }) {
-  const pct = order.qty > 0 ? Math.round((order.alloc / order.qty) * 100) : 0
-  const [badgeBg, badgeColor] =
-    pct >= 100 ? ['#E6F4EC', '#1A7A3C'] :
-    pct >= 80  ? ['#FEF3CD', '#B07D00'] :
-    pct >= 30  ? ['#FEE9E4', '#E8461A'] :
-                 ['#E6F0FB', '#1A5FAD']
+function OrderRow({ order, product, clientName, onGoToOrders }) {
+  const [hovered, setHovered] = useState(false)
+  const completed = order.alloc || 0
+  const total = order.qty || 0
+  const remaining = Math.max(0, total - completed)
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+  const barColor = pct >= 80 ? '#1A7A3C' : pct >= 30 ? '#BA7517' : '#E8461A'
+
+  const dueStr = order.due || ''
+  const dueDate = dueStr ? new Date(dueStr) : null
+  const isOverdue = dueDate && !isNaN(dueDate) && dueDate < new Date()
+  const dueDisplay = dueDate && !isNaN(dueDate)
+    ? `${String(dueDate.getMonth() + 1).padStart(2, '0')}/${String(dueDate.getDate()).padStart(2, '0')}`
+    : '—'
+
   return (
-    <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
-      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
-      onMouseLeave={e => e.currentTarget.style.background = '#F8F8F6'}>
-      <div style={{ width: 64, fontSize: 12, fontWeight: 500, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {product?.name || '—'}
+    <div onClick={() => onGoToOrders && onGoToOrders(order.productId)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+        margin: '0 -14px', padding: '8px 14px',
+        background: hovered ? 'var(--bg-2)' : 'transparent', transition: 'background 0.1s',
+      }}>
+      {/* Thumbnail */}
+      <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-3)', display: 'grid', placeItems: 'center' }}>
+        {product?.image_url
+          ? <img src={product.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--text-4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+        }
       </div>
+      {/* Product info */}
+      <div style={{ width: 80, flexShrink: 0, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product?.name || '—'}</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientName || '—'}</div>
+      </div>
+      {/* Progress */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ height: 4, background: '#E8E6E0', borderRadius: 2, overflow: 'hidden', marginBottom: 4 }}>
-          <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: badgeColor, borderRadius: 2 }} />
+        <div style={{ height: 5, background: 'var(--line-1)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+          <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: barColor, borderRadius: 3 }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span className="num" style={{ fontSize: 10, color: 'var(--text-3)' }}>{(order.alloc || 0).toLocaleString()} / {(order.qty || 0).toLocaleString()}</span>
-          <span style={{ fontSize: 10, color: 'var(--text-4)' }}>預計 {order.due}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>完成 {completed.toLocaleString()} 件</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>剩 {remaining.toLocaleString()} 件</span>
         </div>
       </div>
-      <div style={{ flexShrink: 0, background: badgeBg, color: badgeColor, fontSize: 11, fontWeight: 600, padding: '3px 7px', borderRadius: 5, fontFamily: 'var(--font-mono)' }}>
-        {pct}%
-      </div>
+      {/* Percentage */}
+      <div style={{ minWidth: 40, textAlign: 'right', fontSize: 14, fontWeight: 500, color: barColor, flexShrink: 0 }}>{pct}%</div>
+      {/* Due date */}
+      <div style={{ fontSize: 13, fontWeight: 500, color: isOverdue ? '#A32D2D' : '#1A1A1A', flexShrink: 0 }}>{dueDisplay}</div>
+      {/* Chevron */}
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--text-3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
     </div>
   )
 }
@@ -596,9 +626,15 @@ function BrandRow({ brand, products }) {
 function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands, onGoToOrders }) {
   const [brands, setBrands] = useState([])
   const [brandsLoading, setBrandsLoading] = useState(true)
+  const [tokenMap, setTokenMap] = useState({}) // product_id → label
 
   useEffect(() => {
     apiFetch('/api/brands').then(r => r.json()).then(d => setBrands(d)).catch(() => {}).finally(() => setBrandsLoading(false))
+    apiFetch('/api/designer-tokens').then(r => r.json()).then(tokens => {
+      const map = {}
+      tokens.forEach(t => { if (t.label && !map[t.product_id]) map[t.product_id] = t.label })
+      setTokenMap(map)
+    }).catch(() => {})
   }, [])
 
   return (
@@ -646,15 +682,25 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
         {/* Orders */}
         <div>
           <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} link2Label="訂單管理" onLink2={() => onGoToOrders(null)} linkLabel="進出貨登記" onLink={onGoToLog} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {orders.length === 0
-              ? <div style={{ padding: '24px 16px', background: '#F8F8F6', borderRadius: 8, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
-                  <button onClick={onGoToLog} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
+          {orders.length === 0
+            ? <div style={{ padding: '24px 16px', background: 'var(--bg-2)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
+                <button onClick={() => onGoToOrders(null)} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
+              </div>
+            : <div style={{ padding: '0 14px', overflow: 'hidden' }}>
+                {orders.map(o => (
+                  <OrderRow key={o.id} order={o}
+                    product={products.find(p => p.id === o.productId)}
+                    clientName={tokenMap[o.productId]}
+                    onGoToOrders={onGoToOrders}
+                  />
+                ))}
+                <div style={{ fontSize: 12, textAlign: 'center', padding: '8px 0', color: 'var(--text-3)' }}>
+                  其他產品尚無訂單 ·{' '}
+                  <span onClick={() => onGoToOrders(null)} style={{ color: '#E8461A', cursor: 'pointer' }}>新增訂單</span>
                 </div>
-              : orders.map(o => <OrderRow key={o.id} order={o} product={products.find(p => p.id === o.productId)} />)
-            }
-          </div>
+              </div>
+          }
         </div>
 
         {/* Brands */}
