@@ -263,6 +263,10 @@ export default function Dashboard() {
 
   const title = PAGE_TITLES[page] || ''
 
+  useEffect(() => {
+    document.title = title ? `${title} — Inventory OS` : 'Inventory OS'
+  }, [title])
+
   return (
     <div style={{
       display: 'grid',

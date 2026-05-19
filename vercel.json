@@ -4,6 +4,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/og",
+      "destination": "/api/og"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://web-production-cfd00.up.railway.app/api/:path*"
     },

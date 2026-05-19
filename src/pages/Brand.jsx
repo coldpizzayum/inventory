@@ -317,7 +317,7 @@ export default function Brand() {
         if (!r.ok) throw new Error('無效的設計師連結')
         return r.json()
       })
-      .then(d => setData(d))
+      .then(d => { setData(d); document.title = `${d.brand_name} — Inventory OS` })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [token])
