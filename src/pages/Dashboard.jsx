@@ -1456,7 +1456,7 @@ function FactoryView({ parts }) {
           ? { label: `● 加工中 ${totalInTransit} 件`, bg: '#FEE9E4', color: '#E8461A' }
           : isDone
             ? { label: '✓ 已完成', bg: 'var(--ok-tint)', color: 'var(--ok)' }
-            : { label: '— 尚未送出', bg: 'var(--bg-3)', color: 'var(--text-3)' }
+            : { label: '— 目前無在製零件', bg: 'var(--bg-3)', color: 'var(--text-3)' }
         const hasParts = isActive && activeParts.length > 0
         return (
           <div key={name} style={{ opacity: isDone ? 0.5 : isWaiting ? 0.4 : 1 }}>
@@ -1474,7 +1474,7 @@ function FactoryView({ parts }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{name}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-                  {isActive ? `目前加工中 ${totalInTransit} 件` : isDone ? '本批已完成' : '尚未送出'}
+                  {isActive ? `目前加工中 ${totalInTransit} 件` : isDone ? '本批已完成' : '目前無在製零件'}
                 </div>
               </div>
               <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>
