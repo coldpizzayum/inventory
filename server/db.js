@@ -291,6 +291,19 @@ function createSqliteAdapter() {
   try { raw.exec('ALTER TABLE defect_logs ADD COLUMN receive_log_id INTEGER') } catch (_) {}
   try { raw.exec('ALTER TABLE defect_logs ADD COLUMN worker_id INTEGER') } catch (_) {}
   try { raw.exec('ALTER TABLE defect_logs ADD COLUMN note TEXT') } catch (_) {}
+  try { raw.exec('ALTER TABLE products ADD COLUMN image_url TEXT') } catch (_) {}
+  try { raw.exec('ALTER TABLE part_skus ADD COLUMN color_hex TEXT') } catch (_) {}
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT NOT NULL,
+      target_qty INTEGER NOT NULL,
+      completed_qty INTEGER DEFAULT 0,
+      due_date TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    )
+  `)
   raw.exec(`
     CREATE TABLE IF NOT EXISTS defect_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,6 +375,18 @@ async function createPgAdapter() {
   await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS receive_log_id INTEGER')
   await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS worker_id INTEGER')
   await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS note TEXT')
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT')
+  await pool.query('ALTER TABLE part_skus ADD COLUMN IF NOT EXISTS color_hex TEXT')
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      target_qty INTEGER NOT NULL,
+      completed_qty INTEGER DEFAULT 0,
+      due_date TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS defect_logs (
       id SERIAL PRIMARY KEY,
