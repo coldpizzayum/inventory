@@ -26,20 +26,18 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: '缺少必要欄位' })
     }
 
-    const parts = await db.prepare('SELECT id, warehouse_stock FROM parts WHERE product_id=? ORDER BY warehouse_stock DESC').all(product_id)
-    const previous_qty = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
-    const diff = new_qty - previous_qty
+    const product = await db.prepare('SELECT id, warehouse_stock FROM products WHERE id=?').get(product_id)
+    if (!product) return res.status(404).json({ error: '產品不存在' })
 
-    // Apply diff to the part with the highest warehouse_stock
-    if (parts.length > 0) {
-      const target = parts[0]
-      const newStock = Math.max(0, (target.warehouse_stock || 0) + diff)
-      await db.prepare('UPDATE parts SET warehouse_stock=? WHERE id=?').run(newStock, target.id)
-    }
+    const previous_qty = product.warehouse_stock || 0
+    const diff = new_qty - previous_qty
+    const newStock = Math.max(0, new_qty)
+
+    await db.prepare('UPDATE products SET warehouse_stock=? WHERE id=?').run(newStock, product_id)
 
     const result = await db.prepare(
       'INSERT INTO stock_adjustments (product_id, previous_qty, new_qty, diff, reason, adjusted_by) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(product_id, previous_qty, new_qty, diff, reason, adjusted_by)
+    ).run(product_id, previous_qty, newStock, diff, reason, adjusted_by)
 
     res.status(201).json({ id: result.lastInsertRowid })
   } catch (e) { res.status(500).json({ error: e.message }) }
