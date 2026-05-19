@@ -3190,16 +3190,24 @@ function StockAdjustModal({ product, onClose, onReload }) {
   const numQty = Math.max(0, parseInt(newQty) || 0)
   const diff = numQty - current
 
+  const [error, setError] = useState('')
+
   async function submit() {
     if (!reason.trim()) return
     setSaving(true)
+    setError('')
     try {
-      await apiFetch('/api/stock-adjustments', {
+      const res = await apiFetch('/api/stock-adjustments', {
         method: 'POST',
         body: JSON.stringify({ product_id: product.id, new_qty: numQty, reason: reason.trim() }),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error || `伺服器錯誤 (${res.status})`)
+        return
+      }
       onReload(); onClose()
-    } catch (e) { console.error(e) } finally { setSaving(false) }
+    } catch (e) { setError(e.message) } finally { setSaving(false) }
   }
 
   return (
@@ -3279,6 +3287,13 @@ function StockAdjustModal({ product, onClose, onReload }) {
           <input className="input" placeholder="或自行輸入原因…"
             value={reason} onChange={e => setReason(e.target.value)} />
         </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ fontSize: 12, color: 'var(--bad)', background: '#FEE9E4', borderRadius: 'var(--r-sm)', padding: '8px 12px' }}>
+            {error}
+          </div>
+        )}
 
         {/* Buttons */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
