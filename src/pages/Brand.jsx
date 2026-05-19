@@ -121,7 +121,7 @@ function PartRow({ part }) {
   )
 }
 
-function ProductCard({ item, defaultExpanded }) {
+function ProductCard({ item, orders = [], defaultExpanded }) {
   const { product, parts, overallStatus } = item
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [imgSrc, setImgSrc] = useState(product.image_url || null)
@@ -136,19 +136,13 @@ function ProductCard({ item, defaultExpanded }) {
   }, [product.id])
 
   const cfg = PRODUCT_STATUS[overallStatus] || PRODUCT_STATUS['等待中']
-
-  let dueDisplay = ''
-  if (product.estimated_completion) {
-    const d = new Date(product.estimated_completion)
-    dueDisplay = !isNaN(d)
-      ? `預計 ${d.getMonth() + 1}/${d.getDate()}`
-      : `預計 ${product.estimated_completion}`
-  }
+  const activeOrders = orders.filter(o => o.product_id === product.id && (o.completed_qty || 0) < (o.target_qty || 0))
+  const stock = product.warehouse_stock || 0
 
   return (
     <div style={{ background: '#fff', border: '0.5px solid #EBEBEB', borderRadius: 12, overflow: 'hidden' }}>
       {/* Image */}
-      <div style={{ height: 100, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ height: 110, position: 'relative', overflow: 'hidden' }}>
         {imgSrc
           ? <img src={imgSrc} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <div style={{ width: '100%', height: '100%', background: '#E8461A', display: 'grid', placeItems: 'center' }}>
@@ -166,12 +160,30 @@ function ProductCard({ item, defaultExpanded }) {
         </span>
       </div>
 
-      {/* Content */}
-      <div style={{ padding: '9px 10px' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: dueDisplay ? 2 : 0 }}>
+      {/* Name */}
+      <div style={{ padding: '8px 10px 0' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {product.name}
         </div>
-        {dueDisplay && <div style={{ fontSize: 10, color: '#888' }}>{dueDisplay}</div>}
+      </div>
+
+      {/* Stats — stock + active orders */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, padding: '8px 10px 10px' }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1A1A1A', lineHeight: 1.1 }}>
+            {stock.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>倉庫庫存</div>
+        </div>
+        <div style={{ borderLeft: '0.5px solid #EBEBEB', paddingLeft: 12 }}>
+          <div style={{
+            fontSize: 18, fontWeight: 700, lineHeight: 1.1,
+            color: activeOrders.length > 0 ? '#E8461A' : '#AAAAAA',
+          }}>
+            {activeOrders.length}
+          </div>
+          <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>進行中訂單</div>
+        </div>
       </div>
 
       {/* Parts toggle */}
@@ -204,7 +216,7 @@ function ProductCard({ item, defaultExpanded }) {
   )
 }
 
-function ProductsTab({ products }) {
+function ProductsTab({ products, orders }) {
   if (products.length === 0) {
     return <div style={{ padding: '60px 14px', textAlign: 'center', color: '#888', fontSize: 13 }}>尚未指派任何產品</div>
   }
@@ -213,7 +225,7 @@ function ProductsTab({ products }) {
       <OrderBanner />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
         {products.map((item, i) => (
-          <ProductCard key={item.product.id || i} item={item} defaultExpanded={i === 0} />
+          <ProductCard key={item.product.id || i} item={item} orders={orders} defaultExpanded={i === 0} />
         ))}
       </div>
     </div>
@@ -339,7 +351,7 @@ export default function Brand() {
       <Topbar brandName={brand_name} productCount={products.length} />
       <TabBar active={tab} onChange={setTab} />
       {tab === '產品總覽'
-        ? <ProductsTab products={products} />
+        ? <ProductsTab products={products} orders={orders} />
         : <OrdersTab orders={orders} />
       }
     </div>

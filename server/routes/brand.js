@@ -23,7 +23,7 @@ function deriveProductStatus(parts) {
 
 async function getProductProgress(db, productId) {
   const product = await db.prepare(
-    'SELECT id, name, description, order_qty, order_date, estimated_completion, image_url FROM products WHERE id=?'
+    'SELECT id, name, description, order_qty, order_date, estimated_completion, image_url, COALESCE(warehouse_stock, 0) as warehouse_stock FROM products WHERE id=?'
   ).get(productId)
   if (!product) return null
 
