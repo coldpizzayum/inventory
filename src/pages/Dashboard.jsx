@@ -521,7 +521,14 @@ function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
 }
 
 function OrderRow({ order, product, clientName, onGoToOrders }) {
-  const [hovered, setHovered] = useState(false)
+  const [imgSrc, setImgSrc] = useState(null)
+  useEffect(() => {
+    if (product?.id) {
+      const stored = localStorage.getItem(`prod-img-${product.id}`)
+      if (stored) setImgSrc(stored)
+    }
+  }, [product?.id])
+
   const completed = order.alloc || 0
   const total = order.qty || 0
   const remaining = Math.max(0, total - completed)
@@ -537,19 +544,15 @@ function OrderRow({ order, product, clientName, onGoToOrders }) {
 
   return (
     <div onClick={() => onGoToOrders && onGoToOrders(order.productId)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-        margin: '0 -14px', padding: '8px 14px',
-        background: hovered ? 'var(--bg-2)' : 'transparent', transition: 'background 0.1s',
-      }}>
+      style={{ background: 'var(--bg-2)', borderRadius: 'var(--r-lg)', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', transition: 'background 0.1s' }}
+      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
+      onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-2)'}>
       {/* Thumbnail */}
       <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', overflow: 'hidden', flexShrink: 0, background: 'var(--bg-3)', display: 'grid', placeItems: 'center' }}>
-        {product?.image_url
-          ? <img src={product.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {imgSrc
+          ? <img src={imgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           : <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--text-4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/>
             </svg>
         }
       </div>
@@ -687,7 +690,7 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
                 <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
                 <button onClick={() => onGoToOrders(null)} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
               </div>
-            : <div style={{ padding: '0 14px', overflow: 'hidden' }}>
+            : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {orders.map(o => (
                   <OrderRow key={o.id} order={o}
                     product={products.find(p => p.id === o.productId)}
@@ -695,7 +698,7 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
                     onGoToOrders={onGoToOrders}
                   />
                 ))}
-                <div style={{ fontSize: 12, textAlign: 'center', padding: '8px 0', color: 'var(--text-3)' }}>
+                <div style={{ fontSize: 12, textAlign: 'center', padding: '6px 0', color: 'var(--text-3)' }}>
                   其他產品尚無訂單 ·{' '}
                   <span onClick={() => onGoToOrders(null)} style={{ color: '#E8461A', cursor: 'pointer' }}>新增訂單</span>
                 </div>
