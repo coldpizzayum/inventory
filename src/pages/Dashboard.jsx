@@ -1359,105 +1359,110 @@ function PartView({ parts, skuEditMode, onReload }) {
 }
 
 function calcFactoryGroups(parts) {
-  const map = new Map()
+  const factoryMap = {}
   for (const part of parts) {
     for (const stage of (part.stages || [])) {
       const fname = stage.factory_name
-      if (!map.has(fname)) {
-        map.set(fname, { name: fname, totalInTransit: 0, partsInTransit: [], actionNamesInTransit: new Set(), hasSent: false })
+      if (!factoryMap[fname]) {
+        factoryMap[fname] = { name: fname, totalInTransit: 0, actionNames: [], allParts: [], stages: [] }
       }
-      const g = map.get(fname)
+      const g = factoryMap[fname]
       g.totalInTransit += (stage.in_transit || 0)
-      if ((stage.in_transit || 0) > 0 && !g.partsInTransit.find(p => p.id === part.id)) {
-        g.partsInTransit.push(part)
-        g.actionNamesInTransit.add(stage.action_name)
-      }
-      if ((stage.total_sent || 0) > 0) g.hasSent = true
+      g.stages.push(stage)
+      if (!g.actionNames.includes(stage.action_name)) g.actionNames.push(stage.action_name)
+      const existing = g.allParts.find(p => p.part.id === part.id)
+      const hasInTransit = (stage.in_transit || 0) > 0
+      if (!existing) g.allParts.push({ part, hasInTransit })
+      else if (hasInTransit) existing.hasInTransit = true
     }
   }
-  const result = []
-  for (const [, g] of map) {
+  return Object.values(factoryMap).map(g => {
     const isActive = g.totalInTransit > 0
-    const isDone = !isActive && g.hasSent
-    if (isActive || isDone) {
-      result.push({ name: g.name, totalInTransit: g.totalInTransit, partsInTransit: g.partsInTransit, actionNames: [...g.actionNamesInTransit], isActive, isDone })
-    }
-  }
-  return result.sort((a, b) => a.isActive === b.isActive ? b.totalInTransit - a.totalInTransit : a.isActive ? -1 : 1)
+    const sentStages = g.stages.filter(s => (s.total_sent || 0) > 0)
+    const allReturned = sentStages.length > 0 && sentStages.every(s => (s.total_returned || 0) >= (s.total_sent || 0))
+    const isDone = !isActive && allReturned
+    const isWaiting = !isActive && !allReturned
+    return { ...g, isActive, isDone, isWaiting }
+  }).sort((a, b) => {
+    if (b.totalInTransit !== a.totalInTransit) return b.totalInTransit - a.totalInTransit
+    return a.name.localeCompare(b.name)
+  })
 }
 
 function FactoryView({ parts }) {
   const groups = calcFactoryGroups(parts)
   if (groups.length === 0) {
-    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工中或已完成的加工廠資料</div>
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工廠資料，請先新增加工站</div>
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {groups.map(({ name, totalInTransit, partsInTransit, actionNames, isActive, isDone }) => (
-        <div key={name} style={{ opacity: isDone ? 0.6 : 1 }}>
-          <div style={{
-            padding: '9px 13px', background: 'var(--bg-1)',
-            border: '0.5px solid var(--line-1)',
-            borderRadius: isDone ? 'var(--r-lg)' : 'var(--r-lg) var(--r-lg) 0 0',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <div style={{ width: 24, height: 24, display: 'grid', placeItems: 'center', color: 'var(--text-3)', flexShrink: 0 }}>
-              <svg viewBox="0 0 24 24" fill="none" width="15" height="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 21v-13l9-4 9 4v13"/><path d="M13 21v-4a2 2 0 0 0-4 0v4"/><path d="M9 9v.01"/><path d="M15 9v.01"/><path d="M9 13v.01"/><path d="M15 13v.01"/>
-              </svg>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
-                {isActive ? `${actionNames.join('・')}・${partsInTransit.length} 個零件加工中` : '本批已完成'}
+      {groups.map(({ name, totalInTransit, allParts, actionNames, isActive, isDone, isWaiting }) => {
+        const badge = isActive
+          ? { label: `● 加工中 ${totalInTransit} 件`, bg: '#FEE9E4', color: '#E8461A' }
+          : isDone
+            ? { label: '✓ 已完成', bg: 'var(--ok-tint)', color: 'var(--ok)' }
+            : { label: '— 等待中', bg: 'var(--bg-3)', color: 'var(--text-3)' }
+        const activePartCount = allParts.filter(p => p.hasInTransit).length
+        const subtitle = actionNames.join('・') + '・' + (
+          isActive ? `${activePartCount} 個零件加工中`
+          : isDone ? '本批已完成'
+          : '尚未送出'
+        )
+        return (
+          <div key={name}>
+            <div style={{
+              padding: '9px 13px', background: 'var(--bg-1)',
+              border: '0.5px solid var(--line-1)',
+              borderRadius: allParts.length > 0 ? 'var(--r-lg) var(--r-lg) 0 0' : 'var(--r-lg)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <div style={{ width: 24, height: 24, display: 'grid', placeItems: 'center', color: 'var(--text-3)', flexShrink: 0 }}>
+                <svg viewBox="0 0 24 24" fill="none" width="15" height="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 21v-13l9-4 9 4v13"/><path d="M13 21v-4a2 2 0 0 0-4 0v4"/><path d="M9 9v.01"/><path d="M15 9v.01"/><path d="M9 13v.01"/><path d="M15 13v.01"/>
+                </svg>
               </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{subtitle}</div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>
+                {badge.label}
+              </span>
             </div>
-            <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              {isActive && (
-                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: '#FEE9E4', color: '#E8461A' }}>
-                  ● 加工中 {totalInTransit} 件
-                </span>
-              )}
-              {isDone && (
-                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: 'var(--ok-tint)', color: 'var(--ok)' }}>
-                  ✓ 已完成
-                </span>
-              )}
-            </div>
+            {allParts.length > 0 && (
+              <div style={{ border: '0.5px solid var(--line-1)', borderTop: 'none', borderRadius: '0 0 var(--r-lg) var(--r-lg)', background: 'var(--bg-1)' }}>
+                {allParts.map(({ part, hasInTransit }, pi) => (
+                  <div key={part.id} style={{ opacity: hasInTransit ? 1 : 0.5, borderBottom: pi < allParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
+                    <div style={{ padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
+                      {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+                      {(part.warehouse_stock || 0) > 0 && (
+                        <span style={{ fontSize: 9, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 5px', borderRadius: 3 }}>倉 {part.warehouse_stock}</span>
+                      )}
+                    </div>
+                    <div style={{ padding: '0 13px 12px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                      {(part.stages || []).flatMap((stage, i, arr) => {
+                        const hasData = (stage.total_sent || 0) > 0
+                        const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
+                        return [
+                          <StageCard key={stage.id} stage={stage} />,
+                          ...(i < arr.length - 1 ? [
+                            <span key={`a${i}`} style={{
+                              color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                              fontSize: hasData || nextHasData ? 14 : 12,
+                              opacity: hasData || nextHasData ? 1 : 0.3,
+                            }}>›</span>,
+                          ] : []),
+                        ]
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {isActive && (
-            <div style={{ border: '0.5px solid var(--line-1)', borderTop: 'none', borderRadius: '0 0 var(--r-lg) var(--r-lg)', background: 'var(--bg-1)' }}>
-              {partsInTransit.map((part, pi) => (
-                <div key={part.id} style={{ borderBottom: pi < partsInTransit.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
-                  <div style={{ padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
-                    {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
-                    {(part.warehouse_stock || 0) > 0 && (
-                      <span style={{ fontSize: 9, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 5px', borderRadius: 3 }}>倉 {part.warehouse_stock}</span>
-                    )}
-                  </div>
-                  <div style={{ padding: '0 13px 12px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
-                    {(part.stages || []).flatMap((stage, i, arr) => {
-                      const hasData = (stage.total_sent || 0) > 0
-                      const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
-                      return [
-                        <StageCard key={stage.id} stage={stage} />,
-                        ...(i < arr.length - 1 ? [
-                          <span key={`a${i}`} style={{
-                            color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
-                            fontSize: hasData || nextHasData ? 14 : 12,
-                            opacity: hasData || nextHasData ? 1 : 0.3,
-                          }}>›</span>,
-                        ] : []),
-                      ]
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
