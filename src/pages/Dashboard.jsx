@@ -1413,16 +1413,12 @@ function calcFactoryGroups(parts) {
     for (const stage of (part.stages || [])) {
       const fname = stage.factory_name
       if (!factoryMap[fname]) {
-        factoryMap[fname] = { name: fname, totalInTransit: 0, actionNames: [], allParts: [], stages: [] }
+        factoryMap[fname] = { name: fname, totalInTransit: 0, stages: [], allParts: [] }
       }
       const g = factoryMap[fname]
       g.totalInTransit += (stage.in_transit || 0)
       g.stages.push(stage)
-      if (!g.actionNames.includes(stage.action_name)) g.actionNames.push(stage.action_name)
-      const existing = g.allParts.find(p => p.part.id === part.id)
-      const hasInTransit = (stage.in_transit || 0) > 0
-      if (!existing) g.allParts.push({ part, hasInTransit })
-      else if (hasInTransit) existing.hasInTransit = true
+      if (!g.allParts.find(p => p.id === part.id)) g.allParts.push(part)
     }
   }
   return Object.values(factoryMap).map(g => {
@@ -1430,34 +1426,44 @@ function calcFactoryGroups(parts) {
     const sentStages = g.stages.filter(s => (s.total_sent || 0) > 0)
     const allReturned = sentStages.length > 0 && sentStages.every(s => (s.total_returned || 0) >= (s.total_sent || 0))
     const isDone = !isActive && allReturned
-    const isWaiting = !isActive && !allReturned
-    return { ...g, isActive, isDone, isWaiting }
+    const isWaiting = !isActive && !isDone
+    const activeParts = g.allParts.filter(p =>
+      (p.stages || []).some(s => s.factory_name === g.name && (s.in_transit || 0) > 0)
+    )
+    return { name: g.name, totalInTransit: g.totalInTransit, activeParts, isActive, isDone, isWaiting }
   }).sort((a, b) => {
-    if (b.totalInTransit !== a.totalInTransit) return b.totalInTransit - a.totalInTransit
+    const pri = x => x.isActive ? 0 : x.isDone ? 1 : 2
+    if (pri(a) !== pri(b)) return pri(a) - pri(b)
+    if (a.isActive) return b.totalInTransit - a.totalInTransit
     return a.name.localeCompare(b.name)
   })
 }
 
 function FactoryView({ parts }) {
+  const [expandedParts, setExpandedParts] = useState({})
   const groups = calcFactoryGroups(parts)
   if (groups.length === 0) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工廠資料，請先新增加工站</div>
   }
+  const togglePart = (factory, partId) => {
+    const key = `${factory}__${partId}`
+    setExpandedParts(e => ({ ...e, [key]: !e[key] }))
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {groups.map(({ name, totalInTransit, allParts, actionNames, isActive, isDone, isWaiting }) => {
+      {groups.map(({ name, totalInTransit, activeParts, isActive, isDone, isWaiting }) => {
         const badge = isActive
           ? { label: `● 加工中 ${totalInTransit} 件`, bg: '#FEE9E4', color: '#E8461A' }
           : isDone
             ? { label: '✓ 已完成', bg: 'var(--ok-tint)', color: 'var(--ok)' }
-            : { label: '— 等待中', bg: 'var(--bg-3)', color: 'var(--text-3)' }
-        const subtitle = isActive ? `目前加工中 ${totalInTransit} 件` : isDone ? '本批已完成' : '尚未送出'
+            : { label: '— 尚未送出', bg: 'var(--bg-3)', color: 'var(--text-3)' }
+        const hasParts = isActive && activeParts.length > 0
         return (
-          <div key={name}>
+          <div key={name} style={{ opacity: isDone ? 0.5 : isWaiting ? 0.4 : 1 }}>
             <div style={{
               padding: '9px 13px', background: 'var(--bg-1)',
               border: '0.5px solid var(--line-1)',
-              borderRadius: allParts.length > 0 ? 'var(--r-lg) var(--r-lg) 0 0' : 'var(--r-lg)',
+              borderRadius: hasParts ? 'var(--r-lg) var(--r-lg) 0 0' : 'var(--r-lg)',
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <div style={{ width: 24, height: 24, display: 'grid', placeItems: 'center', color: 'var(--text-3)', flexShrink: 0 }}>
@@ -1467,41 +1473,72 @@ function FactoryView({ parts }) {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{subtitle}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
+                  {isActive ? `目前加工中 ${totalInTransit} 件` : isDone ? '本批已完成' : '尚未送出'}
+                </div>
               </div>
               <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>
                 {badge.label}
               </span>
             </div>
-            {allParts.length > 0 && (
+            {hasParts && (
               <div style={{ border: '0.5px solid var(--line-1)', borderTop: 'none', borderRadius: '0 0 var(--r-lg) var(--r-lg)', background: 'var(--bg-1)' }}>
-                {allParts.map(({ part, hasInTransit }, pi) => (
-                  <div key={part.id} style={{ opacity: hasInTransit ? 1 : 0.45, borderBottom: pi < allParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
-                    <div style={{ padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
-                      {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
-                      {(part.warehouse_stock || 0) > 0 && (
-                        <span style={{ fontSize: 9, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 5px', borderRadius: 3 }}>倉 {part.warehouse_stock}</span>
+                {activeParts.map((part, pi) => {
+                  const activeStagesHere = (part.stages || []).filter(s =>
+                    s.factory_name === name && (s.in_transit || 0) > 0
+                  )
+                  const inTransitHere = activeStagesHere.reduce((sum, s) => sum + (s.in_transit || 0), 0)
+                  const actionLabel = [...new Set(activeStagesHere.map(s => s.action_name))].join('・')
+                  const partKey = `${name}__${part.id}`
+                  const isExpanded = expandedParts[partKey] ?? false
+                  return (
+                    <div key={part.id} style={{ borderBottom: pi < activeParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
+                      <div
+                        onClick={() => togglePart(name, part.id)}
+                        style={{
+                          padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10,
+                          cursor: 'pointer', transition: 'background .1s',
+                          borderBottom: isExpanded ? '0.5px solid var(--line-1)' : 'none',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)', whiteSpace: 'nowrap' }}>{part.name}</span>
+                          {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-3)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {actionLabel}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+                          <span className="num" style={{ fontSize: 16, fontWeight: 500, color: '#E8461A' }}>{inTransitHere}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件加工中</span>
+                        </div>
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0 }}>
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
+                          {(part.stages || []).flatMap((stage, i, arr) => {
+                            const hasData = (stage.total_sent || 0) > 0
+                            const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
+                            return [
+                              <StageCard key={stage.id} stage={stage} />,
+                              ...(i < arr.length - 1 ? [
+                                <span key={`a${i}`} style={{
+                                  color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                                  fontSize: hasData || nextHasData ? 14 : 12, opacity: hasData || nextHasData ? 1 : 0.3,
+                                }}>›</span>,
+                              ] : []),
+                            ]
+                          })}
+                        </div>
                       )}
                     </div>
-                    <div style={{ padding: '0 13px 12px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
-                      {(part.stages || []).flatMap((stage, i, arr) => {
-                        const hasData = (stage.total_sent || 0) > 0
-                        const nextHasData = i < arr.length - 1 && (arr[i + 1]?.total_sent || 0) > 0
-                        return [
-                          <StageCard key={stage.id} stage={stage} />,
-                          ...(i < arr.length - 1 ? [
-                            <span key={`a${i}`} style={{
-                              color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
-                              fontSize: hasData || nextHasData ? 14 : 12,
-                              opacity: hasData || nextHasData ? 1 : 0.3,
-                            }}>›</span>,
-                          ] : []),
-                        ]
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
