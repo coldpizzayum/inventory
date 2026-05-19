@@ -10,7 +10,7 @@ router.get('/', async (req, res) => {
     const db = getDb()
     const products = await db.prepare(`
       SELECT p.*,
-        COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = p.id), 0) as warehouse_total,
+        COALESCE(p.warehouse_stock, 0) as warehouse_total,
         COALESCE((SELECT SUM(ps.in_transit) FROM process_stages ps JOIN parts pt ON ps.part_id = pt.id WHERE pt.product_id = p.id), 0) as in_transit_total,
         COALESCE((SELECT SUM(defect_stock) FROM parts WHERE product_id = p.id), 0) as defect_total,
         (SELECT MAX(logged_at) FROM receive_logs WHERE product_id = p.id) as last_receive_at,

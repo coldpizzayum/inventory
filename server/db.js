@@ -293,6 +293,9 @@ function createSqliteAdapter() {
   try { raw.exec('ALTER TABLE defect_logs ADD COLUMN note TEXT') } catch (_) {}
   try { raw.exec('ALTER TABLE products ADD COLUMN image_url TEXT') } catch (_) {}
   try { raw.exec('ALTER TABLE part_skus ADD COLUMN color_hex TEXT') } catch (_) {}
+  try { raw.exec('ALTER TABLE products ADD COLUMN warehouse_stock INTEGER DEFAULT 0') } catch (_) {}
+  // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
+  try { raw.exec(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`) } catch (_) {}
   raw.exec(`
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -377,6 +380,9 @@ async function createPgAdapter() {
   await pool.query('ALTER TABLE defect_logs ADD COLUMN IF NOT EXISTS note TEXT')
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT')
   await pool.query('ALTER TABLE part_skus ADD COLUMN IF NOT EXISTS color_hex TEXT')
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS warehouse_stock INTEGER DEFAULT 0')
+  // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
+  await pool.query(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
