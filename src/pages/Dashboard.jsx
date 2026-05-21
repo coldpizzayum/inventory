@@ -3312,10 +3312,304 @@ function StockAdjustModal({ product, onClose, onReload }) {
   )
 }
 
+// ─── Part config components ────────────────────────────────────
+
+const PRESET_COLORS = [
+  { hex: '#444441', name: '深灰' },
+  { hex: '#B4B2A9', name: '淺灰' },
+  { hex: '#D85A30', name: '橘' },
+  { hex: '#378ADD', name: '藍' },
+  { hex: '#1A1A1A', name: '黑' },
+  { hex: '#1A7A3C', name: '綠' },
+  { hex: '#E8461A', name: '橘紅' },
+  { hex: '#B07D00', name: '黃' },
+]
+
+function PartConfigRow({ part, onChange, onDelete, autoFocus }) {
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [pendingColor, setPendingColor] = useState({ hex: PRESET_COLORS[0].hex, name: '' })
+
+  function addSku() {
+    if (!pendingColor.name.trim()) return
+    onChange({ ...part, skus: [...part.skus, { hex: pendingColor.hex, name: pendingColor.name.trim() }] })
+    setPendingColor({ hex: PRESET_COLORS[0].hex, name: '' })
+    setShowColorPicker(false)
+  }
+
+  function removeSku(i) {
+    onChange({ ...part, skus: part.skus.filter((_, idx) => idx !== i) })
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      padding: '10px 12px', background: 'var(--bg-2)',
+      borderRadius: 'var(--r-md)', marginBottom: 6,
+    }}>
+      {/* 零件名稱 */}
+      <input
+        autoFocus={autoFocus}
+        className="input"
+        placeholder="零件名稱，例如：L夾"
+        value={part.name}
+        onChange={e => onChange({ ...part, name: e.target.value })}
+        style={{ width: 140, fontSize: 13, padding: '7px 10px', flexShrink: 0 }}
+      />
+
+      {/* SKU 區 */}
+      <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, minWidth: 0, position: 'relative' }}>
+        {part.skus.map((sku, i) => (
+          <span key={i} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+            borderRadius: 999, padding: '3px 8px 3px 6px', fontSize: 11,
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: sku.hex, flexShrink: 0, border: '0.5px solid rgba(0,0,0,.12)' }} />
+            {sku.name}
+            <button onClick={() => removeSku(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 0, lineHeight: 1, marginLeft: 1, fontSize: 12 }}>×</button>
+          </span>
+        ))}
+
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowColorPicker(v => !v)}
+            style={{
+              fontSize: 11, color: 'var(--text-3)', background: 'none',
+              border: '0.5px dashed var(--line-2)', borderRadius: 999,
+              padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >+ 新增顏色</button>
+
+          {showColorPicker && (
+            <div style={{
+              position: 'absolute', top: '110%', left: 0, zIndex: 50,
+              background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+              borderRadius: 'var(--r-md)', padding: 12, boxShadow: '0 4px 16px rgba(0,0,0,.12)',
+              width: 220,
+            }}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              {/* Preset swatches */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {PRESET_COLORS.map(c => (
+                  <button key={c.hex} onClick={() => setPendingColor(p => ({ ...p, hex: c.hex, name: p.name || c.name }))}
+                    title={c.name}
+                    style={{
+                      width: 22, height: 22, borderRadius: '50%', background: c.hex,
+                      border: pendingColor.hex === c.hex ? '2px solid var(--text-1)' : '1.5px solid transparent',
+                      cursor: 'pointer', padding: 0,
+                      boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+                    }}
+                  />
+                ))}
+              </div>
+              {/* Name input */}
+              <input
+                autoFocus
+                className="input"
+                placeholder="顏色名稱"
+                value={pendingColor.name}
+                onChange={e => setPendingColor(p => ({ ...p, name: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && addSku()}
+                style={{ fontSize: 12, padding: '6px 9px', marginBottom: 8, width: '100%', boxSizing: 'border-box' }}
+              />
+              <button className="btn primary" onClick={addSku} disabled={!pendingColor.name.trim()}
+                style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}>
+                確認
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 刪除整列 */}
+      <button onClick={onDelete}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: '4px', flexShrink: 0, lineHeight: 1 }}
+        onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}
+      ><Icon.X /></button>
+    </div>
+  )
+}
+
+function PartsStep({ productName, parts, setParts }) {
+  function addPart() {
+    setParts(ps => [...ps, { _key: Date.now(), name: '', skus: [] }])
+  }
+  function updatePart(i, val) { setParts(ps => ps.map((p, idx) => idx === i ? val : p)) }
+  function deletePart(i) { setParts(ps => ps.filter((_, idx) => idx !== i)) }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>設定「{productName}」的零件</div>
+        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>至少新增一個零件才能開始追蹤加工流程</div>
+      </div>
+      <div>
+        {parts.map((part, i) => (
+          <PartConfigRow
+            key={part._key}
+            part={part}
+            onChange={val => updatePart(i, val)}
+            onDelete={() => deletePart(i)}
+            autoFocus={i === parts.length - 1}
+          />
+        ))}
+      </div>
+      <button
+        onClick={addPart}
+        style={{
+          alignSelf: 'flex-start', fontSize: 12, color: 'var(--accent)',
+          background: 'none', border: '0.5px dashed var(--accent)',
+          borderRadius: 'var(--r-sm)', padding: '5px 12px', cursor: 'pointer',
+          marginTop: 2,
+        }}
+      >+ 新增零件</button>
+    </div>
+  )
+}
+
+async function savePartsToProduct(productId, parts) {
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    if (!part.name.trim()) continue
+    const r = await apiFetch('/api/parts', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId, name: part.name.trim(), sort_order: i }),
+    })
+    const { id: partId } = await r.json()
+    for (const sku of part.skus) {
+      await apiFetch(`/api/parts/${partId}/skus`, {
+        method: 'POST',
+        body: JSON.stringify({ color_name: sku.name, color_hex: sku.hex }),
+      })
+    }
+  }
+}
+
+function NewProductModal({ onClose, onCreated }) {
+  const [step, setStep] = useState(1)
+  const [info, setInfo] = useState({ name: '', description: '' })
+  const [parts, setParts] = useState([{ _key: Date.now(), name: '', skus: [] }])
+  const [saving, setSaving] = useState(false)
+
+  async function finish() {
+    const hasValidPart = parts.some(p => p.name.trim())
+    if (!hasValidPart) return
+    setSaving(true)
+    try {
+      const r = await apiFetch('/api/products', {
+        method: 'POST',
+        body: JSON.stringify({ name: info.name.trim(), description: info.description.trim() }),
+      })
+      const { id } = await r.json()
+      await savePartsToProduct(id, parts)
+      onCreated()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 520, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[1, 2].map(n => (
+                <div key={n} style={{
+                  width: n === step ? 20 : 8, height: 8, borderRadius: 4,
+                  background: n <= step ? 'var(--accent)' : 'var(--line-2)',
+                  transition: 'width .2s, background .2s',
+                }} />
+              ))}
+            </div>
+            <span style={{ fontSize: 13, color: 'var(--text-3)' }}>步驟 {step} / 2</span>
+          </div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+
+        {/* Step 1 — 基本資訊 */}
+        {step === 1 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>新增產品</div>
+            <div className="field">
+              <label>產品名稱 <span style={{ color: 'var(--bad)', fontSize: 10, fontWeight: 500 }}>必填</span></label>
+              <input autoFocus className="input" placeholder="例如：踩踩獸"
+                value={info.name}
+                onChange={e => setInfo(p => ({ ...p, name: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && info.name.trim() && setStep(2)}
+              />
+            </div>
+            <div className="field">
+              <label>產品描述</label>
+              <input className="input" placeholder="選填"
+                value={info.description}
+                onChange={e => setInfo(p => ({ ...p, description: e.target.value }))}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="btn primary" disabled={!info.name.trim()} onClick={() => setStep(2)}>
+                下一步：設定零件 →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — 零件設定 */}
+        {step === 2 && (
+          <>
+            <PartsStep productName={info.name} parts={parts} setParts={setParts} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line-1)' }}>
+              <button className="btn" onClick={() => setStep(1)}>← 上一步</button>
+              <button className="btn primary" onClick={finish}
+                disabled={saving || !parts.some(p => p.name.trim())}>
+                {saving ? '建立中…' : '完成建立'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </ModalOverlay>
+  )
+}
+
+function AddPartsModal({ product, onClose, onCreated }) {
+  const [parts, setParts] = useState([{ _key: Date.now(), name: '', skus: [] }])
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!parts.some(p => p.name.trim())) return
+    setSaving(true)
+    try {
+      await savePartsToProduct(product.id, parts)
+      onCreated()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 520, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>新增零件到「{product.name}」</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <PartsStep productName={product.name} parts={parts} setParts={setParts} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line-1)' }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={save}
+            disabled={saving || !parts.some(p => p.name.trim())}>
+            {saving ? '儲存中…' : '確認新增'}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
 // ─── Page: Settings ───────────────────────────────────────────
 function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
-  const [newProduct, setNewProduct] = useState({ name: '', description: '', initialStock: '' })
+  const [addPartsTarget, setAddPartsTarget] = useState(null) // product | null
   const [adjustModal, setAdjustModal] = useState(null) // product | null
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const [historyData, setHistoryData] = useState({}) // productId → rows
@@ -3330,21 +3624,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     if (expandedHistoryId === productId) { setExpandedHistoryId(null); return }
     setExpandedHistoryId(productId)
     loadHistory(productId)
-  }
-
-  async function createProduct() {
-    if (!newProduct.name) return alert('請填寫產品名稱')
-    const res = await apiFetch('/api/products', { method: 'POST', body: JSON.stringify({ name: newProduct.name, description: newProduct.description }) })
-    const { id } = await res.json()
-    const initStock = Math.max(0, parseInt(newProduct.initialStock) || 0)
-    if (initStock > 0) {
-      await apiFetch('/api/stock-adjustments', {
-        method: 'POST',
-        body: JSON.stringify({ product_id: id, new_qty: initStock, reason: '初始庫存設定' }),
-      }).catch(() => {})
-    }
-    setNewProduct({ name: '', description: '', initialStock: '' })
-    setShowNewProduct(false); reload()
   }
 
   async function deleteProduct(p) {
@@ -3442,6 +3721,9 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
                   <Icon.Flow />加工流程
                 </button>
+                <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setAddPartsTarget(p)}>
+                  <Icon.Plus />零件
+                </button>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
                   <Icon.Order />訂單
                   {orderCount > 0 && (
@@ -3490,33 +3772,19 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
 
       {/* New product modal */}
       {showNewProduct && (
-        <ModalOverlay onClose={() => setShowNewProduct(false)}>
-          <div style={{ width: 480, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 17, fontWeight: 600 }}>新增產品</div>
-              <button className="btn ghost" onClick={() => setShowNewProduct(false)} style={{ padding: 6 }}><Icon.X /></button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="field"><label>產品名稱 *</label><input autoFocus className="input" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === 'Enter' && createProduct()} /></div>
-              <div className="field"><label>描述</label><input className="input" value={newProduct.description} onChange={e => setNewProduct(p => ({ ...p, description: e.target.value }))} /></div>
-              <div className="field">
-                <label>初始倉庫庫存（選填）</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="number" min="0" className="input num" style={{ flex: 1 }}
-                    value={newProduct.initialStock}
-                    onChange={e => setNewProduct(p => ({ ...p, initialStock: e.target.value }))}
-                    placeholder="0"
-                  />
-                  <span style={{ fontSize: 13, color: 'var(--text-3)' }}>件</span>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn" onClick={() => setShowNewProduct(false)}>取消</button>
-              <button className="btn primary" onClick={createProduct}><Icon.Plus />新增產品</button>
-            </div>
-          </div>
-        </ModalOverlay>
+        <NewProductModal
+          onClose={() => setShowNewProduct(false)}
+          onCreated={() => { setShowNewProduct(false); reload() }}
+        />
+      )}
+
+      {/* Add parts to existing product modal */}
+      {addPartsTarget && (
+        <AddPartsModal
+          product={addPartsTarget}
+          onClose={() => setAddPartsTarget(null)}
+          onCreated={() => { setAddPartsTarget(null); reload() }}
+        />
       )}
 
       {/* Stock adjust modal */}
