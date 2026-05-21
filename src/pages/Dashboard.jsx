@@ -26,6 +26,9 @@ const Icon = {
   X: () => (<svg viewBox="0 0 14 14" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>),
   Grip: () => (<svg width="10" height="14" viewBox="0 0 14 14" fill="#B0ADA6"><circle cx="5" cy="3" r="1.1"/><circle cx="9" cy="3" r="1.1"/><circle cx="5" cy="7" r="1.1"/><circle cx="9" cy="7" r="1.1"/><circle cx="5" cy="11" r="1.1"/><circle cx="9" cy="11" r="1.1"/></svg>),
   Check: () => (<svg viewBox="0 0 24 24" fill="none" width="14" height="14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>),
+  AlertTriangle: ({ size = 16, color = 'currentColor' } = {}) => (<svg viewBox="0 0 24 24" fill="none" width={size} height={size} stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>),
+  ChevronDown: ({ size = 14, color = 'currentColor' } = {}) => (<svg viewBox="0 0 24 24" fill="none" width={size} height={size} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>),
+  ChevronUp: ({ size = 14, color = 'currentColor' } = {}) => (<svg viewBox="0 0 24 24" fill="none" width={size} height={size} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6"/></svg>),
   Photo: () => (<svg {...S} width="16" height="16"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
   // ti-clipboard-list
   Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
@@ -2586,6 +2589,40 @@ function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
 }
 
 // ─── Page: Log entry ──────────────────────────────────────────
+// SQLite CURRENT_TIMESTAMP returns "YYYY-MM-DD HH:MM:SS" without timezone — it's UTC but
+// browsers parse it as local time. Normalise to UTC before constructing a Date.
+function parseTs(raw) {
+  if (!raw) return null
+  if (typeof raw !== 'string') return new Date(raw)
+  const s = raw.trim()
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) return new Date(s.replace(' ', 'T') + 'Z')
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s)) return new Date(s + 'Z')
+  return new Date(s)
+}
+
+function toDatetimeLocal(raw) {
+  const d = raw instanceof Date ? raw : parseTs(raw)
+  if (!d || isNaN(d)) return ''
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function formatLogTime(raw) {
+  if (!raw) return ''
+  const d = parseTs(raw)
+  if (!d || isNaN(d)) return String(raw).slice(0, 16).replace('T', ' ')
+  const now = new Date()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const hhmm = `${hh}:${mi}`
+  if (d.toDateString() === now.toDateString()) return hhmm
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return `昨天 ${hhmm}`
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${mm}/${dd} ${hhmm}`
+}
+
 function uniqueFactoriesFromStages(stages) {
   const seen = new Set()
   const out = []
@@ -2611,14 +2648,15 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [workers, setWorkers] = useState([])
   const [workerId, setWorkerId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [editNoteId, setEditNoteId] = useState(null)
-  const [editNoteVal, setEditNoteVal] = useState('')
+  const [editRow, setEditRow] = useState(null)
   const [pendingDefects, setPendingDefects] = useState([])
-  const [reworkModal, setReworkModal] = useState(null)
-  const [reworkSel, setReworkSel] = useState(null)
+  const [defectOpen, setDefectOpen] = useState(true)
+  const [reworkExpandId, setReworkExpandId] = useState(null)
+  const [reworkSelInline, setReworkSelInline] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [batchNoteMode, setBatchNoteMode] = useState(false)
   const [batchNote, setBatchNote] = useState('')
+  const [loggedAt, setLoggedAt] = useState(() => toDatetimeLocal(new Date()))
 
   const dq = Math.max(0, parseInt(defectQty, 10) || 0)
   const actionType = source ? resolveActionType(direction, source) : null
@@ -2659,7 +2697,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   useEffect(() => { loadPendingDefects() }, [pid])
 
   async function deleteLog(id) {
-    if (!confirm('確認刪除此紀錄？庫存數量將自動回滾。')) return
+    if (!confirm('確認刪除此筆紀錄？庫存數字將一併還原。')) return
     try {
       const res = await apiFetch(`/api/receive-logs/${id}`, { method: 'DELETE' })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
@@ -2667,10 +2705,22 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     } catch (e) { alert('刪除失敗：' + e.message) }
   }
 
-  async function saveNote(id) {
+  async function saveEdit() {
+    if (!editRow) return
+    const { id, action_type, part_id, stage_id, sku_color, qty, defect_qty, note, worker_id, logged_at } = editRow
+    if (!qty || +qty <= 0) return alert('請輸入正確數量')
     try {
-      await apiFetch(`/api/receive-logs/${id}`, { method: 'PATCH', body: JSON.stringify({ note: editNoteVal }) })
-      setEditNoteId(null); reload()
+      const res = await apiFetch(`/api/receive-logs/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action_type, part_id: part_id || null, stage_id: stage_id || null,
+          sku_color: sku_color || '', qty: +qty, defect_qty: Math.max(0, +(defect_qty || 0)),
+          note: note || '', worker_id: worker_id ? +worker_id : null,
+          logged_at: new Date(logged_at).toISOString(),
+        }),
+      })
+      if (!res.ok) { const b = await res.json().catch(() => ({})); return alert(b.error || `儲存失敗 (${res.status})`) }
+      setEditRow(null); reload()
     } catch (e) { alert('儲存失敗：' + e.message) }
   }
 
@@ -2714,7 +2764,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     const lines = [
       headers.join(','),
       ...rows.map(l => [
-        l.logged_at?.slice(0, 16).replace('T', ' ') || '',
+        formatLogTime(l.logged_at) || '',
         ACTION_LABEL[l.action_type] || l.action_type,
         l.worker_name || '',
         l.part_name || '',
@@ -2737,12 +2787,14 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     if (showDefectHandling && handling === 'rework' && !reworkStageId) return alert('請選擇重工站')
     setSubmitting(true)
     try {
+      const loggedAtISO = new Date(loggedAt).toISOString()
       await apiFetch('/api/receive-logs', {
         method: 'POST',
         body: JSON.stringify({
           product_id: pid, part_id: part?.id, stage_id: stageId,
           sku_color: sku || '', action_type: actionType,
           qty: +qty, defect_qty: dq, note, worker_id: workerId || null,
+          logged_at: loggedAtISO,
         }),
       })
       if (showDefectHandling && handling === 'rework' && dq > 0 && reworkStageId) {
@@ -2752,6 +2804,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             product_id: pid, part_id: part?.id, stage_id: reworkStageId,
             sku_color: sku || '', action_type: 'rework',
             qty: dq, defect_qty: 0, note: '（自動重工）', worker_id: workerId || null,
+            logged_at: loggedAtISO,
           }),
         })
       }
@@ -2762,10 +2815,12 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             product_id: pid, part_id: part?.id, stage_id: null,
             sku_color: sku || '', action_type: 'scrap',
             qty: dq, defect_qty: 0, note: '（自動報廢）', worker_id: workerId || null,
+            logged_at: loggedAtISO,
           }),
         })
       }
       setQty(''); setDefectQty(''); setNote(''); setHandling('none'); setReworkStageId(null)
+      setLoggedAt(toDatetimeLocal(new Date()))
       reload(); loadPendingDefects(); onLogSubmit?.()
     } catch (e) { alert('送出失敗：' + e.message) }
     finally { setSubmitting(false) }
@@ -2781,12 +2836,12 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           qty: defect.qty, defect_qty: 0, note: '', worker_id: null,
         }),
       })
-      setReworkModal(null); loadPendingDefects(); reload(); onLogSubmit?.()
+      setReworkExpandId(null); setReworkSelInline(null); loadPendingDefects(); reload(); onLogSubmit?.()
     } catch (e) { alert('送出失敗：' + e.message) }
   }
 
   async function handleDefectScrap(defect) {
-    if (!confirm(`確認報廢 ${defect.qty} 件？`)) return
+    if (!confirm(`確認報廢 ${defect.qty} 件？此動作無法還原。`)) return
     try {
       await apiFetch('/api/receive-logs', {
         method: 'POST',
@@ -2802,6 +2857,99 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Pending defects banner */}
+      {pendingDefects.length > 0 && (
+        <div style={{
+          background: '#FAEEDA', border: '0.5px solid #FAC775', borderRadius: 'var(--border-radius-lg, 12px)',
+          padding: '12px 16px',
+        }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon.AlertTriangle size={16} color="#B07D00" />
+              <span style={{ fontSize: 14, fontWeight: 500, color: '#633806' }}>待處理不良品</span>
+              <span style={{
+                fontSize: 12, fontWeight: 600, color: '#E8461A',
+                background: 'rgba(232,70,26,0.1)', padding: '1px 8px', borderRadius: 10,
+              }}>{pendingDefects.length} 筆</span>
+            </div>
+            <button onClick={() => setDefectOpen(o => !o)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+              color: '#B07D00', display: 'flex', alignItems: 'center',
+            }}>
+              {defectOpen ? <Icon.ChevronUp size={16} color="#B07D00" /> : <Icon.ChevronDown size={16} color="#B07D00" />}
+            </button>
+          </div>
+
+          {/* Expandable list */}
+          {defectOpen && (
+            <div style={{ marginTop: 10 }}>
+              {pendingDefects.map((d, i) => {
+                const isLast = i === pendingDefects.length - 1
+                const isExpanding = reworkExpandId === d.id
+                const defectPart = partsData.find(p => p.id === d.part_id)
+                const availStages = (defectPart?.stages || []).filter(s => (s.in_transit || 0) > 0)
+                return (
+                  <div key={d.id} style={{ borderBottom: isLast && !isExpanding ? 'none' : '0.5px solid rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, color: '#8A6000', minWidth: 72 }}>{formatLogTime(d.created_at)}</span>
+                      <span style={{ fontSize: 13, color: '#633806', fontWeight: 500 }}>{d.part_name || '—'}</span>
+                      <span style={{ fontSize: 12, color: '#8A6000' }}>{d.stage_name || '—'}</span>
+                      {d.sku_color && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#8A6000' }}>
+                          <SkuDot name={d.sku_color} />{d.sku_color}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#E8461A', marginLeft: 'auto' }}>{d.qty} 件</span>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => { setReworkExpandId(isExpanding ? null : d.id); setReworkSelInline(null) }} style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                          border: `1px solid ${isExpanding ? 'var(--accent)' : '#F0A040'}`,
+                          background: isExpanding ? 'var(--accent-tint)' : 'rgba(240,160,64,0.08)',
+                          color: isExpanding ? 'var(--accent)' : '#B07D00', fontWeight: 500,
+                        }}>送重工</button>
+                        <button onClick={() => handleDefectScrap(d)} style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                          border: '1px solid #FCA5A5', background: 'rgba(239,68,68,0.06)', color: '#DC2626',
+                        }}>報廢</button>
+                      </div>
+                    </div>
+                    {/* Inline rework stage picker */}
+                    {isExpanding && (
+                      <div style={{ padding: '10px 0 12px 0', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
+                        {availStages.length === 0
+                          ? <span style={{ fontSize: 12, color: '#8A6000' }}>目前無加工中零件可重工</span>
+                          : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                              {availStages.map(s => (
+                                <button key={s.id} onClick={() => setReworkSelInline(s.id)} style={{
+                                  padding: '5px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                                  border: `1.5px solid ${reworkSelInline === s.id ? 'var(--accent)' : '#F0A040'}`,
+                                  background: reworkSelInline === s.id ? 'var(--accent-tint)' : 'rgba(240,160,64,0.08)',
+                                  color: reworkSelInline === s.id ? 'var(--accent)' : '#B07D00',
+                                }}>
+                                  {s.factory_name} · {s.action_name}
+                                  <span style={{ marginLeft: 4, fontSize: 11, opacity: 0.7 }}>({s.in_transit})</span>
+                                </button>
+                              ))}
+                              {reworkSelInline && (
+                                <button onClick={() => handleDefectRework(d, reworkSelInline)} style={{
+                                  padding: '5px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600,
+                                  border: 'none', background: 'var(--accent)', color: '#fff',
+                                }}>確認重工</button>
+                              )}
+                            </div>
+                        }
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
 
         {/* Form */}
@@ -2896,6 +3044,20 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               <option value="">（選填）</option>
               {workers.filter(w => w.is_active).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
+          </div>
+
+          {/* Logged at */}
+          <div className="field">
+            <label>登記時間</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input className="input" type="datetime-local" value={loggedAt} onChange={e => setLoggedAt(e.target.value)}
+                style={{ flex: 1 }} />
+              <button onClick={() => setLoggedAt(toDatetimeLocal(new Date()))} style={{
+                padding: '5px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                border: '1px solid var(--line-2)', background: 'var(--bg-1)', color: 'var(--text-3)',
+              }}>現在</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>預設為當前時間，如需補登過去的紀錄可手動調整</div>
           </div>
 
           {/* Qty */}
@@ -3020,15 +3182,103 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               <tbody>
                 {logs.length === 0 && <tr><td colSpan={11} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
                 {visibleLogs.map(log => {
-                  const isEditing = editNoteId === log.id
+                  const isEditing = editRow?.id === log.id
                   const isSel = selected.has(log.id)
+                  const ei = editRow // alias for brevity when isEditing
+
+                  if (isEditing) {
+                    const IS = { border: '0.5px solid #E8461A', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' }
+                    const editPart = partsData.find(p => p.id === ei.part_id)
+                    const editStages = editPart?.stages || []
+                    const editSkus = editPart?.skus || []
+                    const stageNeeded = ['return', 'send', 'rework'].includes(ei.action_type)
+                    const defectEnabled = ['receive', 'return'].includes(ei.action_type)
+                    return (
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)', background: '#FEF6F4' }}>
+                        <td style={{ padding: '8px 10px 8px 16px' }}>
+                          <input type="checkbox" checked={isSel} onChange={() => toggleSelect(log.id)}
+                            style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 150 }}>
+                          <input type="datetime-local" value={ei.logged_at}
+                            onChange={e => setEditRow(r => ({ ...r, logged_at: e.target.value }))}
+                            style={IS} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 120 }}>
+                          <select value={ei.action_type} style={IS}
+                            onChange={e => setEditRow(r => ({ ...r, action_type: e.target.value, stage_id: ['return','send','rework'].includes(e.target.value) ? r.stage_id : null }))}>
+                            {Object.entries(ACTION_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 90 }}>
+                          <select value={ei.worker_id ?? ''} style={IS}
+                            onChange={e => setEditRow(r => ({ ...r, worker_id: e.target.value || null }))}>
+                            <option value="">—</option>
+                            {workers.filter(w => w.is_active).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 100 }}>
+                          <select value={ei.part_id || ''} style={IS}
+                            onChange={e => {
+                              const pid2 = e.target.value
+                              const p = partsData.find(x => x.id === pid2)
+                              setEditRow(r => ({ ...r, part_id: pid2, stage_id: null, sku_color: p?.skus?.[0]?.color_name || '' }))
+                            }}>
+                            <option value="">—</option>
+                            {partsData.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 130 }}>
+                          {stageNeeded
+                            ? <select value={ei.stage_id ?? ''} style={IS}
+                                onChange={e => setEditRow(r => ({ ...r, stage_id: e.target.value ? +e.target.value : null }))}>
+                                <option value="">（無）</option>
+                                {editStages.map(s => <option key={s.id} value={s.id}>{s.factory_name} · {s.action_name}</option>)}
+                              </select>
+                            : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>
+                          }
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 90 }}>
+                          {editSkus.length > 1
+                            ? <select value={ei.sku_color || ''} style={IS}
+                                onChange={e => setEditRow(r => ({ ...r, sku_color: e.target.value }))}>
+                                <option value="">—</option>
+                                {editSkus.map(s => <option key={s.id} value={s.color_name}>{s.color_name}</option>)}
+                              </select>
+                            : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{ei.sku_color || '—'}</span>
+                          }
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 60 }}>
+                          <input type="number" min="1" value={ei.qty} style={{ ...IS, width: 60 }}
+                            onChange={e => setEditRow(r => ({ ...r, qty: e.target.value }))} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 60 }}>
+                          <input type="number" min="0" value={ei.defect_qty} disabled={!defectEnabled}
+                            style={{ ...IS, width: 60, opacity: defectEnabled ? 1 : 0.4 }}
+                            onChange={e => setEditRow(r => ({ ...r, defect_qty: e.target.value }))} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 100 }}>
+                          <input value={ei.note} placeholder="備註" style={IS}
+                            onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Escape') setEditRow(null) }} />
+                        </td>
+                        <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button onClick={saveEdit} style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>存</button>
+                            <button onClick={() => setEditRow(null)} style={{ padding: '4px 8px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-3)' }}>取消</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
+
                   return (
                     <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)', background: isSel ? 'var(--accent-tint)' : undefined }}>
                       <td style={{ padding: '10px 10px 10px 16px' }}>
                         <input type="checkbox" checked={isSel} onChange={() => toggleSelect(log.id)}
                           style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
                       </td>
-                      <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{log.logged_at?.slice(0, 16).replace('T', ' ')}</td>
+                      <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
                       <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.worker_name || '—'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
@@ -3038,23 +3288,13 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       </td>
                       <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
-                      <td style={{ padding: '8px 14px', minWidth: 120 }}>
-                        {isEditing ? (
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <input autoFocus value={editNoteVal} onChange={e => setEditNoteVal(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveNote(log.id); if (e.key === 'Escape') setEditNoteId(null) }}
-                              style={{ flex: 1, fontSize: 12, padding: '3px 6px', border: '1px solid var(--accent)', borderRadius: 4, outline: 'none', minWidth: 0 }} />
-                            <button onClick={() => saveNote(log.id)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer' }}>存</button>
-                            <button onClick={() => setEditNoteId(null)} style={{ padding: '3px 6px', fontSize: 11, borderRadius: 4, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>取消</button>
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{log.note || ''}</span>
-                        )}
+                      <td style={{ padding: '8px 14px', minWidth: 100 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{log.note || ''}</span>
                       </td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 2 }}>
-                          <button title="編輯備註"
-                            onClick={() => { setEditNoteId(log.id); setEditNoteVal(log.note || '') }}
+                          <button title="編輯"
+                            onClick={() => setEditRow({ id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id, sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '', logged_at: toDatetimeLocal(log.logged_at || new Date()) })}
                             style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
                             onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' }}>
@@ -3077,94 +3317,6 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         </div>
       </div>
 
-      {/* Pending defects */}
-      {pendingDefects.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>待處理不良品</h3>
-            <span style={{ fontSize: 12, color: 'var(--bad)', background: 'var(--bad-tint)', padding: '2px 8px', borderRadius: 10, fontWeight: 500 }}>
-              {pendingDefects.length} 筆
-            </span>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-2)' }}>
-                {['時間', '零件', '來源站', 'SKU', '數量', '操作'].map((h, i) => (
-                  <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pendingDefects.map(d => (
-                <tr key={d.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
-                  <td className="num" style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{d.created_at?.slice(0, 16).replace('T', ' ')}</td>
-                  <td style={{ padding: '10px 14px' }}>{d.part_name || '—'}</td>
-                  <td style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12 }}>{d.stage_name || '—'}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    {d.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={d.sku_color} />{d.sku_color}</span>}
-                  </td>
-                  <td className="num" style={{ padding: '10px 14px', color: 'var(--bad)', fontWeight: 500 }}>{d.qty}</td>
-                  <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => { setReworkModal(d); setReworkSel(null) }} style={{
-                        padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                        border: '1px solid var(--accent)', background: 'var(--accent-tint)', color: 'var(--accent)', fontWeight: 500,
-                      }}>送重工</button>
-                      <button onClick={() => handleDefectScrap(d)} style={{
-                        padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                        border: '1px solid var(--line-2)', background: 'none', color: 'var(--bad)',
-                      }}>報廢</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Rework stage picker modal */}
-      {reworkModal && (() => {
-        const defectPart = partsData.find(p => p.id === reworkModal.part_id)
-        const modalStages = (defectPart?.stages || []).filter(s => (s.in_transit || 0) > 0)
-        return (
-          <ModalOverlay onClose={() => setReworkModal(null)}>
-            <div style={{ width: 440, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>選擇重工站</div>
-                <button onClick={() => setReworkModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-3)' }}><Icon.X /></button>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                {reworkModal.part_name} · 不良品 {reworkModal.qty} 件
-              </div>
-              {modalStages.length === 0
-                ? <div style={{ fontSize: 13, color: 'var(--text-3)' }}>目前無加工中零件可重工</div>
-                : <>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {modalStages.map(s => (
-                        <button key={s.id} onClick={() => setReworkSel(s.id)} style={{
-                          padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-                          border: `1.5px solid ${reworkSel === s.id ? 'var(--accent)' : 'var(--line-2)'}`,
-                          background: reworkSel === s.id ? 'var(--accent-tint)' : 'var(--bg-1)',
-                          color: reworkSel === s.id ? 'var(--accent)' : 'var(--text-2)',
-                        }}>
-                          {s.factory_name} · {s.action_name}
-                          <span style={{ color: 'var(--text-3)', marginLeft: 6, fontSize: 12 }}>({s.in_transit} 件)</span>
-                        </button>
-                      ))}
-                    </div>
-                    {reworkSel && (
-                      <button className="btn primary" onClick={() => handleDefectRework(reworkModal, reworkSel)}
-                        style={{ justifyContent: 'center', padding: '12px 0' }}>
-                        確認送重工
-                      </button>
-                    )}
-                  </>
-              }
-            </div>
-          </ModalOverlay>
-        )
-      })()}
     </div>
   )
 }
