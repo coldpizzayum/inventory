@@ -3573,33 +3573,331 @@ function NewProductModal({ onClose, onCreated }) {
   )
 }
 
-function AddPartsModal({ product, onClose, onCreated }) {
-  const [parts, setParts] = useState([{ _key: Date.now(), name: '', skus: [] }])
-  const [saving, setSaving] = useState(false)
+// ─── Shared: colour picker popover ────────────────────────────
+function SkuColorPicker({ onAdd, label = '+ 顏色' }) {
+  const [open, setOpen] = useState(false)
+  const [pending, setPending] = useState({ hex: PRESET_COLORS[0].hex, name: '' })
+  const ref = useRef(null)
 
-  async function save() {
-    if (!parts.some(p => p.name.trim())) return
-    setSaving(true)
+  useEffect(() => {
+    if (!open) return
+    function close(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  function confirm() {
+    if (!pending.name.trim()) return
+    onAdd({ hex: pending.hex, name: pending.name.trim() })
+    setPending({ hex: PRESET_COLORS[0].hex, name: '' })
+    setOpen(false)
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button onClick={() => setOpen(v => !v)} style={{
+        fontSize: 11, color: 'var(--text-3)', background: 'none',
+        border: '0.5px dashed var(--line-2)', borderRadius: 999,
+        padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+      }}>{label}</button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '110%', left: 0, zIndex: 60,
+          background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+          borderRadius: 'var(--r-md)', padding: 12, boxShadow: '0 4px 16px rgba(0,0,0,.14)',
+          width: 220,
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {PRESET_COLORS.map(c => (
+              <button key={c.hex} onClick={() => setPending(p => ({ ...p, hex: c.hex, name: p.name || c.name }))}
+                title={c.name}
+                style={{
+                  width: 22, height: 22, borderRadius: '50%', background: c.hex,
+                  border: pending.hex === c.hex ? '2px solid var(--text-1)' : '1.5px solid transparent',
+                  cursor: 'pointer', padding: 0, boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+                }}
+              />
+            ))}
+          </div>
+          <input autoFocus className="input" placeholder="顏色名稱"
+            value={pending.name}
+            onChange={e => setPending(p => ({ ...p, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && confirm()}
+            style={{ fontSize: 12, padding: '6px 9px', marginBottom: 8, width: '100%', boxSizing: 'border-box' }}
+          />
+          <button className="btn primary" onClick={confirm} disabled={!pending.name.trim()}
+            style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}>
+            確認
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── PartManageRow — one existing part inside ManagePartsModal ─
+function PartManageRow({ part, index, total, isDragging, onDragStart, onDragOver, onDrop, onDragEnd, onRename, onDelete, onMoveUp, onMoveDown, onAddSku, onDeleteSku }) {
+  const [editing, setEditing] = useState(false)
+  const [editVal, setEditVal] = useState('')
+  const [hoverSku, setHoverSku] = useState(null)
+
+  function startEdit() { setEditing(true); setEditVal(part.name) }
+  function commitEdit() {
+    const v = editVal.trim()
+    onRename(v || part.name)
+    setEditing(false)
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 10px', background: isDragging ? 'var(--bg-3)' : 'var(--bg-2)',
+        borderRadius: 'var(--r-md)', marginBottom: 6,
+        opacity: isDragging ? 0.4 : 1, transition: 'opacity .1s, background .1s',
+      }}
+    >
+      {/* Grip handle */}
+      <span style={{ color: 'var(--text-4)', cursor: 'grab', display: 'flex', flexShrink: 0 }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <circle cx="9" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.2"/>
+          <circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/>
+          <circle cx="9" cy="19" r="1.2"/><circle cx="15" cy="19" r="1.2"/>
+        </svg>
+      </span>
+
+      {/* Name (click to edit) */}
+      {editing
+        ? <input autoFocus className="input"
+            value={editVal}
+            onChange={e => setEditVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(false) }}
+            onBlur={commitEdit}
+            style={{ width: 140, fontSize: 13, padding: '4px 8px', flexShrink: 0 }}
+          />
+        : <span onClick={startEdit} title="點擊重新命名" style={{
+            width: 140, fontSize: 13, fontWeight: 500, cursor: 'text',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>
+            {part.name}
+          </span>
+      }
+
+      {/* SKU pills */}
+      <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, minWidth: 0 }}>
+        {(part.skus || []).map(sku => (
+          <span key={sku.id}
+            onMouseEnter={() => setHoverSku(sku.id)}
+            onMouseLeave={() => setHoverSku(null)}
+            style={{
+              position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: 'var(--bg-1)', border: '0.5px solid var(--line-2)',
+              borderRadius: 999, padding: '3px 8px 3px 6px', fontSize: 11,
+            }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: sku.color_hex || '#999', flexShrink: 0, border: '0.5px solid rgba(0,0,0,.12)' }} />
+            {sku.color_name}
+            {hoverSku === sku.id && (
+              <button onClick={e => { e.stopPropagation(); onDeleteSku(sku.id) }} style={{
+                position: 'absolute', top: -5, right: -5,
+                width: 14, height: 14, borderRadius: '50%',
+                background: 'var(--bad)', color: '#fff',
+                border: 'none', cursor: 'pointer', padding: 0,
+                fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>×</button>
+            )}
+          </span>
+        ))}
+        <SkuColorPicker onAdd={onAddSku} />
+      </div>
+
+      {/* Up / Down / Delete */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+        <button onClick={onMoveUp} disabled={index === 0} style={{
+          background: 'none', border: 'none', padding: '3px 4px', lineHeight: 1, fontSize: 13,
+          cursor: index === 0 ? 'default' : 'pointer',
+          color: index === 0 ? 'var(--text-4)' : 'var(--text-3)',
+        }}>↑</button>
+        <button onClick={onMoveDown} disabled={index === total - 1} style={{
+          background: 'none', border: 'none', padding: '3px 4px', lineHeight: 1, fontSize: 13,
+          cursor: index === total - 1 ? 'default' : 'pointer',
+          color: index === total - 1 ? 'var(--text-4)' : 'var(--text-3)',
+        }}>↓</button>
+        <button onClick={onDelete}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: '3px 4px', lineHeight: 1 }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}
+        ><Icon.X /></button>
+      </div>
+    </div>
+  )
+}
+
+// ─── ManagePartsModal ──────────────────────────────────────────
+function ManagePartsModal({ product, onClose, onChanged }) {
+  const [parts, setParts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [dragFrom, setDragFrom] = useState(null)
+  const latestParts = useRef([])
+  const [newPart, setNewPart] = useState({ name: '', skus: [] })
+  const [adding, setAdding] = useState(false)
+
+  useEffect(() => { load() }, [product.id])
+  useEffect(() => { latestParts.current = parts }, [parts])
+
+  async function load() {
+    setLoading(true)
+    const res = await apiFetch(`/api/products/${product.id}/parts`)
+    setParts(await res.json())
+    setLoading(false)
+  }
+
+  async function saveOrder(ordered) {
+    await Promise.all(ordered.map((p, idx) =>
+      apiFetch(`/api/parts/${p.id}`, { method: 'PUT', body: JSON.stringify({ name: p.name, sort_order: idx }) })
+    ))
+  }
+
+  async function renamePart(part, newName) {
+    if (!newName || newName === part.name) return
+    await apiFetch(`/api/parts/${part.id}`, { method: 'PUT', body: JSON.stringify({ name: newName, sort_order: part.sort_order || 0 }) })
+    setParts(ps => ps.map(p => p.id === part.id ? { ...p, name: newName } : p))
+  }
+
+  async function deletePart(part) {
+    if (!confirm(`刪除「${part.name}」？此零件的所有加工紀錄將一併刪除。`)) return
+    await apiFetch(`/api/parts/${part.id}`, { method: 'DELETE' })
+    const updated = parts.filter(p => p.id !== part.id)
+    setParts(updated)
+    await saveOrder(updated)
+    onChanged?.()
+  }
+
+  async function move(i, dir) {
+    const j = i + dir
+    if (j < 0 || j >= parts.length) return
+    const np = [...parts]
+    ;[np[i], np[j]] = [np[j], np[i]]
+    setParts(np)
+    await saveOrder(np)
+  }
+
+  function onDragStart(i) { setDragFrom(i) }
+  function onDragOver(e, i) {
+    e.preventDefault()
+    if (dragFrom === null || dragFrom === i) return
+    const np = [...latestParts.current]
+    const [moved] = np.splice(dragFrom, 1)
+    np.splice(i, 0, moved)
+    setParts(np)
+    setDragFrom(i)
+  }
+  async function onDragEnd() {
+    setDragFrom(null)
+    await saveOrder(latestParts.current)
+  }
+
+  async function addSkuToPart(partId, sku) {
+    const r = await apiFetch(`/api/parts/${partId}/skus`, { method: 'POST', body: JSON.stringify({ color_name: sku.name, color_hex: sku.hex }) })
+    const { id } = await r.json()
+    setParts(ps => ps.map(p => p.id === partId ? { ...p, skus: [...(p.skus || []), { id, color_name: sku.name, color_hex: sku.hex }] } : p))
+  }
+
+  async function deleteSkuFromPart(partId, skuId) {
+    await apiFetch(`/api/parts/${partId}/skus/${skuId}`, { method: 'DELETE' })
+    setParts(ps => ps.map(p => p.id === partId ? { ...p, skus: (p.skus || []).filter(s => s.id !== skuId) } : p))
+  }
+
+  async function addPart() {
+    if (!newPart.name.trim()) return
+    setAdding(true)
     try {
-      await savePartsToProduct(product.id, parts)
-      onCreated()
-    } catch (e) { console.error(e) } finally { setSaving(false) }
+      const r = await apiFetch('/api/parts', { method: 'POST', body: JSON.stringify({ product_id: product.id, name: newPart.name.trim(), sort_order: parts.length }) })
+      const { id: partId } = await r.json()
+      const skuRecs = []
+      for (const sku of newPart.skus) {
+        const sr = await apiFetch(`/api/parts/${partId}/skus`, { method: 'POST', body: JSON.stringify({ color_name: sku.name, color_hex: sku.hex }) })
+        const { id } = await sr.json()
+        skuRecs.push({ id, color_name: sku.name, color_hex: sku.hex })
+      }
+      setParts(ps => [...ps, { id: partId, name: newPart.name.trim(), sort_order: parts.length, skus: skuRecs }])
+      setNewPart({ name: '', skus: [] })
+      onChanged?.()
+    } finally { setAdding(false) }
   }
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div style={{ width: 520, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>新增零件到「{product.name}」</div>
+      <div style={{ width: 560, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', maxHeight: '85vh', overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>「{product.name}」的零件</div>
           <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
         </div>
-        <PartsStep productName={product.name} parts={parts} setParts={setParts} />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line-1)' }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={save}
-            disabled={saving || !parts.some(p => p.name.trim())}>
-            {saving ? '儲存中…' : '確認新增'}
+
+        {/* Existing parts */}
+        {loading
+          ? <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>載入中…</div>
+          : parts.length === 0
+            ? <div style={{ padding: '16px 0 8px', textAlign: 'center', color: 'var(--text-4)', fontSize: 12 }}>還沒有零件 · 在下方新增第一個零件</div>
+            : <div>
+                {parts.map((part, i) => (
+                  <PartManageRow key={part.id} part={part} index={i} total={parts.length}
+                    isDragging={dragFrom === i}
+                    onDragStart={() => onDragStart(i)}
+                    onDragOver={e => onDragOver(e, i)}
+                    onDrop={e => e.preventDefault()}
+                    onDragEnd={onDragEnd}
+                    onRename={newName => renamePart(part, newName)}
+                    onDelete={() => deletePart(part)}
+                    onMoveUp={() => move(i, -1)}
+                    onMoveDown={() => move(i, 1)}
+                    onAddSku={sku => addSkuToPart(part.id, sku)}
+                    onDeleteSku={skuId => deleteSkuFromPart(part.id, skuId)}
+                  />
+                ))}
+              </div>
+        }
+
+        {/* Divider + add section */}
+        <div style={{ borderTop: '0.5px solid var(--line-1)', margin: '14px 0 10px' }} />
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', marginBottom: 10 }}>新增零件</div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
+          <input className="input" placeholder="零件名稱，例如：L夾"
+            value={newPart.name}
+            onChange={e => setNewPart(r => ({ ...r, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && !adding && addPart()}
+            style={{ width: 140, fontSize: 13, padding: '7px 10px', flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+            {newPart.skus.map((sku, i) => (
+              <span key={i} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'var(--bg-2)', border: '0.5px solid var(--line-2)',
+                borderRadius: 999, padding: '3px 8px 3px 6px', fontSize: 11,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: sku.hex, flexShrink: 0, border: '0.5px solid rgba(0,0,0,.12)' }} />
+                {sku.name}
+                <button onClick={() => setNewPart(r => ({ ...r, skus: r.skus.filter((_, idx) => idx !== i) }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 0, lineHeight: 1, fontSize: 12 }}>×</button>
+              </span>
+            ))}
+            <SkuColorPicker onAdd={sku => setNewPart(r => ({ ...r, skus: [...r.skus, sku] }))} />
+          </div>
+          <button className="btn primary" onClick={addPart} disabled={adding || !newPart.name.trim()}
+            style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {adding ? '新增中…' : '+ 新增'}
           </button>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 12, borderTop: '0.5px solid var(--line-1)' }}>
+          <button className="btn" onClick={onClose}>完成</button>
         </div>
       </div>
     </ModalOverlay>
@@ -3609,7 +3907,7 @@ function AddPartsModal({ product, onClose, onCreated }) {
 // ─── Page: Settings ───────────────────────────────────────────
 function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
-  const [addPartsTarget, setAddPartsTarget] = useState(null) // product | null
+  const [managePartsTarget, setManagePartsTarget] = useState(null) // product | null
   const [adjustModal, setAdjustModal] = useState(null) // product | null
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const [historyData, setHistoryData] = useState({}) // productId → rows
@@ -3721,8 +4019,8 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
                   <Icon.Flow />加工流程
                 </button>
-                <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setAddPartsTarget(p)}>
-                  <Icon.Plus />零件
+                <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setManagePartsTarget(p)}>
+                  管理零件
                 </button>
                 <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
                   <Icon.Order />訂單
@@ -3778,12 +4076,12 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
         />
       )}
 
-      {/* Add parts to existing product modal */}
-      {addPartsTarget && (
-        <AddPartsModal
-          product={addPartsTarget}
-          onClose={() => setAddPartsTarget(null)}
-          onCreated={() => { setAddPartsTarget(null); reload() }}
+      {/* Manage parts modal */}
+      {managePartsTarget && (
+        <ManagePartsModal
+          product={managePartsTarget}
+          onClose={() => setManagePartsTarget(null)}
+          onChanged={reload}
         />
       )}
 
