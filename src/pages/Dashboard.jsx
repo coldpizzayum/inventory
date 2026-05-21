@@ -3995,9 +3995,24 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                         />
                       : <div
                           onClick={() => { setEditingProductId(p.id); setEditingProductName(p.name) }}
-                          title="點擊編輯名稱"
-                          style={{ fontSize: 15, fontWeight: 600, cursor: 'text', flex: 1 }}
-                        >{p.name}</div>
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                            cursor: 'text', flex: 1,
+                            padding: '2px 6px', borderRadius: 'var(--r-sm)', marginLeft: -6,
+                            border: '1px dashed transparent',
+                            transition: 'border-color .15s, background .15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--line-2)'; e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.querySelector('.edit-hint').style.opacity = '1' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; e.currentTarget.querySelector('.edit-hint').style.opacity = '0' }}
+                        >
+                          <span style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</span>
+                          <span className="edit-hint" style={{ opacity: 0, transition: 'opacity .15s', color: 'var(--text-4)', display: 'flex' }}>
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </span>
+                        </div>
                     }
                     <button onClick={() => deleteProduct(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 2, flexShrink: 0 }}
                       onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
