@@ -38,9 +38,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
 router.post('/:id/skus', requireAuth, async (req, res) => {
   try {
     const db = getDb()
-    const { color_name } = req.body
+    const { color_name, color_hex } = req.body
     if (!color_name) return res.status(400).json({ error: '顏色名稱必填' })
-    const result = await db.prepare('INSERT INTO part_skus (part_id, color_name) VALUES (?, ?)').run(req.params.id, color_name)
+    const result = await db.prepare('INSERT INTO part_skus (part_id, color_name, color_hex) VALUES (?, ?, ?)').run(req.params.id, color_name, color_hex || null)
     res.status(201).json({ id: result.lastInsertRowid })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
