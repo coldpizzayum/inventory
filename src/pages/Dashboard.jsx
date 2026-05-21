@@ -3911,6 +3911,8 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
   const [adjustModal, setAdjustModal] = useState(null) // product | null
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const [historyData, setHistoryData] = useState({}) // productId → rows
+  const [editingProductId, setEditingProductId] = useState(null)
+  const [editingProductName, setEditingProductName] = useState('')
 
   async function loadHistory(productId) {
     const res = await apiFetch(`/api/stock-adjustments?product_id=${productId}&limit=5`)
@@ -3922,6 +3924,17 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     if (expandedHistoryId === productId) { setExpandedHistoryId(null); return }
     setExpandedHistoryId(productId)
     loadHistory(productId)
+  }
+
+  async function renameProduct(p, newName) {
+    const name = newName.trim()
+    setEditingProductId(null)
+    if (!name || name === p.name) return
+    await apiFetch(`/api/products/${p.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, description: p.description || '', order_qty: p.order_qty || 0, order_date: p.order_date || '', estimated_completion: p.estimated_completion || '' }),
+    })
+    reload()
   }
 
   async function deleteProduct(p) {
@@ -3967,7 +3980,25 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</div>
+                    {editingProductId === p.id
+                      ? <input
+                          autoFocus
+                          className="input"
+                          value={editingProductName}
+                          onChange={e => setEditingProductName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') renameProduct(p, editingProductName)
+                            if (e.key === 'Escape') setEditingProductId(null)
+                          }}
+                          onBlur={() => renameProduct(p, editingProductName)}
+                          style={{ fontSize: 15, fontWeight: 600, padding: '2px 6px', flex: 1 }}
+                        />
+                      : <div
+                          onClick={() => { setEditingProductId(p.id); setEditingProductName(p.name) }}
+                          title="點擊編輯名稱"
+                          style={{ fontSize: 15, fontWeight: 600, cursor: 'text', flex: 1 }}
+                        >{p.name}</div>
+                    }
                     <button onClick={() => deleteProduct(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 2, flexShrink: 0 }}
                       onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
                       onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
