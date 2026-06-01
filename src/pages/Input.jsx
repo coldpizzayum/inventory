@@ -19,7 +19,10 @@ export function resolveStageId(stages, source, actionType) {
   if (!source || actionType === 'receive' || actionType === 'ship') return null
   const byFactory = stages.filter(s => s.factory_name === source)
   if (actionType === 'return') {
-    return byFactory.find(s => (s.in_transit || 0) > 0)?.id ?? null
+    const withTransit = byFactory.find(s => (s.in_transit || 0) > 0)
+    if (withTransit) return withTransit.id
+    // Fallback: stale local data may show in_transit=0 after a send; pick stage with most activity
+    return [...byFactory].sort((a, b) => (b.total_sent || 0) - (a.total_sent || 0))[0]?.id ?? null
   }
   if (actionType === 'send') {
     return [...byFactory].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))[0]?.id ?? null
@@ -363,15 +366,20 @@ function StepQty({ direction, picks, onBack, onNext }) {
   const [handling, setHandling] = useState(null) // 'rework'|'scrap'|null
   const [reworkStageId, setReworkStageId] = useState(null)
   const [reworkStageName, setReworkStageName] = useState(null)
+  const [hasLost, setHasLost] = useState(false)
+  const [lost, setLost] = useState('')
 
+  const actionType = resolveActionType(direction, picks.source)
+  const showLost = actionType === 'send' || actionType === 'return'
   const defectNum = hasDefect ? (parseInt(defect)||0) : 0
+  const lostNum = hasLost ? (parseInt(lost)||0) : 0
   const showHandling = direction === 'in' && hasDefect && defectNum > 0
   const reworkStages = (picks.partStages || []).filter(s => (s.in_transit||0) > 0)
   const canNext = !!(qty && parseInt(qty)>0) && (handling !== 'rework' || reworkStageId)
 
   function go() {
     if (!canNext) return
-    onNext({ qty:parseInt(qty), defectQty:defectNum, handling: showHandling ? handling : null, reworkStageId, reworkStageName })
+    onNext({ qty:parseInt(qty), defectQty:defectNum, lostQty:lostNum, handling: showHandling ? handling : null, reworkStageId, reworkStageName })
   }
 
   return (
@@ -427,6 +435,36 @@ function StepQty({ direction, picks, onBack, onNext }) {
                 <span style={{ fontSize:14, color:'#888' }}>件不良</span>
               </div>
               <Keypad value={defect} onChange={v => { setDefect(v); setHandling(null); setReworkStageId(null) }} accent="#E8461A" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lost qty toggle (send / return only) */}
+      {showLost && (
+        <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600 }}>有遺失件數</div>
+              <div style={{ fontSize:12, color:'#888', marginTop:2 }}>運輸途中遺失時開啟</div>
+            </div>
+            <button onClick={() => { setHasLost(v => !v); setLost('') }} style={{
+              width:52, height:30, borderRadius:15, border:'none', cursor:'pointer', padding:0,
+              background:hasLost?'#6A1B9A':'#EBEBEB', position:'relative', transition:'background .15s',
+            }}>
+              <div style={{ position:'absolute', top:3, left:hasLost?25:3, width:24, height:24, borderRadius:12, background:'#fff', transition:'left .15s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }} />
+            </button>
+          </div>
+          {hasLost && (
+            <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid #EBEBEB' }}>
+              <div style={{ fontSize:12, color:'#888', marginBottom:4, fontWeight:500 }}>遺失數量</div>
+              <div style={{ display:'flex', alignItems:'baseline', gap:8, height:50, marginBottom:10 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:42, fontWeight:700, letterSpacing:'-0.03em', lineHeight:1, color:lost?'#6A1B9A':'#C9C7C0' }}>
+                  {lost||'0'}
+                </div>
+                <span style={{ fontSize:14, color:'#888' }}>件遺失</span>
+              </div>
+              <Keypad value={lost} onChange={v => setLost(v)} accent="#6A1B9A" />
             </div>
           )}
         </div>
@@ -499,7 +537,7 @@ function StepQty({ direction, picks, onBack, onNext }) {
 function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, submitting }) {
   const color = direction === 'in' ? '#2E7D32' : '#E64A19'
   const actionType = resolveActionType(direction, picks.source)
-  const { qty, defectQty, handling, reworkStageName } = qtyData
+  const { qty, defectQty, lostQty, handling, reworkStageName } = qtyData
 
   const defectDesc = handling === 'rework' ? `重工（${reworkStageName||'—'}）`
     : handling === 'scrap' ? '報廢'
@@ -515,6 +553,7 @@ function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, subm
     { l:'數量',              v: `${qty.toLocaleString()} 件` },
     ...(defectQty > 0       ? [{ l:'不良品', v:`${defectQty} 件`, red:true }] : []),
     ...(defectDesc          ? [{ l:'不良品處理', v:defectDesc }] : []),
+    ...(lostQty > 0         ? [{ l:'遺失', v:`${lostQty} 件`, purple:true }] : []),
     ...(worker              ? [{ l:'登記人', v:worker.name }] : []),
   ]
 
@@ -525,7 +564,7 @@ function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, subm
         {rows.map((row, i) => (
           <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'13px 0', borderBottom:i<rows.length-1?'1px solid #F5F4F0':'none' }}>
             <span style={{ fontSize:12, color:'#888', letterSpacing:'0.04em' }}>{row.l}</span>
-            <span style={{ fontSize:15, fontWeight:500, color:row.red?'#E8461A':'#1A1A1A' }}>{row.v}</span>
+            <span style={{ fontSize:15, fontWeight:500, color:row.purple?'#6A1B9A':row.red?'#E8461A':'#1A1A1A' }}>{row.v}</span>
           </div>
         ))}
       </div>
@@ -544,7 +583,7 @@ function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, subm
 function StepDone({ direction, picks, qtyData, onSame, onNew }) {
   const color = direction === 'in' ? '#2E7D32' : '#E64A19'
   const actionType = resolveActionType(direction, picks.source)
-  const { qty, defectQty, handling, reworkStageName } = qtyData
+  const { qty, defectQty, lostQty, handling, reworkStageName } = qtyData
   const hasPending = defectQty > 0 && !handling
 
   return (
@@ -571,6 +610,9 @@ function StepDone({ direction, picks, qtyData, onSame, onNew }) {
              :handling==='scrap' ? '報廢'
              :'待主管確認'}
           </div>
+        )}
+        {lostQty > 0 && (
+          <div style={{ fontSize:13, color:'#6A1B9A' }}>遺失 {lostQty} 件</div>
         )}
         {hasPending && (
           <div style={{ marginTop:6, padding:'6px 10px', background:'#FEF6F0', borderRadius:6, fontSize:12, color:'#C84B00' }}>
@@ -619,7 +661,7 @@ export default function Input() {
 
       // Main log
       await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ ...base, stage_id:stageId, action_type:actionType, qty:qtyData.qty, defect_qty:qtyData.defectQty||0 }) })
+        body: JSON.stringify({ ...base, stage_id:stageId, action_type:actionType, qty:qtyData.qty, defect_qty:qtyData.defectQty||0, lost_qty:qtyData.lostQty||0 }) })
 
       // Immediate rework of defects
       if (qtyData.handling === 'rework' && qtyData.reworkStageId) {
