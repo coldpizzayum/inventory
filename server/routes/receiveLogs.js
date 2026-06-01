@@ -41,20 +41,21 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const db = getDb()
-    const { product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id, logged_at } = req.body
+    const { product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id, logged_at, lost_qty } = req.body
     if (!action_type || qty === undefined) return res.status(400).json({ error: '缺少必要欄位' })
 
     const dq = Math.max(0, defect_qty || 0)
+    const lq = Math.max(0, lost_qty || 0)
     const net = qty - dq
 
     const id = await db.transaction(async (tx) => {
       const result = logged_at
         ? await tx.prepare(
-            'INSERT INTO receive_logs (product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(product_id || null, part_id || null, stage_id || null, sku_color || '', action_type, qty, dq, note || '', worker_id || null, logged_at)
+            'INSERT INTO receive_logs (product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, lost_qty, note, worker_id, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(product_id || null, part_id || null, stage_id || null, sku_color || '', action_type, qty, dq, lq, note || '', worker_id || null, logged_at)
         : await tx.prepare(
-            'INSERT INTO receive_logs (product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(product_id || null, part_id || null, stage_id || null, sku_color || '', action_type, qty, dq, note || '', worker_id || null)
+            'INSERT INTO receive_logs (product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, lost_qty, note, worker_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(product_id || null, part_id || null, stage_id || null, sku_color || '', action_type, qty, dq, lq, note || '', worker_id || null)
 
       const logId = result.lastInsertRowid
 
@@ -71,13 +72,14 @@ router.post('/', async (req, res) => {
 
       } else if (action_type === 'send') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?'
-        ).run(qty, qty, part_id)
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, total_lost=total_lost+? WHERE id=?'
+        ).run(qty, qty, lq, part_id)
 
         if (stage_id) {
+          // in_transit only counts items that actually arrived; lost items don't enter transit
           await tx.prepare(
             'UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?'
-          ).run(qty, qty, stage_id)
+          ).run(qty - lq, qty, stage_id)
         }
 
       } else if (action_type === 'ship') {
@@ -88,14 +90,15 @@ router.post('/', async (req, res) => {
 
       } else if (action_type === 'return') {
         if (stage_id) {
+          // Deduct both returned qty and lost qty from in_transit
           await tx.prepare(
             'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_returned=total_returned+?, total_defect=total_defect+? WHERE id=?'
-          ).run(qty, qty, qty, dq, stage_id)
+          ).run(qty + lq, qty + lq, qty, dq, stage_id)
         }
 
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?'
-        ).run(net, dq, dq, part_id)
+          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?'
+        ).run(net, dq, dq, lq, part_id)
 
         if (dq > 0) {
           await tx.prepare(
@@ -155,16 +158,18 @@ router.patch('/:id', async (req, res) => {
       return res.json({ ok: true })
     }
 
-    const { action_type, part_id, stage_id, sku_color, qty, defect_qty, note, worker_id, logged_at } = req.body
+    const { action_type, part_id, stage_id, sku_color, qty, defect_qty, lost_qty, note, worker_id, logged_at } = req.body
     const newDq = Math.max(0, defect_qty || 0)
+    const newLq = Math.max(0, lost_qty || 0)
     const newNet = qty - newDq
 
     const orig = await db.prepare('SELECT * FROM receive_logs WHERE id=?').get(req.params.id)
     if (!orig) return res.status(404).json({ error: '找不到紀錄' })
 
     await db.transaction(async (tx) => {
-      const { action_type: oa, part_id: op, stage_id: os, qty: oq, defect_qty: odq, id: oid } = orig
+      const { action_type: oa, part_id: op, stage_id: os, qty: oq, defect_qty: odq, lost_qty: olq_, id: oid } = orig
       const odq_ = odq || 0
+      const olq = olq_ || 0
       const onet = oq - odq_
 
       // Reverse original stock effects
@@ -173,15 +178,15 @@ router.patch('/:id', async (req, res) => {
           .run(onet, onet, odq_, odq_, odq_, odq_, op)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
       } else if (oa === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(oq, op)
-        if (os) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?').run(oq, oq, oq, oq, os)
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(oq, olq, olq, op)
+        if (os) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?').run(oq - olq, oq - olq, oq, oq, os)
       } else if (oa === 'ship') {
         await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(oq, op)
       } else if (oa === 'return') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?')
-          .run(onet, onet, odq_, odq_, odq_, odq_, op)
+        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?')
+          .run(onet, onet, odq_, odq_, odq_, odq_, olq, olq, op)
         if (os) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?')
-          .run(oq, oq, oq, odq_, odq_, os)
+          .run(oq + olq, oq, oq, odq_, odq_, os)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
       } else if (oa === 'rework') {
         await tx.prepare('UPDATE parts SET defect_stock=defect_stock+? WHERE id=?').run(oq, op)
@@ -199,13 +204,13 @@ router.patch('/:id', async (req, res) => {
             .run(orig.product_id, part_id, sku_color || '', newDq, oid)
         }
       } else if (action_type === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?').run(qty, qty, part_id)
-        if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?').run(qty, qty, stage_id)
+        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, total_lost=total_lost+? WHERE id=?').run(qty, qty, newLq, part_id)
+        if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?').run(qty - newLq, qty, stage_id)
       } else if (action_type === 'ship') {
         await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?').run(qty, qty, part_id)
       } else if (action_type === 'return') {
-        if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_returned=total_returned+?, total_defect=total_defect+? WHERE id=?').run(qty, qty, qty, newDq, stage_id)
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?').run(newNet, newDq, newDq, part_id)
+        if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_returned=total_returned+?, total_defect=total_defect+? WHERE id=?').run(qty + newLq, qty + newLq, qty, newDq, stage_id)
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?').run(newNet, newDq, newDq, newLq, part_id)
         if (newDq > 0) {
           await tx.prepare('INSERT INTO defect_logs (product_id, part_id, stage_id, sku_color, qty, status, source, receive_log_id) VALUES (?, ?, ?, ?, ?, \'pending\', \'return\', ?)')
             .run(orig.product_id, part_id, stage_id || null, sku_color || '', newDq, oid)
@@ -218,8 +223,8 @@ router.patch('/:id', async (req, res) => {
       }
 
       // Update the record
-      await tx.prepare('UPDATE receive_logs SET action_type=?, part_id=?, stage_id=?, sku_color=?, qty=?, defect_qty=?, note=?, worker_id=?, logged_at=? WHERE id=?')
-        .run(action_type, part_id || null, stage_id || null, sku_color || '', qty, newDq, note || '', worker_id || null, logged_at || orig.logged_at, oid)
+      await tx.prepare('UPDATE receive_logs SET action_type=?, part_id=?, stage_id=?, sku_color=?, qty=?, defect_qty=?, lost_qty=?, note=?, worker_id=?, logged_at=? WHERE id=?')
+        .run(action_type, part_id || null, stage_id || null, sku_color || '', qty, newDq, newLq, note || '', worker_id || null, logged_at || orig.logged_at, oid)
     })
 
     res.json({ ok: true })
@@ -233,8 +238,9 @@ router.delete('/:id', async (req, res) => {
     if (!log) return res.status(404).json({ error: '找不到紀錄' })
 
     await db.transaction(async (tx) => {
-      const { action_type, part_id, stage_id, qty, defect_qty, id } = log
+      const { action_type, part_id, stage_id, qty, defect_qty, lost_qty: lq_, id } = log
       const dq = defect_qty || 0
+      const lq = lq_ || 0
       const net = qty - dq
 
       if (action_type === 'receive') {
@@ -244,11 +250,11 @@ router.delete('/:id', async (req, res) => {
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
 
       } else if (action_type === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(qty, part_id)
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(qty, lq, lq, part_id)
         if (stage_id) {
           await tx.prepare(
             'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?'
-          ).run(qty, qty, qty, qty, stage_id)
+          ).run(qty - lq, qty - lq, qty, qty, stage_id)
         }
 
       } else if (action_type === 'ship') {
@@ -256,12 +262,12 @@ router.delete('/:id', async (req, res) => {
 
       } else if (action_type === 'return') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
-        ).run(net, net, dq, dq, dq, dq, part_id)
+          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?'
+        ).run(net, net, dq, dq, dq, dq, lq, lq, part_id)
         if (stage_id) {
           await tx.prepare(
             'UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
-          ).run(qty, qty, qty, dq, dq, stage_id)
+          ).run(qty + lq, qty, qty, dq, dq, stage_id)
         }
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
 

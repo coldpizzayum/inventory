@@ -2632,6 +2632,178 @@ function uniqueFactoriesFromStages(stages) {
   return out
 }
 
+function getSourceDisplay(log) {
+  switch (log.action_type) {
+    case 'receive': return '原料廠'
+    case 'ship':    return '大貨出貨'
+    case 'scrap':   return '報廢'
+    case 'return':
+    case 'send':
+      return log.stage_name || '—'
+    case 'rework':
+      if (log.stage_name) return `重工→${log.stage_name.split(' · ')[0]}`
+      return '—'
+    default: return '—'
+  }
+}
+
+function WorkerManagerPopup({ workers: initWorkers, onClose, onReload }) {
+  const [list, setList] = useState(initWorkers)
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [deleteId, setDeleteId] = useState(null)
+  const [addMode, setAddMode] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const editRef = useRef(null)
+  const addRef = useRef(null)
+
+  useEffect(() => { if (editId !== null) editRef.current?.focus() }, [editId])
+  useEffect(() => { if (addMode) addRef.current?.focus() }, [addMode])
+
+  function cancelEdit() { setEditId(null); setEditName('') }
+
+  async function saveEdit(id) {
+    const name = editName.trim()
+    if (!name) { cancelEdit(); return }
+    setSaving(true)
+    try {
+      await apiFetch(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify({ name }) })
+      setList(l => l.map(w => w.id === id ? { ...w, name } : w))
+      cancelEdit()
+    } finally { setSaving(false) }
+  }
+
+  async function deleteWorker(id) {
+    setSaving(true)
+    try {
+      await apiFetch(`/api/workers/${id}`, { method: 'DELETE' })
+      setList(l => l.filter(w => w.id !== id))
+      setDeleteId(null)
+    } finally { setSaving(false) }
+  }
+
+  async function addWorker() {
+    const name = newName.trim()
+    if (!name) return
+    setSaving(true)
+    try {
+      const res = await apiFetch('/api/workers', { method: 'POST', body: JSON.stringify({ name }) })
+      if (!res.ok) throw new Error('新增失敗')
+      const { id } = await res.json()
+      setList(l => [...l, { id, name, is_active: 1 }])
+      setNewName(''); setAddMode(false)
+    } finally { setSaving(false) }
+  }
+
+  function handleClose() { onReload(); onClose() }
+
+  return (
+    <ModalOverlay onClose={handleClose}>
+      <div style={{
+        width: 360, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)',
+        padding: 16, border: '0.5px solid var(--line-2)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>管理登記人</span>
+          <button onClick={handleClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}>
+            <Icon.X />
+          </button>
+        </div>
+
+        {/* List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {list.map(w => (
+            <div key={w.id}>
+              {deleteId === w.id ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bad-tint)', borderRadius: 'var(--r-md)', border: '0.5px solid #FCD6CC' }}>
+                  <span style={{ flex: 1, fontSize: 12, color: 'var(--bad)' }}>確認刪除「{w.name}」？</span>
+                  <button onClick={() => deleteWorker(w.id)} disabled={saving} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 12, border: 'none', background: 'var(--bad)', color: '#fff', cursor: 'pointer', fontWeight: 500 }}>確認</button>
+                  <button onClick={() => setDeleteId(null)} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 12, border: '1px solid var(--line-2)', background: 'var(--bg-1)', cursor: 'pointer', color: 'var(--text-2)' }}>取消</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'transparent' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <div style={{ width: 32, height: 32, borderRadius: 16, flexShrink: 0, display: 'grid', placeItems: 'center', background: '#E8461A', color: '#fff', fontSize: 13, fontWeight: 600 }}>
+                    {w.name.slice(-1)}
+                  </div>
+                  {editId === w.id ? (
+                    <input ref={editRef} className="input" style={{ flex: 1, fontSize: 13, padding: '4px 8px' }}
+                      value={editName} onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveEdit(w.id); if (e.key === 'Escape') cancelEdit() }}
+                      onBlur={() => saveEdit(w.id)} />
+                  ) : (
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{w.name}</span>
+                  )}
+                  {editId !== w.id && (
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                      <button onClick={() => { setEditId(w.id); setEditName(w.name); setDeleteId(null) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-3)', display: 'grid', placeItems: 'center', borderRadius: 4 }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.background = 'var(--bg-3)' }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = 'none' }}>
+                        <Icon.Edit />
+                      </button>
+                      <button onClick={() => { setDeleteId(w.id); cancelEdit() }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-3)', display: 'grid', placeItems: 'center', borderRadius: 4 }}
+                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad)'; e.currentTarget.style.background = 'var(--bg-3)' }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.background = 'none' }}>
+                        <Icon.Trash />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ height: 1, background: 'var(--line-1)', margin: '8px 0' }} />
+
+        {/* Add new */}
+        {addMode ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <input ref={addRef} className="input" style={{ flex: 1, fontSize: 13, padding: '6px 10px' }}
+              placeholder="輸入姓名" value={newName} onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addWorker(); if (e.key === 'Escape') { setAddMode(false); setNewName('') } }} />
+            <button onClick={addWorker} disabled={!newName.trim() || saving} style={{
+              padding: '6px 12px', borderRadius: 6, fontSize: 12, border: 'none',
+              background: 'var(--accent)', color: '#fff', fontWeight: 500,
+              cursor: saving ? 'wait' : 'pointer', opacity: !newName.trim() ? 0.5 : 1,
+            }}>{saving ? '...' : '新增'}</button>
+            <button onClick={() => { setAddMode(false); setNewName('') }} style={{
+              padding: '6px 10px', borderRadius: 6, fontSize: 12,
+              border: '1px solid var(--line-2)', background: 'var(--bg-1)', cursor: 'pointer', color: 'var(--text-2)',
+            }}>取消</button>
+          </div>
+        ) : (
+          <button onClick={() => setAddMode(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginBottom: 12,
+            padding: '8px 10px', borderRadius: 'var(--r-md)',
+            border: '0.5px dashed var(--line-2)', background: 'none',
+            cursor: 'pointer', fontSize: 13, color: 'var(--text-3)', fontFamily: 'inherit',
+          }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-2)'}>
+            <Icon.Plus />新增登記人
+          </button>
+        )}
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={handleClose} style={{
+            padding: '7px 18px', borderRadius: 8, fontSize: 13,
+            border: '1px solid var(--line-2)', background: 'var(--bg-1)',
+            cursor: 'pointer', color: 'var(--text-2)', fontFamily: 'inherit',
+          }}>完成</button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
 function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [direction, setDirection] = useState('in')
   const [source, setSource] = useState(null)
@@ -2657,12 +2829,15 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [batchNoteMode, setBatchNoteMode] = useState(false)
   const [batchNote, setBatchNote] = useState('')
   const [loggedAt, setLoggedAt] = useState(() => toDatetimeLocal(new Date()))
+  const [lostQty, setLostQty] = useState('')
+  const [workerManagerOpen, setWorkerManagerOpen] = useState(false)
 
   const dq = Math.max(0, parseInt(defectQty, 10) || 0)
   const actionType = source ? resolveActionType(direction, source) : null
   const stageId = (actionType && stages.length) ? resolveStageId(stages, source, actionType) : null
   const part = partsData.find(p => p.name === partName)
   const showDefectHandling = direction === 'in' && dq > 0
+  const showLostQty = actionType === 'send' || actionType === 'return'
   const reworkStages = stages.filter(s => (s.in_transit || 0) > 0)
   const factories = uniqueFactoriesFromStages(stages)
   const sourceOptions = direction === 'in'
@@ -2707,7 +2882,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
   async function saveEdit() {
     if (!editRow) return
-    const { id, action_type, part_id, stage_id, sku_color, qty, defect_qty, note, worker_id, logged_at } = editRow
+    const { id, action_type, part_id, stage_id, sku_color, qty, defect_qty, lost_qty, note, worker_id, logged_at } = editRow
     if (!qty || +qty <= 0) return alert('請輸入正確數量')
     try {
       const res = await apiFetch(`/api/receive-logs/${id}`, {
@@ -2715,6 +2890,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         body: JSON.stringify({
           action_type, part_id: part_id || null, stage_id: stage_id || null,
           sku_color: sku_color || '', qty: +qty, defect_qty: Math.max(0, +(defect_qty || 0)),
+          lost_qty: Math.max(0, +(lost_qty || 0)),
           note: note || '', worker_id: worker_id ? +worker_id : null,
           logged_at: new Date(logged_at).toISOString(),
         }),
@@ -2760,7 +2936,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
   function exportCSV() {
     const rows = visibleLogs.filter(l => selected.has(l.id))
-    const headers = ['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良品', '備註']
+    const headers = ['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良品', '遺失', '備註']
     const lines = [
       headers.join(','),
       ...rows.map(l => [
@@ -2768,10 +2944,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         ACTION_LABEL[l.action_type] || l.action_type,
         l.worker_name || '',
         l.part_name || '',
-        l.stage_name || '',
+        getSourceDisplay(l),
         l.sku_color || '',
         l.qty,
         l.defect_qty || 0,
+        l.lost_qty || 0,
         `"${(l.note || '').replace(/"/g, '""')}"`,
       ].join(','))
     ]
@@ -2793,7 +2970,9 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         body: JSON.stringify({
           product_id: pid, part_id: part?.id, stage_id: stageId,
           sku_color: sku || '', action_type: actionType,
-          qty: +qty, defect_qty: dq, note, worker_id: workerId || null,
+          qty: +qty, defect_qty: dq,
+          lost_qty: showLostQty ? Math.max(0, parseInt(lostQty, 10) || 0) : 0,
+          note, worker_id: workerId || null,
           logged_at: loggedAtISO,
         }),
       })
@@ -2819,9 +2998,15 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           }),
         })
       }
-      setQty(''); setDefectQty(''); setNote(''); setHandling('none'); setReworkStageId(null)
+      setQty(''); setDefectQty(''); setLostQty(''); setNote(''); setHandling('none'); setReworkStageId(null)
       setLoggedAt(toDatetimeLocal(new Date()))
       reload(); loadPendingDefects(); onLogSubmit?.()
+      // Refresh parts/stages so resolveStageId has up-to-date in_transit values
+      apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).then(d => {
+        setPartsData(d)
+        const curPart = d.find(p => p.name === partName)
+        if (curPart) setStages(curPart.stages || [])
+      }).catch(() => {})
     } catch (e) { alert('送出失敗：' + e.message) }
     finally { setSubmitting(false) }
   }
@@ -3039,11 +3224,31 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
           {/* Worker */}
           <div className="field">
-            <label>登記人</label>
-            <select className="select" value={workerId ?? ''} onChange={e => setWorkerId(e.target.value ? +e.target.value : null)}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ margin: 0 }}>登記人</label>
+              <button onClick={() => setWorkerManagerOpen(true)} style={{
+                fontSize: 11, color: 'var(--text-3)',
+                border: '0.5px solid var(--line-2)', borderRadius: 'var(--r-md)',
+                padding: '4px 9px', background: 'var(--bg-1)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.borderColor = '#E8461A' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}>
+                管理
+              </button>
+            </div>
+            <select className="select" value={workerId ?? ''} onChange={e => setWorkerId(e.target.value ? +e.target.value : null)}
+              style={{ padding: '10px 12px', fontSize: 13, width: '100%' }}>
               <option value="">（選填）</option>
               {workers.filter(w => w.is_active).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
+            {workerManagerOpen && (
+              <WorkerManagerPopup
+                workers={workers.filter(w => w.is_active)}
+                onClose={() => setWorkerManagerOpen(false)}
+                onReload={() => fetch('/api/workers').then(r => r.json()).then(setWorkers).catch(() => {})}
+              />
+            )}
           </div>
 
           {/* Logged at */}
@@ -3061,7 +3266,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           </div>
 
           {/* Qty */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: showLostQty ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
             <div className="field">
               <label>數量</label>
               <input className="input num" type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" />
@@ -3070,6 +3275,13 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               <label>不良品數量</label>
               <input className="input num" type="number" value={defectQty} onChange={e => setDefectQty(e.target.value)} placeholder="0" />
             </div>
+            {showLostQty && (
+              <div className="field">
+                <label style={{ color: 'var(--text-3)' }}>遺失數量</label>
+                <input className="input num" type="number" min={0} value={lostQty} onChange={e => setLostQty(e.target.value)} placeholder="0" />
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>運送途中遺失或短缺的數量</div>
+              </div>
+            )}
           </div>
 
           {/* Defect handling */}
@@ -3174,13 +3386,13 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                     <input type="checkbox" checked={allVisible} ref={el => { if (el) el.indeterminate = someVisible && !allVisible }}
                       onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
                   </th>
-                  {['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良', '備註', ''].map((h, i) => (
+                  {['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良', '遺失', '備註', ''].map((h, i) => (
                     <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {logs.length === 0 && <tr><td colSpan={11} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
+                {logs.length === 0 && <tr><td colSpan={12} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
                 {visibleLogs.map(log => {
                   const isEditing = editRow?.id === log.id
                   const isSel = selected.has(log.id)
@@ -3257,6 +3469,13 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                             style={{ ...IS, width: 60, opacity: defectEnabled ? 1 : 0.4 }}
                             onChange={e => setEditRow(r => ({ ...r, defect_qty: e.target.value }))} />
                         </td>
+                        <td style={{ padding: '6px 8px', minWidth: 60 }}>
+                          {(() => { const lostEnabled = ['send','return'].includes(ei.action_type); return (
+                            <input type="number" min="0" value={ei.lost_qty || '0'} disabled={!lostEnabled}
+                              style={{ ...IS, width: 60, opacity: lostEnabled ? 1 : 0.4 }}
+                              onChange={e => setEditRow(r => ({ ...r, lost_qty: e.target.value }))} />
+                          )})()}
+                        </td>
                         <td style={{ padding: '6px 8px', minWidth: 100 }}>
                           <input value={ei.note} placeholder="備註" style={IS}
                             onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))}
@@ -3282,19 +3501,20 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.worker_name || '—'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{log.stage_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{getSourceDisplay(log)}</td>
                       <td style={{ padding: '12px 14px' }}>
                         {log.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>}
                       </td>
                       <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
+                      <td className="num" style={{ padding: '12px 14px', color: '#6A1B9A' }}>{log.lost_qty > 0 ? log.lost_qty : '—'}</td>
                       <td style={{ padding: '8px 14px', minWidth: 100 }}>
                         <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{log.note || ''}</span>
                       </td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 2 }}>
                           <button title="編輯"
-                            onClick={() => setEditRow({ id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id, sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '', logged_at: toDatetimeLocal(log.logged_at || new Date()) })}
+                            onClick={() => setEditRow({ id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id, sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0), lost_qty: String(log.lost_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '', logged_at: toDatetimeLocal(log.logged_at || new Date()) })}
                             style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
                             onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' }}>
