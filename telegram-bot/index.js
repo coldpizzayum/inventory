@@ -1,15 +1,30 @@
 'use strict'
 
-console.log('ANTHROPIC_API_KEY 存在：', !!process.env.ANTHROPIC_API_KEY)
-console.log('SUPABASE_URL 存在：', !!process.env.SUPABASE_URL)
-console.log('SUPABASE_SERVICE_KEY 存在：', !!process.env.SUPABASE_SERVICE_KEY)
-console.log('TELEGRAM_BOT_TOKEN 存在：', !!process.env.TELEGRAM_BOT_TOKEN)
+process.on('uncaughtException', (err) => {
+  console.error('未捕捉錯誤：', err.message)
+  console.error(err.stack)
+  process.exit(1)
+})
 
+process.on('unhandledRejection', (reason) => {
+  console.error('未處理的 Promise 錯誤：', reason)
+  process.exit(1)
+})
+
+const http = require('http')
 const { Telegraf, Markup } = require('telegraf')
 const { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection } = require('./parser')
 const { logInventory, getRecentLogs } = require('./supabase')
 
-testConnection()
+// Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
+// This bot has no web traffic of its own — this server exists only to pass that healthcheck.
+const PORT = process.env.PORT || 3000
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' })
+  res.end('Telegram bot is running')
+}).listen(PORT, () => {
+  console.log(`🌐 Healthcheck server listening on port ${PORT}`)
+})
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 
@@ -167,10 +182,34 @@ bot.on('text', async ctx => {
 })
 
 // ── Launch ───────────────────────────────────────────────────────────────────
-bot.telegram.deleteWebhook({ drop_pending_updates: true })
-  .then(() => bot.launch())
-  .then(() => { console.log('✅ Bot 啟動成功') })
-  .catch((err) => { console.error('❌ Bot 啟動失敗：', err.message); process.exit(1) })
+const start = async () => {
+  try {
+    console.log('檢查環境變數...')
+    console.log('TELEGRAM_BOT_TOKEN:', !!process.env.TELEGRAM_BOT_TOKEN)
+    console.log('ANTHROPIC_API_KEY:', !!process.env.ANTHROPIC_API_KEY)
+    console.log('SUPABASE_URL:', !!process.env.SUPABASE_URL)
+    console.log('SUPABASE_SERVICE_KEY:', !!process.env.SUPABASE_SERVICE_KEY)
+
+    if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN 未設定')
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY 未設定')
+    if (!process.env.SUPABASE_URL) throw new Error('SUPABASE_URL 未設定')
+    if (!process.env.SUPABASE_SERVICE_KEY) throw new Error('SUPABASE_SERVICE_KEY 未設定')
+
+    await testConnection()
+
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true })
+    console.log('✅ Webhook 清除成功')
+
+    await bot.launch()
+    console.log('✅ Bot 啟動成功')
+  } catch (err) {
+    console.error('❌ 啟動失敗：', err.message)
+    console.error(err.stack)
+    process.exit(1)
+  }
+}
+
+start()
 
 process.once('SIGINT',  () => bot.stop('SIGINT'))
 process.once('SIGTERM', () => bot.stop('SIGTERM'))
