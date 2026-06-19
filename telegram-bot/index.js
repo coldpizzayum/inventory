@@ -156,8 +156,10 @@ bot.on('text', async ctx => {
 })
 
 // ── Launch ───────────────────────────────────────────────────────────────────
-bot.launch()
-console.log('✅ Bot 啟動成功')
+bot.telegram.deleteWebhook({ drop_pending_updates: true })
+  .then(() => bot.launch())
+  .then(() => { console.log('✅ Bot 啟動成功') })
+  .catch((err) => { console.error('❌ Bot 啟動失敗：', err.message); process.exit(1) })
 
 process.once('SIGINT',  () => bot.stop('SIGINT'))
 process.once('SIGTERM', () => bot.stop('SIGTERM'))
