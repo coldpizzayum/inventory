@@ -18,23 +18,31 @@ async function getProducts() {
   return data || []
 }
 
-// Returns parts with nested skus and stages (normalized field names)
+// Returns parts with skus and stages as flat joins (avoids FK relationship requirement)
 async function getPartsWithStages(productId) {
-  const { data, error } = await supabase
+  const { data: parts, error: partsErr } = await supabase
     .from('parts')
-    .select(`
-      id, name, sort_order, warehouse_stock, defect_stock, total_defect, total_lost,
-      part_skus ( id, color_name ),
-      process_stages ( id, factory_name, action_name, in_transit, total_sent, total_returned, sort_order )
-    `)
+    .select('id, name, sort_order, warehouse_stock, defect_stock, total_defect, total_lost')
     .eq('product_id', productId)
     .order('sort_order')
-  if (error) throw error
-  return (data || []).map(p => ({
-    ...p,
-    skus:   p.part_skus       || [],
-    stages: p.process_stages  || [],
-  }))
+  if (partsErr) throw partsErr
+
+  const result = []
+  for (const part of (parts || [])) {
+    const { data: skus } = await supabase
+      .from('part_skus')
+      .select('id, color_name')
+      .eq('part_id', part.id)
+
+    const { data: stages } = await supabase
+      .from('process_stages')
+      .select('id, factory_name, action_name, in_transit, total_sent, total_returned, sort_order')
+      .eq('part_id', part.id)
+      .order('sort_order')
+
+    result.push({ ...part, skus: skus || [], stages: stages || [] })
+  }
+  return result
 }
 
 async function getAllFactories() {
@@ -49,38 +57,46 @@ async function getAllFactories() {
   return [...seen.values()]
 }
 
+// Flat query for recent logs (no nested select / no FK dependency)
 async function getRecentLogs(limit = 5) {
   const { data, error } = await supabase
     .from('receive_logs')
-    .select(`
-      id, action_type, qty, defect_qty, lost_qty, logged_at,
-      parts ( name ),
-      process_stages ( factory_name, action_name )
-    `)
+    .select('id, action_type, qty, defect_qty, lost_qty, logged_at, part_id, stage_id')
     .order('logged_at', { ascending: false })
     .limit(limit)
   if (error) throw error
-  return (data || []).map(l => ({
-    ...l,
-    part_name:  l.parts?.name,
-    stage_name: l.process_stages
-      ? `${l.process_stages.factory_name}・${l.process_stages.action_name}`
-      : null,
-  }))
+
+  const logs = data || []
+
+  // Enrich with part_name and stage_name via separate queries
+  for (const log of logs) {
+    if (log.part_id) {
+      const { data: part } = await supabase
+        .from('parts').select('name').eq('id', log.part_id).single()
+      log.part_name = part?.name || null
+    }
+    if (log.stage_id) {
+      const { data: stage } = await supabase
+        .from('process_stages').select('factory_name, action_name').eq('id', log.stage_id).single()
+      log.stage_name = stage ? `${stage.factory_name}・${stage.action_name}` : null
+    }
+  }
+  return logs
 }
 
 // ── Write ────────────────────────────────────────────────────────────────────
 
-// Replicates the Express receiveLogs.js transaction logic.
-// Not atomic (Supabase JS client), but safe for single-worker bot usage.
+// Inserts a receive_log and updates stock counters via read-then-write.
 async function logInventory(params) {
+  console.log('logInventory 參數：', JSON.stringify(params, null, 2))
+
   const {
     action_type: at, product_id, part_id, stage_id,
     sku_color, qty, defect_qty: dq = 0, lost_qty: lq = 0, note,
   } = params
   const net = qty - dq
 
-  // 1. Insert receive_log
+  // 1. Insert into receive_logs
   const { data: log, error: logErr } = await supabase
     .from('receive_logs')
     .insert({
@@ -89,100 +105,81 @@ async function logInventory(params) {
       stage_id:    stage_id || null,
       sku_color:   sku_color || '',
       action_type: at,
-      qty,
-      defect_qty:  dq,
-      lost_qty:    lq,
+      qty:         parseInt(qty),
+      defect_qty:  parseInt(dq) || 0,
+      lost_qty:    parseInt(lq) || 0,
       note:        note || '',
       logged_at:   new Date().toISOString(),
     })
     .select('id')
     .single()
-  if (logErr) throw logErr
-  const logId = log.id
 
-  // Helper: read-then-write increment on parts
+  if (logErr) {
+    console.error('receive_logs insert 錯誤：', JSON.stringify(logErr, null, 2))
+    throw new Error(logErr.message)
+  }
+  console.log('receive_logs 寫入成功，id：', log.id)
+
+  // 2. Update stock counters
+  try {
+    await updateStock(at, part_id, stage_id, { qty, dq, lq, net })
+  } catch (stockErr) {
+    // Log but don't fail — the receive_log is already written
+    console.error('庫存更新失敗（紀錄已寫入）：', stockErr.message)
+  }
+
+  return log.id
+}
+
+async function updateStock(at, partId, stageId, { qty, dq, lq, net }) {
   async function incParts(delta) {
     const { data: cur, error } = await supabase
       .from('parts')
       .select('warehouse_stock, defect_stock, total_defect, total_lost, total_scrapped')
-      .eq('id', part_id)
-      .single()
+      .eq('id', partId).single()
     if (error) throw error
-    const { error: upErr } = await supabase
-      .from('parts')
-      .update({
-        warehouse_stock: Math.max(0, (cur.warehouse_stock || 0) + (delta.warehouse_stock || 0)),
-        defect_stock:    Math.max(0, (cur.defect_stock    || 0) + (delta.defect_stock    || 0)),
-        total_defect:    (cur.total_defect    || 0) + (delta.total_defect    || 0),
-        total_lost:      (cur.total_lost      || 0) + (delta.total_lost      || 0),
-        total_scrapped:  (cur.total_scrapped  || 0) + (delta.total_scrapped  || 0),
-      })
-      .eq('id', part_id)
+    const { error: upErr } = await supabase.from('parts').update({
+      warehouse_stock: Math.max(0, (cur.warehouse_stock || 0) + (delta.warehouse_stock || 0)),
+      defect_stock:    Math.max(0, (cur.defect_stock    || 0) + (delta.defect_stock    || 0)),
+      total_defect:    (cur.total_defect   || 0) + (delta.total_defect   || 0),
+      total_lost:      (cur.total_lost     || 0) + (delta.total_lost     || 0),
+      total_scrapped:  (cur.total_scrapped || 0) + (delta.total_scrapped || 0),
+    }).eq('id', partId)
     if (upErr) throw upErr
   }
 
-  // Helper: read-then-write increment on process_stages
   async function incStage(delta) {
-    if (!stage_id) return
+    if (!stageId) return
     const { data: cur, error } = await supabase
       .from('process_stages')
       .select('in_transit, total_sent, total_returned, total_defect')
-      .eq('id', stage_id)
-      .single()
+      .eq('id', stageId).single()
     if (error) throw error
-    const { error: upErr } = await supabase
-      .from('process_stages')
-      .update({
-        in_transit:     Math.max(0, (cur.in_transit     || 0) + (delta.in_transit     || 0)),
-        total_sent:     (cur.total_sent     || 0) + (delta.total_sent     || 0),
-        total_returned: (cur.total_returned || 0) + (delta.total_returned || 0),
-        total_defect:   (cur.total_defect   || 0) + (delta.total_defect   || 0),
-      })
-      .eq('id', stage_id)
+    const { error: upErr } = await supabase.from('process_stages').update({
+      in_transit:     Math.max(0, (cur.in_transit     || 0) + (delta.in_transit     || 0)),
+      total_sent:     (cur.total_sent     || 0) + (delta.total_sent     || 0),
+      total_returned: (cur.total_returned || 0) + (delta.total_returned || 0),
+      total_defect:   (cur.total_defect   || 0) + (delta.total_defect   || 0),
+    }).eq('id', stageId)
     if (upErr) throw upErr
   }
 
-  // Helper: record defect log
-  async function insertDefectLog(source) {
-    if (dq <= 0) return
-    await supabase.from('defect_logs').insert({
-      product_id,
-      part_id,
-      stage_id: source === 'incoming' ? null : (stage_id || null),
-      sku_color: sku_color || '',
-      qty: dq,
-      status: 'pending',
-      source,
-      receive_log_id: logId,
-    })
-  }
-
-  // 2. Apply stock updates per action_type
   if (at === 'receive') {
     await incParts({ warehouse_stock: net, defect_stock: dq, total_defect: dq })
-    await insertDefectLog('incoming')
-
   } else if (at === 'send') {
     await incParts({ warehouse_stock: -qty, total_lost: lq })
     await incStage({ in_transit: qty - lq, total_sent: qty })
-
   } else if (at === 'ship') {
     await incParts({ warehouse_stock: -qty })
-
   } else if (at === 'return') {
     await incStage({ in_transit: -(qty + lq), total_returned: qty, total_defect: dq })
     await incParts({ warehouse_stock: net, defect_stock: dq, total_defect: dq, total_lost: lq })
-    await insertDefectLog('return')
-
   } else if (at === 'rework') {
     await incParts({ defect_stock: -qty })
     await incStage({ in_transit: qty, total_sent: qty })
-
   } else if (at === 'scrap') {
     await incParts({ defect_stock: -qty, total_scrapped: qty })
   }
-
-  return logId
 }
 
 module.exports = { getProducts, getPartsWithStages, getAllFactories, logInventory, getRecentLogs }
