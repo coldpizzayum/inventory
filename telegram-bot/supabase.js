@@ -2,8 +2,24 @@
 
 const { createClient } = require('@supabase/supabase-js')
 
+// Strip trailing slashes / accidental path segments (e.g. "/rest/v1") —
+// a malformed SUPABASE_URL causes PGRST125 "Invalid path specified in
+// request URL" on every single query, not just nested-select ones.
+function sanitizeSupabaseUrl(raw) {
+  if (!raw) return raw
+  try {
+    const u = new URL(raw)
+    return `${u.protocol}//${u.host}`
+  } catch {
+    return raw.replace(/\/+$/, '')
+  }
+}
+
+const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL)
+console.log('Supabase URL（清理後）：', SUPABASE_URL)
+
 const supabase = createClient(
-  process.env.SUPABASE_URL,
+  SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 )
 
