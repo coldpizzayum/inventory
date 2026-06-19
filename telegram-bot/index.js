@@ -147,7 +147,11 @@ bot.on('text', async ctx => {
     )
 
   } catch (err) {
-    console.error('text handler error:', err)
+    console.error('=== BOT ERROR ===')
+    console.error('用戶輸入：', text)
+    console.error('錯誤訊息：', err.message)
+    console.error('錯誤堆疊：', err.stack)
+    console.error('=================')
     await ctx.telegram.editMessageText(
       ctx.chat.id, thinking.message_id, undefined,
       '❌ 發生錯誤，請稍後再試'
