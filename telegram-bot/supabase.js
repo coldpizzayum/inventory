@@ -1,7 +1,15 @@
 'use strict'
 
+// This bot never uses Supabase Realtime — only plain REST queries — but the
+// client still initializes a RealtimeClient internally, which requires a
+// WebSocket implementation on Node < 22. The constructor's `realtime.transport`
+// option isn't reliably picked up across @supabase/supabase-js versions, so
+// polyfill the global instead — this is what WebSocketFactory actually checks.
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = require('ws')
+}
+
 const { createClient } = require('@supabase/supabase-js')
-const ws = require('ws')
 
 // Strip trailing slashes / accidental path segments (e.g. "/rest/v1") —
 // a malformed SUPABASE_URL causes PGRST125 "Invalid path specified in
@@ -18,15 +26,9 @@ function sanitizeSupabaseUrl(raw) {
 
 const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL)
 console.log('Supabase URL（清理後）：', SUPABASE_URL)
+console.log('globalThis.WebSocket polyfill 已設定：', typeof globalThis.WebSocket !== 'undefined')
 
-// This bot never uses Supabase Realtime — only plain REST queries — but the
-// client still initializes a RealtimeClient internally, which requires a
-// WebSocket implementation on Node < 22. Provide "ws" to satisfy that.
-const supabase = createClient(
-  SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-  { realtime: { transport: ws } }
-)
+const supabase = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
