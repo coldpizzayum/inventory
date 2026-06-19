@@ -16,12 +16,13 @@ const ACTION_LABEL = {
 
 // Calls Claude Haiku to parse a free-form Chinese inventory message into structured JSON.
 async function parseInventoryInput(userText) {
-  const [products, factories] = await Promise.all([getProducts(), getAllFactories()])
+  try {
+    const [products, factories] = await Promise.all([getProducts(), getAllFactories()])
 
-  const productList  = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
-  const factoryNames = [...new Set(factories.map(f => f.factory_name))].join('、')
+    const productList  = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
+    const factoryNames = [...new Set(factories.map(f => f.factory_name))].join('、')
 
-  const system = `你是益成金屬工廠的庫存管理助手。工人用中文輸入進出貨資訊，你解析成 JSON。
+    const system = `你是益成金屬工廠的庫存管理助手。工人用中文輸入進出貨資訊，你解析成 JSON。
 
 現有產品：
 ${productList}
@@ -53,18 +54,28 @@ ${productList}
 
 無法解析時回傳：{ "error": "原因" }`
 
-  const resp = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 600,
-    system,
-    messages: [{ role: 'user', content: userText }],
-  })
+    const resp = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: userText }],
+    })
 
-  const text = resp.content[0].text.trim()
-  try {
-    return JSON.parse(text)
-  } catch {
-    return { error: '解析失敗，請重試' }
+    const text = resp.content[0].text.trim()
+    try {
+      return JSON.parse(text)
+    } catch {
+      console.error('=== PARSER JSON ERROR ===')
+      console.error('Claude 回傳：', text)
+      console.error('========================')
+      return { error: '解析失敗，請重試' }
+    }
+  } catch (err) {
+    console.error('=== PARSER ERROR ===')
+    console.error('輸入文字：', userText)
+    console.error('錯誤訊息：', err.message)
+    console.error('====================')
+    return { error: '解析失敗：' + err.message }
   }
 }
 
