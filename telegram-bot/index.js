@@ -2,7 +2,7 @@
 
 const { Telegraf, Markup } = require('telegraf')
 const { parseInventoryInput, resolveIds, ACTION_LABEL } = require('./parser')
-const { logInventory, getRecentLogs } = require('./api')
+const { logInventory, getRecentLogs } = require('./supabase')
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 
@@ -39,7 +39,8 @@ bot.command('history', async ctx => {
 
     const lines = logs.map(l => {
       const d = new Date(l.logged_at)
-      const time = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+      const time = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ` +
+                   `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
       const action = ACTION_LABEL[l.action_type] || l.action_type
       const stage  = l.stage_name ? ` ${l.stage_name}` : ''
       const defect = (l.defect_qty || 0) > 0 ? ` / 不良 ${l.defect_qty}` : ''
@@ -95,7 +96,7 @@ bot.on('text', async ctx => {
   const thinking = await ctx.reply('⏳ 解析中…')
 
   try {
-    // Step 1: Claude parses the natural language
+    // Step 1: Claude parses natural language
     const parsed = await parseInventoryInput(text)
 
     if (parsed.error) {
@@ -119,14 +120,14 @@ bot.on('text', async ctx => {
     // Step 3: Show confirmation
     pending.set(ctx.from.id, resolved)
 
-    const action = ACTION_LABEL[resolved.action_type] || resolved.action_type
-    const sku    = resolved.sku_color  ? `・${resolved.sku_color}`         : ''
-    const stage  = resolved.stage_name ? `\n廠商：${resolved.stage_name}` : ''
-    const defect = resolved.defect_qty > 0 ? `\n不良：${resolved.defect_qty} 件` : ''
-    const lost   = resolved.lost_qty   > 0 ? `\n遺失：${resolved.lost_qty} 件`  : ''
-    const note   = resolved.note       ? `\n備註：${resolved.note}`        : ''
-    const warn   = resolved.unclear    ? `\n\n⚠️ ${resolved.unclear}`      : ''
-    const lowConf = resolved.confidence === 'low' ? '\n\n⚠️ 解析信心較低，請確認' : ''
+    const action  = ACTION_LABEL[resolved.action_type] || resolved.action_type
+    const sku     = resolved.sku_color  ? `・${resolved.sku_color}`         : ''
+    const stage   = resolved.stage_name ? `\n廠商：${resolved.stage_name}` : ''
+    const defect  = resolved.defect_qty > 0 ? `\n不良：${resolved.defect_qty} 件` : ''
+    const lost    = resolved.lost_qty   > 0 ? `\n遺失：${resolved.lost_qty} 件`  : ''
+    const note    = resolved.note       ? `\n備註：${resolved.note}`        : ''
+    const warn    = resolved.unclear    ? `\n\n⚠️ ${resolved.unclear}`      : ''
+    const lowConf = resolved.confidence === 'low' ? '\n\n⚠️ 解析信心較低，請確認內容' : ''
 
     const confirmText =
       `📋 確認這筆登記？\n\n` +
@@ -156,7 +157,7 @@ bot.on('text', async ctx => {
 
 // ── Launch ───────────────────────────────────────────────────────────────────
 bot.launch()
-console.log('✅ Telegram Bot 啟動成功')
+console.log('✅ Bot 啟動成功')
 
 process.once('SIGINT',  () => bot.stop('SIGINT'))
 process.once('SIGTERM', () => bot.stop('SIGTERM'))

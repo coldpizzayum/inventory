@@ -1,7 +1,7 @@
 'use strict'
 
 const Anthropic = require('@anthropic-ai/sdk')
-const { getProducts, getPartsWithStages, getAllFactories } = require('./api')
+const { getProducts, getPartsWithStages, getAllFactories } = require('./supabase')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -14,19 +14,19 @@ const ACTION_LABEL = {
   scrap:   '報廢',
 }
 
-// Calls Claude to parse a free-form Chinese inventory message into structured JSON.
+// Calls Claude Haiku to parse a free-form Chinese inventory message into structured JSON.
 async function parseInventoryInput(userText) {
   const [products, factories] = await Promise.all([getProducts(), getAllFactories()])
 
-  const productList = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
-  const factoryList = [...new Set(factories.map(f => f.factory_name))].join('、')
+  const productList  = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
+  const factoryNames = [...new Set(factories.map(f => f.factory_name))].join('、')
 
   const system = `你是益成金屬工廠的庫存管理助手。工人用中文輸入進出貨資訊，你解析成 JSON。
 
 現有產品：
 ${productList}
 
-現有加工廠：${factoryList}
+現有加工廠：${factoryNames}
 
 動作類型定義：
 - receive：進貨（新原料入倉）
@@ -68,20 +68,18 @@ ${productList}
   }
 }
 
-// Turns Claude's parsed names into real IDs from the database.
+// Turns Claude's parsed names into real IDs by looking up the Supabase tables.
 async function resolveIds(parsed) {
   const products = await getProducts()
 
   // Fuzzy match product
-  const product = products.find(p =>
+  let product = products.find(p =>
     p.name.includes(parsed.product_name) ||
     (parsed.product_name && parsed.product_name.includes(p.name))
   )
-  if (!product) {
-    // Single product shortcut
-    if (products.length === 1) return resolveIds({ ...parsed, product_name: products[0].name })
-    return { error: `找不到產品「${parsed.product_name}」` }
-  }
+  // Single-product shortcut
+  if (!product && products.length === 1) product = products[0]
+  if (!product) return { error: `找不到產品「${parsed.product_name}」` }
 
   const parts = await getPartsWithStages(product.id)
 
@@ -109,10 +107,11 @@ async function resolveIds(parsed) {
       parsed.factory_name.includes(s.factory_name)
     )
     if (parsed.action_type === 'return') {
-      // Prefer in-transit stage; fallback to highest total_sent (handles stale local data)
-      stage = byFactory.find(s => (s.in_transit || 0) > 0) ||
-              [...byFactory].sort((a, b) => (b.total_sent || 0) - (a.total_sent || 0))[0] ||
-              null
+      // Prefer stage with in_transit > 0; fallback to highest total_sent (handles stale data)
+      stage =
+        byFactory.find(s => (s.in_transit || 0) > 0) ||
+        [...byFactory].sort((a, b) => (b.total_sent || 0) - (a.total_sent || 0))[0] ||
+        null
     } else {
       stage = [...byFactory].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))[0] || null
     }
@@ -123,16 +122,16 @@ async function resolveIds(parsed) {
     product_name: product.name,
     part_id:      part.id,
     part_name:    part.name,
-    sku_color:    sku?.color_name || parsed.sku_color || null,
-    stage_id:     stage?.id      || null,
+    sku_color:    sku?.color_name  || parsed.sku_color  || null,
+    stage_id:     stage?.id        || null,
     stage_name:   stage ? `${stage.factory_name}・${stage.action_name}` : null,
     action_type:  parsed.action_type,
     qty:          parsed.qty,
-    defect_qty:   parsed.defect_qty  || 0,
-    lost_qty:     parsed.lost_qty    || 0,
-    note:         parsed.note        || null,
-    confidence:   parsed.confidence  || 'high',
-    unclear:      parsed.unclear     || null,
+    defect_qty:   parsed.defect_qty || 0,
+    lost_qty:     parsed.lost_qty   || 0,
+    note:         parsed.note       || null,
+    confidence:   parsed.confidence || 'high',
+    unclear:      parsed.unclear    || null,
   }
 }
 
