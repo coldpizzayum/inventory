@@ -1,6 +1,7 @@
 'use strict'
 
 const { createClient } = require('@supabase/supabase-js')
+const ws = require('ws')
 
 // Strip trailing slashes / accidental path segments (e.g. "/rest/v1") —
 // a malformed SUPABASE_URL causes PGRST125 "Invalid path specified in
@@ -18,9 +19,13 @@ function sanitizeSupabaseUrl(raw) {
 const SUPABASE_URL = sanitizeSupabaseUrl(process.env.SUPABASE_URL)
 console.log('Supabase URL（清理後）：', SUPABASE_URL)
 
+// This bot never uses Supabase Realtime — only plain REST queries — but the
+// client still initializes a RealtimeClient internally, which requires a
+// WebSocket implementation on Node < 22. Provide "ws" to satisfy that.
 const supabase = createClient(
   SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
+  process.env.SUPABASE_SERVICE_KEY,
+  { realtime: { transport: ws } }
 )
 
 // ── Reads ────────────────────────────────────────────────────────────────────
