@@ -200,8 +200,23 @@ const start = async () => {
     await bot.telegram.deleteWebhook({ drop_pending_updates: true })
     console.log('✅ Webhook 清除成功')
 
-    await bot.launch()
-    console.log('✅ Bot 啟動成功')
+    // 409 Conflict usually means a previous deployment's long-poll hasn't
+    // released yet (e.g. mid-redeploy) — retry with backoff instead of
+    // exiting immediately, which would otherwise create a tight crash loop.
+    const MAX_RETRIES = 5
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await bot.launch()
+        console.log('✅ Bot 啟動成功')
+        return
+      } catch (err) {
+        const is409 = err.response?.error_code === 409 || /409/.test(err.message)
+        if (!is409 || attempt === MAX_RETRIES) throw err
+        const delay = attempt * 3000
+        console.warn(`⚠️ 啟動第 ${attempt} 次遇到 409，可能是上一個 instance 還沒釋放，${delay / 1000}s 後重試…`)
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
   } catch (err) {
     console.error('❌ 啟動失敗：', err.message)
     console.error(err.stack)
