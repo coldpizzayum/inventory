@@ -5,6 +5,22 @@ const { getProducts, getPartsWithStages, getAllFactories } = require('./supabase
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// Diagnostic: verify the Anthropic SDK can reach the API at all, independent of
+// the Supabase calls inside parseInventoryInput. Runs once at bot startup.
+async function testConnection() {
+  try {
+    await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    console.log('✅ Claude API 連線成功')
+  } catch (err) {
+    console.error('❌ Claude API 連線失敗：', err.message)
+    console.error('錯誤詳情：', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+  }
+}
+
 const ACTION_LABEL = {
   receive: '進貨（原料）',
   return:  '回廠',
@@ -14,15 +30,24 @@ const ACTION_LABEL = {
   scrap:   '報廢',
 }
 
-// Calls Claude Haiku to parse a free-form Chinese inventory message into structured JSON.
+// Calls Claude to parse a free-form Chinese inventory message into structured JSON.
 async function parseInventoryInput(userText) {
+  // Step A: fetch context from Supabase — isolated so its errors aren't confused with the Claude call
+  let products, factories
   try {
-    const [products, factories] = await Promise.all([getProducts(), getAllFactories()])
+    ;[products, factories] = await Promise.all([getProducts(), getAllFactories()])
+  } catch (err) {
+    console.error('=== PARSER SUPABASE ERROR ===')
+    console.error('輸入文字：', userText)
+    console.error('錯誤訊息：', err.message)
+    console.error('=============================')
+    return { error: '讀取產品資料失敗：' + err.message }
+  }
 
-    const productList  = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
-    const factoryNames = [...new Set(factories.map(f => f.factory_name))].join('、')
+  const productList  = products.map(p => `- ${p.name}（id: ${p.id}）`).join('\n')
+  const factoryNames = [...new Set(factories.map(f => f.factory_name))].join('、')
 
-    const system = `你是益成金屬工廠的庫存管理助手。工人用中文輸入進出貨資訊，你解析成 JSON。
+  const system = `你是益成金屬工廠的庫存管理助手。工人用中文輸入進出貨資訊，你解析成 JSON。
 
 現有產品：
 ${productList}
@@ -54,28 +79,34 @@ ${productList}
 
 無法解析時回傳：{ "error": "原因" }`
 
+  // Step B: call Claude — isolated so SDK errors are clearly attributed
+  let text
+  try {
     const resp = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 600,
       system,
       messages: [{ role: 'user', content: userText }],
     })
-
-    const text = resp.content[0].text.trim()
-    try {
-      return JSON.parse(text)
-    } catch {
-      console.error('=== PARSER JSON ERROR ===')
-      console.error('Claude 回傳：', text)
-      console.error('========================')
-      return { error: '解析失敗，請重試' }
-    }
+    text = resp.content[0].text.trim()
+    console.log('Claude 回應：', text)
   } catch (err) {
-    console.error('=== PARSER ERROR ===')
+    console.error('=== PARSER CLAUDE API ERROR ===')
     console.error('輸入文字：', userText)
     console.error('錯誤訊息：', err.message)
-    console.error('====================')
-    return { error: '解析失敗：' + err.message }
+    console.error('錯誤詳情：', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+    console.error('===============================')
+    return { error: 'Claude API 呼叫失敗：' + err.message }
+  }
+
+  // Step C: parse Claude's JSON response
+  try {
+    return JSON.parse(text)
+  } catch {
+    console.error('=== PARSER JSON ERROR ===')
+    console.error('Claude 回傳：', text)
+    console.error('========================')
+    return { error: '解析失敗，請重試' }
   }
 }
 
@@ -146,4 +177,4 @@ async function resolveIds(parsed) {
   }
 }
 
-module.exports = { parseInventoryInput, resolveIds, ACTION_LABEL }
+module.exports = { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection }

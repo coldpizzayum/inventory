@@ -1,8 +1,15 @@
 'use strict'
 
+console.log('ANTHROPIC_API_KEY 存在：', !!process.env.ANTHROPIC_API_KEY)
+console.log('SUPABASE_URL 存在：', !!process.env.SUPABASE_URL)
+console.log('SUPABASE_SERVICE_KEY 存在：', !!process.env.SUPABASE_SERVICE_KEY)
+console.log('TELEGRAM_BOT_TOKEN 存在：', !!process.env.TELEGRAM_BOT_TOKEN)
+
 const { Telegraf, Markup } = require('telegraf')
-const { parseInventoryInput, resolveIds, ACTION_LABEL } = require('./parser')
+const { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection } = require('./parser')
 const { logInventory, getRecentLogs } = require('./supabase')
+
+testConnection()
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 
