@@ -13,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 
 const http = require('http')
 const { Telegraf, Markup } = require('telegraf')
-const { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection, STAGE_REQUIRED } = require('./parser')
+const { parseInventoryInput, resolveIds, detectEditIntent, ACTION_LABEL, testConnection, STAGE_REQUIRED } = require('./parser')
 const { logInventory, getRecentLogs, getProducts, getPartsWithStages, getStagesForPart } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
@@ -398,19 +398,43 @@ bot.on('text', async ctx => {
   const text = ctx.message.text
   if (text.startsWith('/')) return
 
-  // 正在等使用者回覆數量 → 這句話是答案，不要拿去問 Claude
-  const waiting = pendingLogs.get(ctx.from.id)
-  if (waiting?._awaitingQty) {
+  // 情況 1：正在等使用者回覆數量（點了「改數量」或一開始解析就缺數量）
+  // → 這句話是答案，不要拿去問 Claude
+  const pending = pendingLogs.get(ctx.from.id)
+  if (pending?._awaitingQty) {
     const match = text.match(/\d+/)
     const qty = match ? parseInt(match[0], 10) : null
     if (!qty || qty <= 0) {
       await ctx.reply('請輸入有效的數量（例如：500）')
       return
     }
-    const resolved = { ...waiting, qty }
+    const resolved = { ...pending, qty }
     delete resolved._awaitingQty
     await continueResolution(ctx, resolved)
     return
+  }
+
+  // 情況 2：已經有一筆資訊齊全的待確認登記，使用者這句話可能是想修改它
+  // （例如「改成300件」「顏色改鈦色」），不是想開一筆全新的登記
+  if (pending && !pending._parsed && pending.part_name && pending.qty) {
+    const intent = await detectEditIntent(text, pending)
+    console.log('編輯意圖判斷：', JSON.stringify(intent))
+
+    if (intent.type === 'change_qty' && intent.value > 0) {
+      await continueResolution(ctx, { ...pending, qty: intent.value })
+      return
+    }
+    if (intent.type === 'change_sku' && intent.value) {
+      await continueResolution(ctx, { ...pending, sku_color: intent.value })
+      return
+    }
+    if (intent.type === 'change_action' && ACTION_LABEL[intent.value]) {
+      // 換動作後原本選的加工站不一定還適用，清掉讓它重選
+      await continueResolution(ctx, { ...pending, action_type: intent.value, stage_id: null, stage_name: null })
+      return
+    }
+    // 不是修改指令 → 視為跟目前這筆無關的全新登記，清掉舊的繼續往下解析
+    pendingLogs.delete(ctx.from.id)
   }
 
   const thinking = await ctx.reply('⏳ 解析中…')
