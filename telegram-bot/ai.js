@@ -327,4 +327,15 @@ ${factoryNames || '（目前沒有資料）'}
   return result || { action: 'ask', reply: raw }
 }
 
-module.exports = { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat }
+const INVENTORY_KEYWORDS = ['進貨', '回廠', '回來', '送出', '送去', '出貨', '大貨', '重工', '報廢', '件', '個', '批']
+
+// 快速規則判斷，不呼叫 Claude API —— 在回饋對話模式裡，如果使用者忽然講出
+// 看起來像登記的句子（有數字又有進出貨動作詞），就該讓正常登記流程接手，
+// 而不是被回饋對話吃掉這句話。
+function detectInventoryIntent(text) {
+  const hasNumber = /\d+/.test(text)
+  const hasKeyword = INVENTORY_KEYWORDS.some(k => text.includes(k))
+  return hasNumber && hasKeyword
+}
+
+module.exports = { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat, detectInventoryIntent }
