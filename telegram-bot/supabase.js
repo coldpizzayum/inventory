@@ -68,6 +68,17 @@ async function getPartsWithStages(productId) {
   return result
 }
 
+// Returns the process_stages for one part directly (no product context needed)
+async function getStagesForPart(partId) {
+  const { data, error } = await supabase
+    .from('process_stages')
+    .select('id, factory_name, action_name, in_transit, total_sent, total_returned, sort_order')
+    .eq('part_id', partId)
+    .order('sort_order')
+  if (error) throw error
+  return data || []
+}
+
 async function getAllFactories() {
   const { data, error } = await supabase
     .from('process_stages')
@@ -219,4 +230,4 @@ async function updateStock(at, partId, stageId, { qty, dq, lq, net }) {
   }
 }
 
-module.exports = { getProducts, getPartsWithStages, getAllFactories, logInventory, getRecentLogs }
+module.exports = { getProducts, getPartsWithStages, getStagesForPart, getAllFactories, logInventory, getRecentLogs }
