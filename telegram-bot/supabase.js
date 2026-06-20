@@ -118,6 +118,18 @@ async function getRecentLogs(limit = 5) {
   return logs
 }
 
+// Inserts one row into bot_feedback. Reuses the module's shared client so the
+// WebSocket polyfill / sanitized URL fixes apply here too.
+async function submitFeedback({ telegram_user_id, telegram_name, message }) {
+  const { error } = await supabase.from('bot_feedback').insert({
+    telegram_user_id,
+    telegram_name,
+    message,
+    created_at: new Date().toISOString(),
+  })
+  if (error) throw error
+}
+
 // ── Write ────────────────────────────────────────────────────────────────────
 
 // Inserts a receive_log and updates stock counters via read-then-write.
@@ -230,4 +242,4 @@ async function updateStock(at, partId, stageId, { qty, dq, lq, net }) {
   }
 }
 
-module.exports = { getProducts, getPartsWithStages, getStagesForPart, getAllFactories, logInventory, getRecentLogs }
+module.exports = { getProducts, getPartsWithStages, getStagesForPart, getAllFactories, logInventory, getRecentLogs, submitFeedback }

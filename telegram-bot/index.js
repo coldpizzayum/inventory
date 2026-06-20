@@ -14,7 +14,7 @@ process.on('unhandledRejection', (reason) => {
 const http = require('http')
 const { Telegraf } = require('telegraf')
 const { chat, testConnection, ACTION_LABEL } = require('./ai')
-const { logInventory, getRecentLogs } = require('./supabase')
+const { logInventory, getRecentLogs, submitFeedback } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
 // This bot has no web traffic of its own — this server exists only to pass that healthcheck.
@@ -47,8 +47,17 @@ bot.start(ctx => {
     '「L夾 從黑豬鋁回來 500件」\n' +
     '「送 200件 L夾 鈦 去家佑」\n' +
     '「Pen N 筆蓋 進貨 1000」\n\n' +
-    '我會幫你確認細節後登記。'
+    '我會幫你確認細節後登記。\n\n' +
+    '📋 /history — 查看最近 5 筆紀錄\n' +
+    '📝 /feedback — 回報問題或建議'
   )
+})
+
+// ── /feedback ────────────────────────────────────────────────────────────────
+bot.command('feedback', ctx => {
+  const session = getSession(ctx.from.id)
+  session._waitingForFeedback = true
+  ctx.reply('📝 請直接輸入你遇到的問題或建議，\n我會轉交給管理員。')
 })
 
 // ── /history ─────────────────────────────────────────────────────────────────
@@ -82,6 +91,35 @@ bot.on('text', async ctx => {
   if (userText.startsWith('/')) return
 
   const session = getSession(userId)
+
+  // 正在等使用者輸入回饋內容（剛打過 /feedback）→ 這句話不進對話歷史，
+  // 不丟給 Claude，直接寫入 bot_feedback 並轉發給管理員
+  if (session._waitingForFeedback) {
+    session._waitingForFeedback = false
+    const feedbackText = userText
+    const from = ctx.from.first_name || ctx.from.username || '工人'
+
+    try {
+      await submitFeedback({ telegram_user_id: String(ctx.from.id), telegram_name: from, message: feedbackText })
+    } catch (err) {
+      console.error('回饋寫入失敗：', err.message)
+    }
+
+    if (process.env.ADMIN_TELEGRAM_ID) {
+      try {
+        await bot.telegram.sendMessage(
+          process.env.ADMIN_TELEGRAM_ID,
+          `📩 新回饋來自 ${from}：\n\n${feedbackText}`
+        )
+      } catch (err) {
+        console.error('轉發給管理員失敗：', err.message)
+      }
+    }
+
+    await ctx.reply('✅ 已收到你的回饋，謝謝！')
+    return
+  }
+
   session.history.push({ role: 'user', content: userText })
   if (session.history.length > 20) session.history = session.history.slice(-20)
 
