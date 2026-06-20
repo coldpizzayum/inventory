@@ -84,6 +84,30 @@ bot.command('history', async ctx => {
   }
 })
 
+// 寫入 bot_feedback 並（如果設定了 ADMIN_TELEGRAM_ID）轉發給管理員
+async function sendFeedback(ctx, feedbackText) {
+  const from = ctx.from.first_name || ctx.from.username || '工人'
+
+  try {
+    await submitFeedback({ telegram_user_id: String(ctx.from.id), telegram_name: from, message: feedbackText })
+  } catch (err) {
+    console.error('回饋寫入失敗：', err.message)
+  }
+
+  if (process.env.ADMIN_TELEGRAM_ID) {
+    try {
+      await bot.telegram.sendMessage(
+        process.env.ADMIN_TELEGRAM_ID,
+        `📩 新回饋來自 ${from}：\n\n${feedbackText}`
+      )
+    } catch (err) {
+      console.error('轉發給管理員失敗：', err.message)
+    }
+  }
+
+  await ctx.reply('✅ 已收到你的回饋，謝謝！')
+}
+
 // ── Text messages：交給 Claude 全權管理對話 ──────────────────────────────────
 bot.on('text', async ctx => {
   const userId = ctx.from.id
@@ -96,28 +120,21 @@ bot.on('text', async ctx => {
   // 不丟給 Claude，直接寫入 bot_feedback 並轉發給管理員
   if (session._waitingForFeedback) {
     session._waitingForFeedback = false
-    const feedbackText = userText
-    const from = ctx.from.first_name || ctx.from.username || '工人'
-
-    try {
-      await submitFeedback({ telegram_user_id: String(ctx.from.id), telegram_name: from, message: feedbackText })
-    } catch (err) {
-      console.error('回饋寫入失敗：', err.message)
-    }
-
-    if (process.env.ADMIN_TELEGRAM_ID) {
-      try {
-        await bot.telegram.sendMessage(
-          process.env.ADMIN_TELEGRAM_ID,
-          `📩 新回饋來自 ${from}：\n\n${feedbackText}`
-        )
-      } catch (err) {
-        console.error('轉發給管理員失敗：', err.message)
-      }
-    }
-
-    await ctx.reply('✅ 已收到你的回饋，謝謝！')
+    await sendFeedback(ctx, userText)
     return
+  }
+
+  // 上一輪 Claude 判斷使用者在回報問題，問了「要不要轉達給管理員？」
+  // 這句話是回答 —— 如果答應就送出，不然就當成這句話沒被攔截過，繼續往下走
+  if (session._awaitingFeedbackConfirm) {
+    session._awaitingFeedbackConfirm = false
+    const feedbackText = session._pendingFeedbackText
+    session._pendingFeedbackText = null
+
+    if (/^(要|好|是|對|可以|送出|確認|ok|OK)/.test(userText.trim())) {
+      await sendFeedback(ctx, feedbackText)
+      return
+    }
   }
 
   session.history.push({ role: 'user', content: userText })
@@ -151,6 +168,11 @@ bot.on('text', async ctx => {
     } else if (result.action === 'cancel') {
       session.history = []
       session.pending = null
+      await ctx.reply(result.reply)
+
+    } else if (result.action === 'feedback_suggest') {
+      session._awaitingFeedbackConfirm = true
+      session._pendingFeedbackText = userText
       await ctx.reply(result.reply)
 
     } else {
