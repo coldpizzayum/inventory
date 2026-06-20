@@ -139,6 +139,30 @@ ${productList}
 async function resolveIds(parsed) {
   const products = await getProducts()
 
+  // 如果沒有 product_name，從 part_name 反查產品（順便保留查到的 parts 避免重複查詢）
+  let inferredParts = null
+  if (!parsed.product_name && parsed.part_name) {
+    for (const p of products) {
+      const candidateParts = await getPartsWithStages(p.id)
+      const found = candidateParts.find(pt =>
+        pt.name.includes(parsed.part_name) ||
+        parsed.part_name.includes(pt.name)
+      )
+      if (found) {
+        parsed.product_name = p.name
+        inferredParts = candidateParts
+        console.log('從零件反查到產品：', p.name)
+        break
+      }
+    }
+  }
+
+  if (!parsed.product_name) {
+    return parsed.part_name
+      ? { error: `找不到零件「${parsed.part_name}」對應的產品，請輸入產品名稱，例如：「Pen N L夾 鈦 進貨 100件」` }
+      : { error: '無法判斷產品與零件，請輸入完整內容，例如：「Pen N L夾 鈦 進貨 100件」' }
+  }
+
   // Fuzzy match product
   let product = products.find(p =>
     p.name.includes(parsed.product_name) ||
@@ -148,7 +172,7 @@ async function resolveIds(parsed) {
   if (!product && products.length === 1) product = products[0]
   if (!product) return { error: `找不到產品「${parsed.product_name}」` }
 
-  const parts = await getPartsWithStages(product.id)
+  const parts = inferredParts || await getPartsWithStages(product.id)
 
   // Fuzzy match part
   const part = parts.find(p =>
