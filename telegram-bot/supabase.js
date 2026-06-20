@@ -111,7 +111,14 @@ async function getRecentLogs(limit = 5) {
 
 // Inserts a receive_log and updates stock counters via read-then-write.
 async function logInventory(params) {
-  console.log('logInventory 參數：', JSON.stringify(params, null, 2))
+  console.log('=== 開始寫入 ===')
+  console.log('params:', JSON.stringify(params, null, 2))
+
+  // 確認必要欄位
+  if (!params.product_id) throw new Error('缺少 product_id')
+  if (!params.part_id) throw new Error('缺少 part_id')
+  if (!params.action_type) throw new Error('缺少 action_type')
+  if (!params.qty || params.qty <= 0) throw new Error('數量不正確：' + params.qty)
 
   const {
     action_type: at, product_id, part_id, stage_id,
@@ -119,39 +126,46 @@ async function logInventory(params) {
   } = params
   const net = qty - dq
 
+  const insertData = {
+    product_id,
+    part_id,
+    stage_id:    stage_id || null,
+    sku_color:   sku_color || null,
+    action_type: at,
+    qty:         parseInt(qty),
+    defect_qty:  parseInt(dq) || 0,
+    lost_qty:    parseInt(lq) || 0,
+    note:        note || null,
+    logged_at:   new Date().toISOString(),
+  }
+  console.log('INSERT 資料：', JSON.stringify(insertData, null, 2))
+
   // 1. Insert into receive_logs
   const { data: log, error: logErr } = await supabase
     .from('receive_logs')
-    .insert({
-      product_id,
-      part_id,
-      stage_id:    stage_id || null,
-      sku_color:   sku_color || '',
-      action_type: at,
-      qty:         parseInt(qty),
-      defect_qty:  parseInt(dq) || 0,
-      lost_qty:    parseInt(lq) || 0,
-      note:        note || '',
-      logged_at:   new Date().toISOString(),
-    })
-    .select('id')
+    .insert(insertData)
+    .select()
     .single()
 
   if (logErr) {
-    console.error('receive_logs insert 錯誤：', JSON.stringify(logErr, null, 2))
+    console.error('=== INSERT 失敗 ===')
+    console.error(JSON.stringify(logErr, null, 2))
     throw new Error(logErr.message)
   }
-  console.log('receive_logs 寫入成功，id：', log.id)
+
+  console.log('=== 寫入成功 ===')
+  console.log('寫入的資料：', JSON.stringify(log, null, 2))
 
   // 2. Update stock counters
   try {
     await updateStock(at, part_id, stage_id, { qty, dq, lq, net })
+    console.log('庫存更新成功')
   } catch (stockErr) {
     // Log but don't fail — the receive_log is already written
     console.error('庫存更新失敗（紀錄已寫入）：', stockErr.message)
   }
 
-  return log.id
+  return log
 }
 
 async function updateStock(at, partId, stageId, { qty, dq, lq, net }) {
