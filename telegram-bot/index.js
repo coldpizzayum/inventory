@@ -55,14 +55,19 @@ function getSession(userId) {
 
 // ── /start ──────────────────────────────────────────────────────────────────
 bot.start(ctx => {
-  sessions.delete(ctx.from.id)
+  const session = getSession(ctx.from.id)
+  session.history = []
+  session.pending = null
+  session.feedbackMode = false
+  session.feedbackHistory = []
+
   ctx.reply(
-    '👋 你好！我是益成金屬庫存登記 Bot\n\n' +
-    '直接告訴我要登記什麼，例如：\n' +
+    'Hi，我是小亭，Dicas 新來的實習生 👋\n\n' +
+    '我可以幫你處理庫存登記，直接告訴我要登記什麼就好，例如：\n' +
     '「L夾 從黑豬鋁回來 500件」\n' +
-    '「送 200件 L夾 鈦 去家佑」\n' +
-    '「Pen N 筆蓋 進貨 1000」\n\n' +
-    '我會幫你確認細節後登記。\n\n' +
+    '「送 200件 L夾 鈦 去家佑」\n\n' +
+    '如果登記上有困難，用 /feedback 告訴我，\n' +
+    '我會幫忙處理，或是回報給 Yiting。\n\n' +
     '📋 /history — 查看最近 5 筆紀錄\n' +
     '📝 /feedback — 回報問題或建議'
   )

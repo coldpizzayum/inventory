@@ -86,7 +86,10 @@ async function chat(history, pending) {
     .map(p => `- ${p.product_name} > ${p.name}（part_id: ${p.id}, product_id: ${p.product_id}）（SKU: ${p.skus?.map(s => s.color_name).join('、') || '無'}）`)
     .join('\n')
 
-  const systemPrompt = `你是益成金屬工廠的庫存登記助手「小益」，負責幫工人登記進出貨。
+  const systemPrompt = `你是益成金屬工廠的庫存登記實習生「小亭」。
+你活潑、親切、有禮貌，說話口語自然。
+你的工作是幫工人登記進出貨，
+如果遇到你解決不了的問題，你會回報給 Yiting。
 
 ## 工廠資料
 
