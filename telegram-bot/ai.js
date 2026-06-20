@@ -188,4 +188,65 @@ ${pending ? `\n## 目前 pending 的登記\n${JSON.stringify(pending, null, 2)}`
   return result
 }
 
-module.exports = { chat, testConnection, ACTION_LABEL }
+// 把工人的回饋整理成結構化分析報告，方便管理員快速判斷要不要處理
+async function analyzeFeedback(feedbackText, userName) {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      messages: [{
+        role: 'user',
+        content: `你是益成金屬工廠庫存系統的產品分析師。
+工人「${userName}」回報了以下問題或建議：
+
+「${feedbackText}」
+
+請分析這個回饋，只回傳 JSON，不要其他文字：
+{
+  "category": "bug（功能壞掉）| ux（使用體驗）| feature（新功能需求）| data（資料問題）| other（其他）",
+  "priority": "high（影響正常使用）| medium（有點麻煩）| low（小建議）",
+  "summary": "一句話摘要這個回饋",
+  "problem": "用戶遇到的具體問題是什麼",
+  "impact": "這個問題影響了哪些工作流程",
+  "suggestion": "建議的解法或改動方向",
+  "effort": "easy（簡單修改）| medium（需要一些時間）| hard（複雜改動）",
+  "should_do": true或false（你建議要做這個改動嗎）,
+  "reason": "建議做或不做的原因"
+}`,
+      }],
+    })
+
+    const raw = response.content[0].text.trim()
+
+    // 多重解析策略，跟 chat() 一樣的理由 —— Claude 偶爾會包 markdown
+    let result = null
+    try { result = JSON.parse(raw) } catch {}
+    if (!result) {
+      try { result = JSON.parse(raw.replace(/```json/gi, '').replace(/```/g, '').trim()) } catch {}
+    }
+    if (!result) {
+      try {
+        const match = raw.match(/\{[\s\S]*\}/)
+        if (match) result = JSON.parse(match[0])
+      } catch {}
+    }
+    if (!result) throw new Error('無法解析分析結果：' + raw)
+
+    return result
+  } catch (err) {
+    console.error('回饋分析失敗：', err.message)
+    return {
+      category: 'other',
+      priority: 'medium',
+      summary: feedbackText,
+      problem: feedbackText,
+      impact: '未知',
+      suggestion: '需要人工判斷',
+      effort: 'medium',
+      should_do: false,
+      reason: '分析失敗，需要人工審閱',
+    }
+  }
+}
+
+module.exports = { chat, testConnection, ACTION_LABEL, analyzeFeedback }
