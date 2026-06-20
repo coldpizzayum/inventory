@@ -119,12 +119,16 @@ async function getRecentLogs(limit = 5) {
 }
 
 // Inserts one row into bot_feedback. Reuses the module's shared client so the
-// WebSocket polyfill / sanitized URL fixes apply here too.
-async function submitFeedback({ telegram_user_id, telegram_name, message }) {
+// WebSocket polyfill / sanitized URL fixes apply here too. analysis/category/
+// priority are optional — left null if no Claude analysis was attached.
+async function submitFeedback({ telegram_user_id, telegram_name, message, analysis = null, category = null, priority = null }) {
   const { error } = await supabase.from('bot_feedback').insert({
     telegram_user_id,
     telegram_name,
     message,
+    analysis,
+    category,
+    priority,
     created_at: new Date().toISOString(),
   })
   if (error) throw error

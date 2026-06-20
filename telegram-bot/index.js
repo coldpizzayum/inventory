@@ -13,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 
 const http = require('http')
 const { Telegraf } = require('telegraf')
-const { chat, testConnection, ACTION_LABEL } = require('./ai')
+const { chat, testConnection, ACTION_LABEL, analyzeFeedback } = require('./ai')
 const { logInventory, getRecentLogs, submitFeedback } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
@@ -84,12 +84,77 @@ bot.command('history', async ctx => {
   }
 })
 
-// 寫入 bot_feedback 並（如果設定了 ADMIN_TELEGRAM_ID）轉發給管理員
+const CATEGORY_LABEL = {
+  bug:     '🔴 功能壞掉',
+  ux:      '🟡 使用體驗',
+  feature: '🟢 新功能需求',
+  data:    '🟠 資料問題',
+  other:   '⚪ 其他',
+}
+const PRIORITY_LABEL = {
+  high:   '🔥 高（影響正常使用）',
+  medium: '⚠️ 中（有點麻煩）',
+  low:    '💡 低（小建議）',
+}
+const EFFORT_LABEL = {
+  easy:   '✅ 容易（快速修改）',
+  medium: '🔧 中等（需要一些時間）',
+  hard:   '🏗️ 複雜（大改動）',
+}
+
+// HTML parse_mode 對 <, >, & 有特殊意義，使用者原話/Claude 生成的文字都要跳脫，
+// 不然字句裡剛好出現這些字元（例如「數量 < 0」）會讓 Telegram 整則訊息送失敗
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function formatFeedbackReport(from, original, analysis) {
+  return `<b>📩 新回饋 — ${escapeHtml(from)}</b>
+
+<b>原始內容：</b>
+「${escapeHtml(original)}」
+
+━━━━━━━━━━━━━━━
+<b>📊 分析報告</b>
+
+<b>類型：</b>${CATEGORY_LABEL[analysis.category] || escapeHtml(analysis.category)}
+<b>優先級：</b>${PRIORITY_LABEL[analysis.priority] || escapeHtml(analysis.priority)}
+<b>摘要：</b>${escapeHtml(analysis.summary)}
+
+<b>問題描述：</b>
+${escapeHtml(analysis.problem)}
+
+<b>影響範圍：</b>
+${escapeHtml(analysis.impact)}
+
+<b>建議解法：</b>
+${escapeHtml(analysis.suggestion)}
+
+<b>開發難度：</b>${EFFORT_LABEL[analysis.effort] || escapeHtml(analysis.effort)}
+
+━━━━━━━━━━━━━━━
+<b>${analysis.should_do ? '✅ 建議執行' : '⏸️ 暫緩考慮'}</b>
+${escapeHtml(analysis.reason)}`
+}
+
+// 寫入 bot_feedback（含 Claude 分析）並（如果設定了 ADMIN_TELEGRAM_ID）轉發格式化報告給管理員
 async function sendFeedback(ctx, feedbackText) {
   const from = ctx.from.first_name || ctx.from.username || '工人'
 
+  // 先回覆用戶，不讓他等 Claude 分析的時間
+  await ctx.reply('✅ 已收到你的回饋，正在整理中...')
+
+  const analysis = await analyzeFeedback(feedbackText, from)
+
   try {
-    await submitFeedback({ telegram_user_id: String(ctx.from.id), telegram_name: from, message: feedbackText })
+    await submitFeedback({
+      telegram_user_id: String(ctx.from.id),
+      telegram_name: from,
+      message: feedbackText,
+      analysis: analysis.summary,
+      category: analysis.category,
+      priority: analysis.priority,
+    })
   } catch (err) {
     console.error('回饋寫入失敗：', err.message)
   }
@@ -98,14 +163,13 @@ async function sendFeedback(ctx, feedbackText) {
     try {
       await bot.telegram.sendMessage(
         process.env.ADMIN_TELEGRAM_ID,
-        `📩 新回饋來自 ${from}：\n\n${feedbackText}`
+        formatFeedbackReport(from, feedbackText, analysis),
+        { parse_mode: 'HTML' }
       )
     } catch (err) {
       console.error('轉發給管理員失敗：', err.message)
     }
   }
-
-  await ctx.reply('✅ 已收到你的回饋，謝謝！')
 }
 
 // ── Text messages：交給 Claude 全權管理對話 ──────────────────────────────────
