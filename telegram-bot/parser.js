@@ -140,7 +140,25 @@ ${productList}
 const STAGE_REQUIRED = ['return', 'send', 'rework']
 
 // Turns Claude's parsed names into real IDs by looking up the Supabase tables.
+// Whatever can't be resolved (product / part / stage) is left null rather than
+// raised as an error — the bot then asks the user to pick it interactively
+// instead of rejecting the whole message.
 async function resolveIds(parsed) {
+  const base = {
+    product_id:   null,
+    product_name: null,
+    part_id:      null,
+    part_name:    parsed.part_name  || null,
+    sku_color:    parsed.sku_color  || null,
+    stage_id:     null,
+    stage_name:   null,
+    action_type:  parsed.action_type,
+    qty:          parsed.qty,
+    defect_qty:   parsed.defect_qty || 0,
+    lost_qty:     parsed.lost_qty   || 0,
+    note:         parsed.note       || null,
+  }
+
   const products = await getProducts()
 
   // 如果沒有 product_name，從 part_name 反查產品（順便保留查到的 parts 避免重複查詢）
@@ -161,29 +179,21 @@ async function resolveIds(parsed) {
     }
   }
 
-  if (!parsed.product_name) {
-    return parsed.part_name
-      ? { error: `找不到零件「${parsed.part_name}」對應的產品，請輸入產品名稱，例如：「Pen N L夾 鈦 進貨 100件」` }
-      : { error: '無法判斷產品與零件，請輸入完整內容，例如：「Pen N L夾 鈦 進貨 100件」' }
-  }
-
   // Fuzzy match product
-  let product = products.find(p =>
-    p.name.includes(parsed.product_name) ||
-    (parsed.product_name && parsed.product_name.includes(p.name))
-  )
+  let product = parsed.product_name
+    ? products.find(p => p.name.includes(parsed.product_name) || parsed.product_name.includes(p.name))
+    : null
   // Single-product shortcut
   if (!product && products.length === 1) product = products[0]
-  if (!product) return { error: `找不到產品「${parsed.product_name}」` }
+  if (!product) return base // 沒有產品 → 讓 bot 列出所有產品讓使用者選
 
   const parts = inferredParts || await getPartsWithStages(product.id)
 
   // Fuzzy match part
-  const part = parts.find(p =>
-    p.name.includes(parsed.part_name) ||
-    (parsed.part_name && parsed.part_name.includes(p.name))
-  )
-  if (!part) return { error: `找不到零件「${parsed.part_name}」` }
+  const part = parsed.part_name
+    ? parts.find(p => p.name.includes(parsed.part_name) || parsed.part_name.includes(p.name))
+    : null
+  if (!part) return { ...base, product_id: product.id, product_name: product.name } // 有產品沒零件 → 讓 bot 列出該產品的零件
 
   // Fuzzy match SKU
   const sku = parsed.sku_color && part.skus?.length
@@ -216,9 +226,8 @@ async function resolveIds(parsed) {
     }
   }
 
-  const needsStage = STAGE_REQUIRED.includes(parsed.action_type)
-
   return {
+    ...base,
     product_id:   product.id,
     product_name: product.name,
     part_id:      part.id,
@@ -226,16 +235,6 @@ async function resolveIds(parsed) {
     sku_color:    sku?.color_name  || parsed.sku_color  || null,
     stage_id:     stage?.id        || null,
     stage_name:   stage ? `${stage.factory_name}・${stage.action_name}` : null,
-    action_type:  parsed.action_type,
-    qty:          parsed.qty,
-    defect_qty:   parsed.defect_qty || 0,
-    lost_qty:     parsed.lost_qty   || 0,
-    note:         parsed.note       || null,
-    confidence:   parsed.confidence || 'high',
-    unclear:      parsed.unclear    || null,
-    stage_candidates: (!stage && needsStage && stages.length)
-      ? stages.map(s => ({ id: s.id, label: `${s.factory_name}・${s.action_name}` }))
-      : null,
   }
 }
 
