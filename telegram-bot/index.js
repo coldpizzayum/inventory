@@ -82,7 +82,9 @@ bot.action('confirm_log', async ctx => {
   if (!params) return ctx.answerCbQuery('已過期，請重新輸入')
 
   try {
-    await logInventory(params)
+    console.log('準備登記：', JSON.stringify(params, null, 2))
+    const result = await logInventory(params)
+    console.log('登記完成：', result)
     pending.delete(ctx.from.id)
 
     const action = ACTION_LABEL[params.action_type] || params.action_type
