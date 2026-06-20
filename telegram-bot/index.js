@@ -13,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 
 const http = require('http')
 const { Telegraf } = require('telegraf')
-const { chat, testConnection, ACTION_LABEL, analyzeFeedback } = require('./ai')
+const { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat } = require('./ai')
 const { logInventory, getRecentLogs, submitFeedback, getUnreadFeedback } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
@@ -48,7 +48,7 @@ const sessions = new Map()
 
 function getSession(userId) {
   if (!sessions.has(userId)) {
-    sessions.set(userId, { history: [], pending: null })
+    sessions.set(userId, { history: [], pending: null, feedbackMode: false, feedbackHistory: [] })
   }
   return sessions.get(userId)
 }
@@ -69,10 +69,22 @@ bot.start(ctx => {
 })
 
 // ── /feedback ────────────────────────────────────────────────────────────────
+// 進入回饋對話模式 —— 先讓 Claude 釐清問題，能當場解決的不會打擾管理員，
+// 只有真的是 bug/功能需求才會升級（見 bot.on('text') 裡的 feedbackMode 處理）
 bot.command('feedback', ctx => {
   const session = getSession(ctx.from.id)
-  session._waitingForFeedback = true
-  ctx.reply('📝 請直接輸入你遇到的問題或建議，\n我會轉交給管理員。')
+  session.feedbackMode = true
+  session.feedbackHistory = []
+  ctx.reply('📝 請說說你遇到什麼問題，或有什麼建議？\n\n（輸入 /cancel 取消回饋）')
+})
+
+bot.command('cancel', ctx => {
+  const session = getSession(ctx.from.id)
+  if (session.feedbackMode) {
+    session.feedbackMode = false
+    session.feedbackHistory = []
+    ctx.reply('已取消回饋。')
+  }
 })
 
 // 格式化一筆 receive_logs 紀錄，/history 跟管理員 Bot 的 /recent 共用
@@ -123,11 +135,17 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function formatFeedbackReport(from, original, analysis) {
-  return `<b>📩 新回饋 — ${escapeHtml(from)}</b>
+function formatFeedbackReport(from, feedbackHistory, analysis) {
+  const conversation = Array.isArray(feedbackHistory)
+    ? feedbackHistory
+        .map(m => `${m.role === 'user' ? `👤 ${escapeHtml(from)}` : '🤖 Bot'}：${escapeHtml(m.content)}`)
+        .join('\n\n')
+    : escapeHtml(feedbackHistory)
 
-<b>原始內容：</b>
-「${escapeHtml(original)}」
+  return `<b>📩 用戶回饋 — ${escapeHtml(from)}</b>
+
+<b>完整對話：</b>
+${conversation}
 
 ━━━━━━━━━━━━━━━
 <b>📊 分析報告</b>
@@ -152,20 +170,21 @@ ${escapeHtml(analysis.suggestion)}
 ${escapeHtml(analysis.reason)}`
 }
 
-// 寫入 bot_feedback（含 Claude 分析）並（如果設定了 ADMIN_TELEGRAM_ID）轉發格式化報告給管理員
-async function sendFeedback(ctx, feedbackText) {
-  const from = ctx.from.first_name || ctx.from.username || '工人'
+// 回饋對話真的升級成要給管理員看的問題時呼叫：分析、寫入 bot_feedback（存完整
+// 對話，不只是工人的第一句話）、轉發格式化報告。
+async function escalateFeedback(ctx, from, feedbackHistory) {
+  const conversationText = feedbackHistory
+    .map(m => `${m.role === 'user' ? `👤 ${from}` : '🤖 Bot'}：${m.content}`)
+    .join('\n\n')
+  const userConcern = feedbackHistory.filter(m => m.role === 'user').map(m => m.content).join('\n')
 
-  // 先回覆用戶，不讓他等 Claude 分析的時間
-  await ctx.reply('✅ 已收到你的回饋，正在整理中...')
-
-  const analysis = await analyzeFeedback(feedbackText, from)
+  const analysis = await analyzeFeedback(userConcern, from)
 
   try {
     await submitFeedback({
       telegram_user_id: String(ctx.from.id),
       telegram_name: from,
-      message: feedbackText,
+      message: conversationText,
       analysis: analysis.summary,
       category: analysis.category,
       priority: analysis.priority,
@@ -174,7 +193,25 @@ async function sendFeedback(ctx, feedbackText) {
     console.error('回饋寫入失敗：', err.message)
   }
 
-  await notifyAdmin(formatFeedbackReport(from, feedbackText, analysis), { parse_mode: 'HTML' })
+  await notifyAdmin(formatFeedbackReport(from, feedbackHistory, analysis), { parse_mode: 'HTML' })
+}
+
+// 跑一輪回饋釐清對話：問 Claude、回覆使用者，再依 action 決定要不要結束/升級。
+// /feedback 流程跟自動偵測到回饋意圖後的流程都共用這個函數。
+async function runFeedbackTurn(ctx, session, from) {
+  const result = await handleFeedbackChat(session.feedbackHistory, from)
+  session.feedbackHistory.push({ role: 'assistant', content: result.reply })
+  await ctx.reply(result.reply)
+
+  if (result.action === 'resolved') {
+    session.feedbackMode = false
+    session.feedbackHistory = []
+  } else if (result.action === 'escalate') {
+    session.feedbackMode = false
+    await escalateFeedback(ctx, from, session.feedbackHistory)
+    session.feedbackHistory = []
+  }
+  // action === 'ask' → 留在 feedbackMode，history 保留給下一輪
 }
 
 // ── 管理員 Bot：獨立的 token，只接受 ADMIN_TELEGRAM_ID 的指令 ──────────────────
@@ -231,24 +268,28 @@ bot.on('text', async ctx => {
   if (userText.startsWith('/')) return
 
   const session = getSession(userId)
+  const from = ctx.from.first_name || ctx.from.username || '工人'
 
-  // 正在等使用者輸入回饋內容（剛打過 /feedback）→ 這句話不進對話歷史，
-  // 不丟給 Claude，直接寫入 bot_feedback 並轉發給管理員
-  if (session._waitingForFeedback) {
-    session._waitingForFeedback = false
-    await sendFeedback(ctx, userText)
+  // 正在回饋對話模式（剛打過 /feedback，或上一輪已經進入釐清階段）→
+  // 這幾句話不進主對話歷史，交給 handleFeedbackChat 釐清/解決/升級
+  if (session.feedbackMode) {
+    session.feedbackHistory.push({ role: 'user', content: userText })
+    await runFeedbackTurn(ctx, session, from)
     return
   }
 
   // 上一輪 Claude 判斷使用者在回報問題，問了「要不要轉達給管理員？」
-  // 這句話是回答 —— 如果答應就送出，不然就當成這句話沒被攔截過，繼續往下走
+  // 這句話是回答 —— 如果答應就進入回饋對話模式（用這句話當第一句），
+  // 不然就當成這句話沒被攔截過，繼續往下走
   if (session._awaitingFeedbackConfirm) {
     session._awaitingFeedbackConfirm = false
     const feedbackText = session._pendingFeedbackText
     session._pendingFeedbackText = null
 
     if (/^(要|好|是|對|可以|送出|確認|ok|OK)/.test(userText.trim())) {
-      await sendFeedback(ctx, feedbackText)
+      session.feedbackMode = true
+      session.feedbackHistory = [{ role: 'user', content: feedbackText }]
+      await runFeedbackTurn(ctx, session, from)
       return
     }
   }

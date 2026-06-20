@@ -44,11 +44,10 @@ function findStageByFactoryName(stages, factoryName) {
   }) || null
 }
 
-// Drives the entire conversation — Claude decides what to ask, when enough
-// information is known to confirm, and when the user has actually confirmed
-// or cancelled. `pending` is whatever confirm-ready data was produced last
-// turn (or null), so Claude can track edits ("改成300件") across turns.
-async function chat(history, pending) {
+// Fetches every part (with its skus/stages already attached) across every
+// product. Shared by chat() and handleFeedbackChat() — both need to point
+// Claude at real product/part/factory names.
+async function buildPartsIndex() {
   const products = await getProducts()
   const allParts = []
   for (const product of products) {
@@ -57,6 +56,31 @@ async function chat(history, pending) {
       allParts.push({ ...p, product_name: product.name, product_id: product.id })
     }
   }
+  return allParts
+}
+
+// 多重解析策略 —— Claude 偶爾還是會包 markdown 或加雜訊文字。回傳 null 代表
+// 三種策略都解析失敗，呼叫端要自己決定 fallback。
+function parseClaudeJson(raw) {
+  try {
+    return JSON.parse(raw)
+  } catch {}
+  try {
+    return JSON.parse(raw.replace(/```json/gi, '').replace(/```/g, '').trim())
+  } catch {}
+  try {
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (match) return JSON.parse(match[0])
+  } catch {}
+  return null
+}
+
+// Drives the entire conversation — Claude decides what to ask, when enough
+// information is known to confirm, and when the user has actually confirmed
+// or cancelled. `pending` is whatever confirm-ready data was produced last
+// turn (or null), so Claude can track edits ("改成300件") across turns.
+async function chat(history, pending) {
+  const allParts = await buildPartsIndex()
 
   const partList = allParts
     .map(p => `- ${p.product_name} > ${p.name}（part_id: ${p.id}, product_id: ${p.product_id}）（SKU: ${p.skus?.map(s => s.color_name).join('、') || '無'}）`)
@@ -145,22 +169,7 @@ ${pending ? `\n## 目前 pending 的登記\n${JSON.stringify(pending, null, 2)}`
   const raw = response.content[0].text.trim()
   console.log('AI 回應：', raw)
 
-  // 多重解析策略 —— Claude 偶爾還是會包 markdown 或加雜訊文字
-  let result = null
-  try {
-    result = JSON.parse(raw)
-  } catch {}
-  if (!result) {
-    try {
-      result = JSON.parse(raw.replace(/```json/gi, '').replace(/```/g, '').trim())
-    } catch {}
-  }
-  if (!result) {
-    try {
-      const match = raw.match(/\{[\s\S]*\}/)
-      if (match) result = JSON.parse(match[0])
-    } catch {}
-  }
+  const result = parseClaudeJson(raw)
   if (!result) {
     console.error('JSON 解析失敗，原始回應：', raw)
     return { action: 'ask', reply: raw }
@@ -217,19 +226,7 @@ async function analyzeFeedback(feedbackText, userName) {
     })
 
     const raw = response.content[0].text.trim()
-
-    // 多重解析策略，跟 chat() 一樣的理由 —— Claude 偶爾會包 markdown
-    let result = null
-    try { result = JSON.parse(raw) } catch {}
-    if (!result) {
-      try { result = JSON.parse(raw.replace(/```json/gi, '').replace(/```/g, '').trim()) } catch {}
-    }
-    if (!result) {
-      try {
-        const match = raw.match(/\{[\s\S]*\}/)
-        if (match) result = JSON.parse(match[0])
-      } catch {}
-    }
+    const result = parseClaudeJson(raw)
     if (!result) throw new Error('無法解析分析結果：' + raw)
 
     return result
@@ -249,4 +246,85 @@ async function analyzeFeedback(feedbackText, userName) {
   }
 }
 
-module.exports = { chat, testConnection, ACTION_LABEL, analyzeFeedback }
+// 回饋對話的客服助手 —— 先嘗試釐清/自動解決工人遇到的問題，只有真的是 bug
+// 或功能需求才升級給管理員。跟 chat() 共用同一份產品/零件/廠商資料，這樣
+// 「黑豬鋁打成黑豬找不到」之類的問題才能直接被認出來、當場回答。
+async function handleFeedbackChat(history, userName) {
+  const allParts = await buildPartsIndex()
+  const partList = allParts.map(p => `- ${p.product_name} > ${p.name}`).join('\n')
+  const factoryNames = [...new Set(
+    allParts.flatMap(p => (p.stages || []).map(s => s.factory_name))
+  )].join('、')
+
+  const systemPrompt = `你是益成金屬工廠庫存系統的客服助手，負責幫工人「${userName}」
+解決使用 Telegram Bot 時遇到的問題。
+
+## 系統資料（可以用來幫忙釐清/解決問題）
+
+產品和零件：
+${partList}
+
+加工廠：
+${factoryNames || '（目前沒有資料）'}
+
+## Bot 的使用方式
+- 直接輸入內容：「L夾 鈦 從黑豬鋁回來 500件」
+- /history：查看最近紀錄
+- /feedback：回報問題
+
+## 你的任務
+
+根據對話歷史，判斷現在的狀態：
+
+### 狀態 1 — 還需要釐清問題
+問題描述不夠清楚，需要更多資訊才能判斷
+→ 問一個具體的問題
+→ 回傳：{"action":"ask","reply":"你的問題"}
+
+### 狀態 2 — 可以自動解決
+問題是使用方式不對、不知道怎麼輸入、打錯零件/廠商名稱等，你能直接從上面
+的系統資料找到答案
+→ 解釋清楚，並問用戶這樣有沒有解決
+→ 回傳：{"action":"ask","reply":"解釋和解法，最後問『這樣有解決你的問題嗎？』"}
+
+### 狀態 3 — 用戶說問題解決了
+用戶說「有」「好了」「解決了」「謝謝」「OK」之類的肯定回應
+→ 回傳：{"action":"resolved","reply":"✅ 很好！有其他問題隨時告訴我。"}
+
+### 狀態 4 — 是真正的 bug 或功能需求，無法自動解決
+系統真的壞了、資料錯誤、功能不足等，不是工人用法的問題
+→ 告訴用戶已記錄，會轉給管理員
+→ 回傳：{"action":"escalate","reply":"感謝你的回報！我已記錄這個問題，會轉給管理員改進。如果急需協助，可以直接聯絡管理員。"}
+
+## 常見可以自動解決的問題
+- 找不到廠商：告訴用戶正確的廠商名稱（用上面的加工廠清單比對）
+- 不知道零件屬於哪個產品：告訴他零件對應的產品
+- 不知道怎麼輸入：提供正確的輸入範例
+- Bot 沒反應：建議重新傳訊息或輸入 /start
+
+## 常見需要上報的問題
+- Bot 顯示成功但資料庫沒有紀錄
+- 數字計算錯誤
+- 某個廠商或零件名稱真的不在系統清單裡（不是工人打錯字）
+- 功能需求
+
+## 重要規則
+- 一次只問一個問題，不要一次問很多
+- 用自然的口語，不要太正式
+- 只回傳 JSON，不要其他文字，不要用 markdown 包裝`
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    system: systemPrompt,
+    messages: history,
+  })
+
+  const raw = response.content[0].text.trim()
+  console.log('回饋對話 AI 回應：', raw)
+
+  const result = parseClaudeJson(raw)
+  return result || { action: 'ask', reply: raw }
+}
+
+module.exports = { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat }
