@@ -80,7 +80,12 @@ bot.command('feedback', ctx => {
   const session = getSession(ctx.from.id)
   session.feedbackMode = true
   session.feedbackHistory = []
-  ctx.reply('📝 請說說你遇到什麼問題，或有什麼建議？\n\n（輸入 /cancel 取消回饋）')
+  ctx.reply(
+    '📝 請說說你遇到什麼問題，或有什麼建議？\n\n' +
+    '如果說不清楚，也可以直接說「我想聯絡 Yiting」，\n' +
+    '我會給你聯絡方式。\n\n' +
+    '（輸入 /cancel 取消）'
+  )
 })
 
 bot.command('cancel', ctx => {
@@ -205,6 +210,21 @@ async function escalateFeedback(ctx, from, feedbackHistory) {
 // /feedback 流程跟自動偵測到回饋意圖後的流程都共用這個函數。
 async function runFeedbackTurn(ctx, session, from) {
   const result = await handleFeedbackChat(session.feedbackHistory, from)
+
+  // 真正的聯絡方式由程式碼提供（真實 username），不信任 Claude 自己編造帳號，
+  // 所以這裡不用 result.reply，直接蓋掉成有 ADMIN_USERNAME 的固定文字
+  if (result.action === 'contact') {
+    session.feedbackMode = false
+    session.feedbackHistory = []
+    const adminUsername = process.env.ADMIN_USERNAME
+    await ctx.reply(
+      adminUsername
+        ? `沒關係！你可以直接傳訊息給 Yiting：\n👉 @${adminUsername}\n\n或是把你遇到的問題截圖傳給她，她會幫你處理。`
+        : '沒關係！你可以直接私訊 Yiting，或是把你遇到的問題截圖傳給她，她會幫你處理。'
+    )
+    return
+  }
+
   session.feedbackHistory.push({ role: 'assistant', content: result.reply })
   await ctx.reply(result.reply)
 
@@ -291,7 +311,7 @@ bot.on('text', async ctx => {
     }
   }
 
-  // 上一輪 Claude 判斷使用者在回報問題，問了「要不要轉達給管理員？」
+  // 上一輪 Claude 判斷使用者在回報問題，問了「要不要回報給 Yiting？」
   // 這句話是回答 —— 如果答應就進入回饋對話模式（用這句話當第一句），
   // 不然就當成這句話沒被攔截過，繼續往下走
   if (session._awaitingFeedbackConfirm) {
