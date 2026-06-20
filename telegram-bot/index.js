@@ -13,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 
 const http = require('http')
 const { Telegraf } = require('telegraf')
-const { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat } = require('./ai')
+const { chat, testConnection, ACTION_LABEL, analyzeFeedback, handleFeedbackChat, detectInventoryIntent } = require('./ai')
 const { logInventory, getRecentLogs, submitFeedback, getUnreadFeedback } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
@@ -271,11 +271,19 @@ bot.on('text', async ctx => {
   const from = ctx.from.first_name || ctx.from.username || '工人'
 
   // 正在回饋對話模式（剛打過 /feedback，或上一輪已經進入釐清階段）→
-  // 這幾句話不進主對話歷史，交給 handleFeedbackChat 釐清/解決/升級
+  // 這幾句話不進主對話歷史，交給 handleFeedbackChat 釐清/解決/升級。
+  // 但如果使用者忽然講出像登記的句子（有數字+進出貨動作詞），代表他不是
+  // 在回覆回饋問題，是要登記 —— 退出回饋模式，讓這句話往下走正常登記流程
   if (session.feedbackMode) {
-    session.feedbackHistory.push({ role: 'user', content: userText })
-    await runFeedbackTurn(ctx, session, from)
-    return
+    if (detectInventoryIntent(userText)) {
+      session.feedbackMode = false
+      session.feedbackHistory = []
+      // 不 return，繼續往下走，讓 chat() 處理這句話
+    } else {
+      session.feedbackHistory.push({ role: 'user', content: userText })
+      await runFeedbackTurn(ctx, session, from)
+      return
+    }
   }
 
   // 上一輪 Claude 判斷使用者在回報問題，問了「要不要轉達給管理員？」
