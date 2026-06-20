@@ -99,15 +99,40 @@ ${productList}
     return { error: 'Claude API 呼叫失敗：' + err.message }
   }
 
-  // Step C: parse Claude's JSON response
+  // Step C: parse Claude's JSON response — try multiple strategies since the
+  // model sometimes wraps JSON in markdown fences or adds stray text around it.
+  let parsed = null
+
+  // Strategy 1: direct parse
   try {
-    return JSON.parse(text)
-  } catch {
+    parsed = JSON.parse(text)
+  } catch {}
+
+  // Strategy 2: strip ```json / ``` fences then parse
+  if (!parsed) {
+    try {
+      const clean = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+      parsed = JSON.parse(clean)
+    } catch {}
+  }
+
+  // Strategy 3: extract the first {...} block via regex
+  if (!parsed) {
+    try {
+      const match = text.match(/\{[\s\S]*\}/)
+      if (match) parsed = JSON.parse(match[0])
+    } catch {}
+  }
+
+  if (!parsed) {
     console.error('=== PARSER JSON ERROR ===')
     console.error('Claude 回傳：', text)
     console.error('========================')
     return { error: '解析失敗，請重試' }
   }
+
+  console.log('解析結果：', parsed)
+  return parsed
 }
 
 // Turns Claude's parsed names into real IDs by looking up the Supabase tables.
