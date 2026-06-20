@@ -13,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 
 const http = require('http')
 const { Telegraf, Markup } = require('telegraf')
-const { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection } = require('./parser')
+const { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection, STAGE_REQUIRED } = require('./parser')
 const { logInventory, getRecentLogs } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
@@ -30,6 +30,28 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 
 // Per-user pending confirmations  { userId → resolved params }
 const pending = new Map()
+// Per-user "waiting for which factory" state  { userId → resolved params (with stage_candidates) }
+const awaitingStage = new Map()
+
+function buildConfirmText(resolved) {
+  const action  = ACTION_LABEL[resolved.action_type] || resolved.action_type
+  const sku     = resolved.sku_color  ? `・${resolved.sku_color}`         : ''
+  const stage   = resolved.stage_name ? `\n廠商：${resolved.stage_name}` : ''
+  const defect  = resolved.defect_qty > 0 ? `\n不良：${resolved.defect_qty} 件` : ''
+  const lost    = resolved.lost_qty   > 0 ? `\n遺失：${resolved.lost_qty} 件`  : ''
+  const note    = resolved.note       ? `\n備註：${resolved.note}`        : ''
+  const warn    = resolved.unclear    ? `\n\n⚠️ ${resolved.unclear}`      : ''
+  const lowConf = resolved.confidence === 'low' ? '\n\n⚠️ 解析信心較低，請確認內容' : ''
+
+  return (
+    `📋 確認這筆登記？\n\n` +
+    `動作：${action}\n` +
+    `產品：${resolved.product_name}\n` +
+    `零件：${resolved.part_name}${sku}${stage}\n` +
+    `數量：${resolved.qty} 件${defect}${lost}${note}` +
+    warn + lowConf
+  )
+}
 
 // ── /start ──────────────────────────────────────────────────────────────────
 bot.start(ctx => ctx.reply(
@@ -108,7 +130,32 @@ bot.action('confirm_log', async ctx => {
 // ── Callback: ❌ cancel ──────────────────────────────────────────────────────
 bot.action('cancel_log', async ctx => {
   pending.delete(ctx.from.id)
+  awaitingStage.delete(ctx.from.id)
   await ctx.editMessageText('已取消')
+  ctx.answerCbQuery()
+})
+
+// ── Callback: 選擇加工廠 ─────────────────────────────────────────────────────
+bot.action(/^pick_stage:(.+)$/, async ctx => {
+  const stageId = ctx.match[1]
+  const resolved = awaitingStage.get(ctx.from.id)
+  if (!resolved) return ctx.answerCbQuery('已過期，請重新輸入')
+
+  const stage = resolved.stage_candidates.find(s => s.id === stageId)
+  resolved.stage_id = stageId
+  resolved.stage_name = stage?.label || null
+  delete resolved.stage_candidates
+
+  awaitingStage.delete(ctx.from.id)
+  pending.set(ctx.from.id, resolved)
+
+  await ctx.editMessageText(
+    buildConfirmText(resolved),
+    Markup.inlineKeyboard([[
+      Markup.button.callback('✅ 確認', 'confirm_log'),
+      Markup.button.callback('❌ 取消', 'cancel_log'),
+    ]])
+  )
   ctx.answerCbQuery()
 })
 
@@ -141,29 +188,29 @@ bot.on('text', async ctx => {
       return
     }
 
-    // Step 3: Show confirmation
+    // Step 3: If a stage is required but couldn't be determined, ask which
+    // factory explicitly instead of just flagging it as a warning.
+    if (STAGE_REQUIRED.includes(resolved.action_type) && !resolved.stage_id && resolved.stage_candidates?.length) {
+      awaitingStage.set(ctx.from.id, resolved)
+
+      const sku = resolved.sku_color ? `・${resolved.sku_color}` : ''
+      await ctx.telegram.editMessageText(
+        ctx.chat.id, thinking.message_id, undefined,
+        `❓ 「${resolved.part_name}${sku}」是哪個加工廠？`,
+        Markup.inlineKeyboard(
+          resolved.stage_candidates.map(s => [Markup.button.callback(s.label, `pick_stage:${s.id}`)])
+            .concat([[Markup.button.callback('❌ 取消', 'cancel_log')]])
+        )
+      )
+      return
+    }
+
+    // Step 4: Show confirmation
     pending.set(ctx.from.id, resolved)
-
-    const action  = ACTION_LABEL[resolved.action_type] || resolved.action_type
-    const sku     = resolved.sku_color  ? `・${resolved.sku_color}`         : ''
-    const stage   = resolved.stage_name ? `\n廠商：${resolved.stage_name}` : ''
-    const defect  = resolved.defect_qty > 0 ? `\n不良：${resolved.defect_qty} 件` : ''
-    const lost    = resolved.lost_qty   > 0 ? `\n遺失：${resolved.lost_qty} 件`  : ''
-    const note    = resolved.note       ? `\n備註：${resolved.note}`        : ''
-    const warn    = resolved.unclear    ? `\n\n⚠️ ${resolved.unclear}`      : ''
-    const lowConf = resolved.confidence === 'low' ? '\n\n⚠️ 解析信心較低，請確認內容' : ''
-
-    const confirmText =
-      `📋 確認這筆登記？\n\n` +
-      `動作：${action}\n` +
-      `產品：${resolved.product_name}\n` +
-      `零件：${resolved.part_name}${sku}${stage}\n` +
-      `數量：${resolved.qty} 件${defect}${lost}${note}` +
-      warn + lowConf
 
     await ctx.telegram.editMessageText(
       ctx.chat.id, thinking.message_id, undefined,
-      confirmText,
+      buildConfirmText(resolved),
       Markup.inlineKeyboard([[
         Markup.button.callback('✅ 確認', 'confirm_log'),
         Markup.button.callback('❌ 取消', 'cancel_log'),

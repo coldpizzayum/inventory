@@ -135,6 +135,10 @@ ${productList}
   return parsed
 }
 
+// Action types where a missing stage is worth asking about explicitly,
+// rather than just flagging it as a generic warning on the confirm card.
+const STAGE_REQUIRED = ['return', 'send', 'rework']
+
 // Turns Claude's parsed names into real IDs by looking up the Supabase tables.
 async function resolveIds(parsed) {
   const products = await getProducts()
@@ -212,6 +216,8 @@ async function resolveIds(parsed) {
     }
   }
 
+  const needsStage = STAGE_REQUIRED.includes(parsed.action_type)
+
   return {
     product_id:   product.id,
     product_name: product.name,
@@ -227,7 +233,10 @@ async function resolveIds(parsed) {
     note:         parsed.note       || null,
     confidence:   parsed.confidence || 'high',
     unclear:      parsed.unclear    || null,
+    stage_candidates: (!stage && needsStage && stages.length)
+      ? stages.map(s => ({ id: s.id, label: `${s.factory_name}・${s.action_name}` }))
+      : null,
   }
 }
 
-module.exports = { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection }
+module.exports = { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection, STAGE_REQUIRED }
