@@ -134,6 +134,18 @@ async function submitFeedback({ telegram_user_id, telegram_name, message, analys
   if (error) throw error
 }
 
+// Flat query (no nested select — avoids PGRST125) for the admin bot's /feedback command.
+async function getUnreadFeedback(limit = 5) {
+  const { data, error } = await supabase
+    .from('bot_feedback')
+    .select('*')
+    .eq('is_read', false)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data
+}
+
 // ── Write ────────────────────────────────────────────────────────────────────
 
 // Inserts a receive_log and updates stock counters via read-then-write.
@@ -246,4 +258,4 @@ async function updateStock(at, partId, stageId, { qty, dq, lq, net }) {
   }
 }
 
-module.exports = { getProducts, getPartsWithStages, getStagesForPart, getAllFactories, logInventory, getRecentLogs, submitFeedback }
+module.exports = { getProducts, getPartsWithStages, getStagesForPart, getAllFactories, logInventory, getRecentLogs, submitFeedback, getUnreadFeedback }

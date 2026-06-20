@@ -14,7 +14,7 @@ process.on('unhandledRejection', (reason) => {
 const http = require('http')
 const { Telegraf } = require('telegraf')
 const { chat, testConnection, ACTION_LABEL, analyzeFeedback } = require('./ai')
-const { logInventory, getRecentLogs, submitFeedback } = require('./supabase')
+const { logInventory, getRecentLogs, submitFeedback, getUnreadFeedback } = require('./supabase')
 
 // Railway's edge proxy probes $PORT and SIGTERMs the process if nothing answers there.
 // This bot has no web traffic of its own — this server exists only to pass that healthcheck.
@@ -27,6 +27,21 @@ http.createServer((req, res) => {
 })
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
+
+// 管理員通知用的獨立 Bot —— 只負責傳訊息/接收管理指令，不接觸工人的對話流程。
+// 沒設 ADMIN_BOT_TOKEN 時 adminBot 為 null，notifyAdmin 直接跳過（不會退回用主 Bot 傳送）。
+const adminBot = process.env.ADMIN_BOT_TOKEN
+  ? new Telegraf(process.env.ADMIN_BOT_TOKEN)
+  : null
+
+async function notifyAdmin(message, options = {}) {
+  if (!adminBot || !process.env.ADMIN_TELEGRAM_ID) return
+  try {
+    await adminBot.telegram.sendMessage(process.env.ADMIN_TELEGRAM_ID, message, options)
+  } catch (err) {
+    console.error('管理員通知失敗：', err.message)
+  }
+}
 
 // 每個用戶的對話歷史和 pending 狀態 —— 純記憶體保存，重啟（每次部署）就會清空
 const sessions = new Map()
@@ -60,24 +75,24 @@ bot.command('feedback', ctx => {
   ctx.reply('📝 請直接輸入你遇到的問題或建議，\n我會轉交給管理員。')
 })
 
+// 格式化一筆 receive_logs 紀錄，/history 跟管理員 Bot 的 /recent 共用
+function formatLogLine(l) {
+  const d = new Date(l.logged_at)
+  const time = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ` +
+               `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  const action = ACTION_LABEL[l.action_type] || l.action_type
+  const stage  = l.stage_name ? ` ${l.stage_name}` : ''
+  const defect = (l.defect_qty || 0) > 0 ? ` / 不良 ${l.defect_qty}` : ''
+  return `${time}  ${action}  ${l.part_name || '—'}${stage}  ${l.qty}件${defect}`
+}
+
 // ── /history ─────────────────────────────────────────────────────────────────
 // 用既有的 getRecentLogs（flat query，避免 nested select 的 PGRST125 問題）
 bot.command('history', async ctx => {
   try {
     const logs = await getRecentLogs(5)
     if (!logs?.length) return ctx.reply('還沒有任何登記紀錄')
-
-    const lines = logs.map(l => {
-      const d = new Date(l.logged_at)
-      const time = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ` +
-                   `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-      const action = ACTION_LABEL[l.action_type] || l.action_type
-      const stage  = l.stage_name ? ` ${l.stage_name}` : ''
-      const defect = (l.defect_qty || 0) > 0 ? ` / 不良 ${l.defect_qty}` : ''
-      return `${time}  ${action}  ${l.part_name || '—'}${stage}  ${l.qty}件${defect}`
-    })
-
-    ctx.reply(`📋 最近 5 筆紀錄：\n\n${lines.join('\n')}`)
+    ctx.reply(`📋 最近 5 筆紀錄：\n\n${logs.map(formatLogLine).join('\n')}`)
   } catch (err) {
     console.error('history error:', err)
     ctx.reply('讀取失敗，請稍後再試')
@@ -159,17 +174,54 @@ async function sendFeedback(ctx, feedbackText) {
     console.error('回饋寫入失敗：', err.message)
   }
 
-  if (process.env.ADMIN_TELEGRAM_ID) {
+  await notifyAdmin(formatFeedbackReport(from, feedbackText, analysis), { parse_mode: 'HTML' })
+}
+
+// ── 管理員 Bot：獨立的 token，只接受 ADMIN_TELEGRAM_ID 的指令 ──────────────────
+if (adminBot) {
+  const isAdmin = ctx => String(ctx.from.id) === process.env.ADMIN_TELEGRAM_ID
+
+  adminBot.start(ctx => {
+    if (!isAdmin(ctx)) return
+    ctx.reply(
+      '👋 益成管理通知 Bot\n\n' +
+      '📩 有新回饋時會自動通知你\n\n' +
+      '/recent — 查看最近 10 筆登記\n' +
+      '/feedback — 查看未讀回饋'
+    )
+  })
+
+  adminBot.command('recent', async ctx => {
+    if (!isAdmin(ctx)) return
     try {
-      await bot.telegram.sendMessage(
-        process.env.ADMIN_TELEGRAM_ID,
-        formatFeedbackReport(from, feedbackText, analysis),
-        { parse_mode: 'HTML' }
-      )
+      const logs = await getRecentLogs(10)
+      if (!logs?.length) return ctx.reply('還沒有任何登記紀錄')
+      ctx.reply(`📋 最近 10 筆登記：\n\n${logs.map(formatLogLine).join('\n')}`)
     } catch (err) {
-      console.error('轉發給管理員失敗：', err.message)
+      console.error('admin /recent error:', err)
+      ctx.reply('讀取失敗')
     }
-  }
+  })
+
+  adminBot.command('feedback', async ctx => {
+    if (!isAdmin(ctx)) return
+    try {
+      const data = await getUnreadFeedback(5)
+      if (!data?.length) return ctx.reply('✅ 沒有未讀回饋')
+
+      const messages = data.map(d =>
+        `👤 ${d.telegram_name}\n` +
+        `🕐 ${new Date(d.created_at).toLocaleString('zh-TW')}\n` +
+        `📝 ${d.message}\n` +
+        `分析：${d.analysis || '未分析'}`
+      ).join('\n\n━━━━━━━━━\n\n')
+
+      ctx.reply(`📩 未讀回饋 ${data.length} 筆：\n\n${messages}`)
+    } catch (err) {
+      console.error('admin /feedback error:', err)
+      ctx.reply('讀取失敗')
+    }
+  })
 }
 
 // ── Text messages：交給 Claude 全權管理對話 ──────────────────────────────────
@@ -257,6 +309,26 @@ bot.on('text', async ctx => {
 })
 
 // ── Launch ───────────────────────────────────────────────────────────────────
+// 409 Conflict usually means a previous deployment's long-poll hasn't released
+// yet (e.g. mid-redeploy) — retry with backoff instead of exiting immediately,
+// which would otherwise create a tight crash loop.
+async function launchWithRetry(botInstance, label) {
+  const MAX_RETRIES = 5
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await botInstance.launch()
+      console.log(`✅ ${label} 啟動成功`)
+      return
+    } catch (err) {
+      const is409 = err.response?.error_code === 409 || /409/.test(err.message)
+      if (!is409 || attempt === MAX_RETRIES) throw err
+      const delay = attempt * 3000
+      console.warn(`⚠️ ${label} 啟動第 ${attempt} 次遇到 409，可能是上一個 instance 還沒釋放，${delay / 1000}s 後重試…`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+}
+
 const start = async () => {
   try {
     console.log('檢查環境變數...')
@@ -264,6 +336,7 @@ const start = async () => {
     console.log('ANTHROPIC_API_KEY:', !!process.env.ANTHROPIC_API_KEY)
     console.log('SUPABASE_URL:', !!process.env.SUPABASE_URL)
     console.log('SUPABASE_SERVICE_KEY:', !!process.env.SUPABASE_SERVICE_KEY)
+    console.log('ADMIN_BOT_TOKEN:', !!process.env.ADMIN_BOT_TOKEN)
 
     if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN 未設定')
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY 未設定')
@@ -274,22 +347,15 @@ const start = async () => {
 
     await bot.telegram.deleteWebhook({ drop_pending_updates: true })
     console.log('✅ Webhook 清除成功')
+    await launchWithRetry(bot, 'Bot')
 
-    // 409 Conflict usually means a previous deployment's long-poll hasn't
-    // released yet (e.g. mid-redeploy) — retry with backoff instead of
-    // exiting immediately, which would otherwise create a tight crash loop.
-    const MAX_RETRIES = 5
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // 管理員 Bot 是輔助功能 —— 啟動失敗只記錄錯誤，不應該讓主要的工人 Bot 也掛掉
+    if (adminBot) {
       try {
-        await bot.launch()
-        console.log('✅ Bot 啟動成功')
-        return
+        await adminBot.telegram.deleteWebhook({ drop_pending_updates: true })
+        await launchWithRetry(adminBot, '管理員 Bot')
       } catch (err) {
-        const is409 = err.response?.error_code === 409 || /409/.test(err.message)
-        if (!is409 || attempt === MAX_RETRIES) throw err
-        const delay = attempt * 3000
-        console.warn(`⚠️ 啟動第 ${attempt} 次遇到 409，可能是上一個 instance 還沒釋放，${delay / 1000}s 後重試…`)
-        await new Promise(r => setTimeout(r, delay))
+        console.error('❌ 管理員 Bot 啟動失敗：', err.message)
       }
     }
   } catch (err) {
@@ -301,5 +367,5 @@ const start = async () => {
 
 start()
 
-process.once('SIGINT',  () => bot.stop('SIGINT'))
-process.once('SIGTERM', () => bot.stop('SIGTERM'))
+process.once('SIGINT',  () => { bot.stop('SIGINT');  adminBot?.stop('SIGINT')  })
+process.once('SIGTERM', () => { bot.stop('SIGTERM'); adminBot?.stop('SIGTERM') })
