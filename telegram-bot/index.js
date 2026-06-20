@@ -55,16 +55,31 @@ const CONFIRM_KEYBOARD = Markup.inlineKeyboard([[
   Markup.button.callback('❌ 取消', 'cancel_log'),
 ]])
 
+const ACTION_KEYBOARD = Markup.inlineKeyboard([
+  [
+    Markup.button.callback('📦 進貨（原料）', 'action:receive'),
+    Markup.button.callback('🔄 回廠', 'action:return'),
+  ],
+  [
+    Markup.button.callback('🚚 送出加工', 'action:send'),
+    Markup.button.callback('📤 大貨出貨', 'action:ship'),
+  ],
+])
+
 // editMessageId: pass the "⏳ 解析中…" placeholder's message_id when calling
 // from the plain text handler; omit it when calling from a button callback
 // (those already have a message context via ctx.editMessageText).
-async function showConfirmation(ctx, resolved, editMessageId) {
-  const text = buildConfirmText(resolved)
+async function sendOrEdit(ctx, editMessageId, text, keyboard) {
   if (editMessageId) {
-    await ctx.telegram.editMessageText(ctx.chat.id, editMessageId, undefined, text, CONFIRM_KEYBOARD)
+    await ctx.telegram.editMessageText(ctx.chat.id, editMessageId, undefined, text, keyboard)
   } else {
-    await ctx.editMessageText(text, CONFIRM_KEYBOARD)
+    await ctx.editMessageText(text, keyboard)
   }
+}
+
+async function showConfirmation(ctx, resolved, editMessageId) {
+  pendingLogs.set(ctx.from.id, resolved)
+  await sendOrEdit(ctx, editMessageId, buildConfirmText(resolved), CONFIRM_KEYBOARD)
 }
 
 // If the action needs a stage and one isn't set yet, ask which factory.
@@ -78,13 +93,33 @@ async function askStageIfNeeded(ctx, resolved, editMessageId) {
   pendingLogs.set(ctx.from.id, resolved)
   const label = resolved.action_type === 'return' ? '從哪個廠回來？' : '送去哪個廠？'
   const buttons = stages.map(s => [Markup.button.callback(`${s.factory_name}・${s.action_name}`, `select_stage:${s.id}`)])
-
-  if (editMessageId) {
-    await ctx.telegram.editMessageText(ctx.chat.id, editMessageId, undefined, label, Markup.inlineKeyboard(buttons))
-  } else {
-    await ctx.editMessageText(label, Markup.inlineKeyboard(buttons))
-  }
+  await sendOrEdit(ctx, editMessageId, label, Markup.inlineKeyboard(buttons))
   return true
+}
+
+// Walks whatever's still missing — product, then part, then stage — and
+// shows the confirmation card once everything's resolved. Shared by the
+// plain text handler and every button callback that can complete the chain.
+async function continueResolution(ctx, resolved, editMessageId) {
+  if (!resolved.product_id) {
+    pendingLogs.set(ctx.from.id, resolved)
+    const products = await getProducts()
+    const buttons = products.map(p => [Markup.button.callback(p.name, `select_product:${p.id}`)])
+    await sendOrEdit(ctx, editMessageId, '這是哪個產品的零件？', Markup.inlineKeyboard(buttons))
+    return
+  }
+
+  if (!resolved.part_id) {
+    pendingLogs.set(ctx.from.id, resolved)
+    const parts = await getPartsWithStages(resolved.product_id)
+    const buttons = parts.map(p => [Markup.button.callback(p.name, `select_part:${p.id}`)])
+    await sendOrEdit(ctx, editMessageId, '哪個零件？', Markup.inlineKeyboard(buttons))
+    return
+  }
+
+  if (await askStageIfNeeded(ctx, resolved, editMessageId)) return
+
+  await showConfirmation(ctx, resolved, editMessageId)
 }
 
 // ── /start ──────────────────────────────────────────────────────────────────
@@ -168,6 +203,18 @@ bot.action('cancel_log', async ctx => {
   ctx.answerCbQuery()
 })
 
+// ── Callback: 選擇動作 ───────────────────────────────────────────────────────
+bot.action(/^action:(.+)$/, async ctx => {
+  const actionType = ctx.match[1]
+  const prev = pendingLogs.get(ctx.from.id)
+  if (!prev?._parsed) return ctx.answerCbQuery('已過期，請重新輸入')
+
+  const parsed = { ...prev._parsed, action_type: actionType }
+  const resolved = await resolveIds(parsed)
+  await continueResolution(ctx, resolved)
+  ctx.answerCbQuery()
+})
+
 // ── Callback: 選擇產品 ───────────────────────────────────────────────────────
 bot.action(/^select_product:(.+)$/, async ctx => {
   const productId = ctx.match[1]
@@ -181,25 +228,14 @@ bot.action(/^select_product:(.+)$/, async ctx => {
     ? parts.find(p => p.name.includes(prev.part_name) || prev.part_name.includes(p.name))
     : null
 
-  if (!part) {
-    const updated = { ...prev, product_id: productId, product_name: product?.name || null }
-    pendingLogs.set(ctx.from.id, updated)
-    const buttons = parts.map(p => [Markup.button.callback(p.name, `select_part:${p.id}`)])
-    await ctx.editMessageText('哪個零件？', Markup.inlineKeyboard(buttons))
-    return ctx.answerCbQuery()
-  }
-
   const updated = {
     ...prev,
     product_id: productId,
     product_name: product?.name || null,
-    part_id: part.id,
-    part_name: part.name,
+    part_id: part?.id || null,
+    part_name: part?.name || prev.part_name,
   }
-  if (await askStageIfNeeded(ctx, updated)) return ctx.answerCbQuery()
-
-  pendingLogs.set(ctx.from.id, updated)
-  await showConfirmation(ctx, updated)
+  await continueResolution(ctx, updated)
   ctx.answerCbQuery()
 })
 
@@ -214,10 +250,7 @@ bot.action(/^select_part:(.+)$/, async ctx => {
   if (!part) return ctx.answerCbQuery('找不到這個零件')
 
   const updated = { ...prev, part_id: part.id, part_name: part.name }
-  if (await askStageIfNeeded(ctx, updated)) return ctx.answerCbQuery()
-
-  pendingLogs.set(ctx.from.id, updated)
-  await showConfirmation(ctx, updated)
+  await continueResolution(ctx, updated)
   ctx.answerCbQuery()
 })
 
@@ -235,7 +268,6 @@ bot.action(/^select_stage:(.+)$/, async ctx => {
     stage_id: stageId,
     stage_name: stage ? `${stage.factory_name}・${stage.action_name}` : null,
   }
-  pendingLogs.set(ctx.from.id, updated)
   await showConfirmation(ctx, updated)
   ctx.answerCbQuery()
 })
@@ -259,39 +291,21 @@ bot.on('text', async ctx => {
       return
     }
 
-    // Step 2: Resolve names → real IDs (whatever can't be resolved comes back null)
+    // Step 2: 動作類型不明確（沒有動作關鍵字）→ 直接問是哪種動作，不要自動猜
+    if (!parsed.action_type) {
+      pendingLogs.set(ctx.from.id, { _parsed: parsed })
+      await ctx.telegram.editMessageText(
+        ctx.chat.id, thinking.message_id, undefined,
+        '這是哪種動作？', ACTION_KEYBOARD
+      )
+      return
+    }
+
+    // Step 3: Resolve names → real IDs (whatever can't be resolved comes back null)
     const resolved = await resolveIds(parsed)
 
-    // Step 3: 缺產品 → 列出所有產品讓使用者選
-    if (!resolved.product_id) {
-      pendingLogs.set(ctx.from.id, resolved)
-      const products = await getProducts()
-      const buttons = products.map(p => [Markup.button.callback(p.name, `select_product:${p.id}`)])
-      await ctx.telegram.editMessageText(
-        ctx.chat.id, thinking.message_id, undefined,
-        '這是哪個產品的零件？', Markup.inlineKeyboard(buttons)
-      )
-      return
-    }
-
-    // Step 4: 有產品沒零件 → 列出該產品的零件讓使用者選
-    if (!resolved.part_id) {
-      pendingLogs.set(ctx.from.id, resolved)
-      const parts = await getPartsWithStages(resolved.product_id)
-      const buttons = parts.map(p => [Markup.button.callback(p.name, `select_part:${p.id}`)])
-      await ctx.telegram.editMessageText(
-        ctx.chat.id, thinking.message_id, undefined,
-        '哪個零件？', Markup.inlineKeyboard(buttons)
-      )
-      return
-    }
-
-    // Step 5: 回廠/送加工/重工卻不確定是哪個加工廠 → 直接問
-    if (await askStageIfNeeded(ctx, resolved, thinking.message_id)) return
-
-    // Step 6: 資訊齊全，顯示確認
-    pendingLogs.set(ctx.from.id, resolved)
-    await showConfirmation(ctx, resolved, thinking.message_id)
+    // Step 4: 缺產品/零件/加工廠就逐步詢問，全部齊全才顯示確認
+    await continueResolution(ctx, resolved, thinking.message_id)
 
   } catch (err) {
     console.error('=== BOT ERROR ===')
