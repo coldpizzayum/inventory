@@ -54,18 +54,21 @@ ${productList}
 
 現有加工廠：${factoryNames}
 
-動作類型定義：
-- receive：進貨（新原料入倉）
-- return：回廠（零件從加工廠回來）
-- send：送出（零件送去加工廠）
-- ship：大貨出貨（成品出給客戶）
+動作類型定義與判斷規則：
+- receive：進貨（新原料入倉）— 訊息明確說「進貨」「到貨」「入庫」
+- return：回廠（零件從加工廠回來）— 訊息明確說「回來」「回廠」「回到」
+- send：送出（零件送去加工廠）— 訊息明確說「送去」「出貨」「送到」（送去加工廠，不是給客戶）
+- ship：大貨出貨（成品出給客戶）— 訊息明確說「大貨」「出給客戶」
 - rework：重工
 - scrap：報廢
 
+如果訊息裡沒有任何動作關鍵字、只有零件名稱和數量，無法判斷是哪種動作，
+"action_type" 回傳 null，並把 "confidence" 設為 "low"。
+
 只回傳 JSON，不加其他文字。格式：
 {
-  "action_type": "receive|return|send|ship|rework|scrap",
-  "product_name": "產品名稱（模糊比對即可）",
+  "action_type": "receive|return|send|ship|rework|scrap，無法判斷則 null",
+  "product_name": "產品名稱（模糊比對即可，沒有則 null）",
   "part_name": "零件名稱",
   "sku_color": "顏色/SKU（沒有則 null）",
   "factory_name": "加工廠名稱（進貨原料或大貨出貨則 null）",
