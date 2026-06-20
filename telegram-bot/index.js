@@ -68,12 +68,16 @@ const ACTION_KEYBOARD = Markup.inlineKeyboard([
 
 // editMessageId: pass the "⏳ 解析中…" placeholder's message_id when calling
 // from the plain text handler; omit it when calling from a button callback
-// (those already have a message context via ctx.editMessageText).
+// (those already have a message context via ctx.editMessageText). When
+// there's neither (e.g. continuing after the user typed a plain-text qty
+// reply), fall back to a fresh reply since there's no message to edit.
 async function sendOrEdit(ctx, editMessageId, text, keyboard) {
   if (editMessageId) {
     await ctx.telegram.editMessageText(ctx.chat.id, editMessageId, undefined, text, keyboard)
-  } else {
+  } else if (ctx.callbackQuery) {
     await ctx.editMessageText(text, keyboard)
+  } else {
+    await ctx.reply(text, keyboard)
   }
 }
 
@@ -118,6 +122,19 @@ async function continueResolution(ctx, resolved, editMessageId) {
   }
 
   if (await askStageIfNeeded(ctx, resolved, editMessageId)) return
+
+  // 沒有數量就不能送出確認卡，否則 logInventory 會收到 qty: null
+  if (!resolved.qty || resolved.qty <= 0) {
+    pendingLogs.set(ctx.from.id, { ...resolved, _awaitingQty: true })
+    const sku   = resolved.sku_color  ? `・${resolved.sku_color}`        : ''
+    const stage = resolved.stage_name ? `（${resolved.stage_name}）`    : ''
+    await sendOrEdit(
+      ctx, editMessageId,
+      `「${resolved.part_name}${sku}${stage}」要登記幾件？請直接輸入數量。`,
+      Markup.inlineKeyboard([])
+    )
+    return
+  }
 
   await showConfirmation(ctx, resolved, editMessageId)
 }
@@ -276,6 +293,21 @@ bot.action(/^select_stage:(.+)$/, async ctx => {
 bot.on('text', async ctx => {
   const text = ctx.message.text
   if (text.startsWith('/')) return
+
+  // 正在等使用者回覆數量 → 這句話是答案，不要拿去問 Claude
+  const waiting = pendingLogs.get(ctx.from.id)
+  if (waiting?._awaitingQty) {
+    const match = text.match(/\d+/)
+    const qty = match ? parseInt(match[0], 10) : null
+    if (!qty || qty <= 0) {
+      await ctx.reply('請輸入有效的數量（例如：500）')
+      return
+    }
+    const resolved = { ...waiting, qty }
+    delete resolved._awaitingQty
+    await continueResolution(ctx, resolved)
+    return
+  }
 
   const thinking = await ctx.reply('⏳ 解析中…')
 
