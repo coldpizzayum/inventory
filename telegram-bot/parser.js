@@ -241,4 +241,37 @@ async function resolveIds(parsed) {
   }
 }
 
-module.exports = { parseInventoryInput, resolveIds, ACTION_LABEL, testConnection, STAGE_REQUIRED }
+// When there's already a pending (mostly-resolved) log entry and the user
+// types free text instead of tapping a button, this decides whether they're
+// editing that entry (e.g. "改成300件") or starting an unrelated new one.
+async function detectEditIntent(text, pending) {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 100,
+      messages: [{
+        role: 'user',
+        content: `用戶目前有一筆待確認的登記：
+動作：${pending.action_type}，零件：${pending.part_name}，數量：${pending.qty}
+
+用戶說：「${text}」
+
+判斷這句話的意圖，只回傳 JSON，不加其他文字：
+- 修改數量 → {"type":"change_qty","value":數字}
+- 修改SKU顏色 → {"type":"change_sku","value":"顏色名稱"}
+- 修改動作 → {"type":"change_action","value":"receive或return或send或ship或rework或scrap"}
+- 全新登記（跟目前這筆無關）→ {"type":"new_entry"}
+- 不確定 → {"type":"new_entry"}`,
+      }],
+    })
+
+    const raw = response.content[0].text.trim()
+    const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim()
+    return JSON.parse(clean)
+  } catch (err) {
+    console.error('detectEditIntent 錯誤：', err.message)
+    return { type: 'new_entry' }
+  }
+}
+
+module.exports = { parseInventoryInput, resolveIds, detectEditIntent, ACTION_LABEL, testConnection, STAGE_REQUIRED }
