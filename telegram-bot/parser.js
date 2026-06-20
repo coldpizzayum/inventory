@@ -193,10 +193,14 @@ async function resolveIds(parsed) {
   const stages = part.stages || []
   let stage = null
   if (parsed.factory_name) {
-    const byFactory = stages.filter(s =>
-      s.factory_name.includes(parsed.factory_name) ||
-      parsed.factory_name.includes(s.factory_name)
-    )
+    // Factory names often carry a parenthesised nickname workers actually say,
+    // e.g. "至威車銑(黑豬)" — match against that too, not just the full name.
+    const nicknameOf = name => name.match(/\(([^)]+)\)/)?.[1] || null
+    const byFactory = stages.filter(s => {
+      if (s.factory_name.includes(parsed.factory_name) || parsed.factory_name.includes(s.factory_name)) return true
+      const nickname = nicknameOf(s.factory_name)
+      return !!nickname && (nickname.includes(parsed.factory_name) || parsed.factory_name.includes(nickname))
+    })
     if (parsed.action_type === 'return') {
       // Prefer stage with in_transit > 0; fallback to highest total_sent (handles stale data)
       stage =
