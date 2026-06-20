@@ -231,12 +231,12 @@ export default function Dashboard() {
     const token = localStorage.getItem('token')
     if (!token) { navigate('/login'); return }
     loadProducts()
+    loadLogs()
   }, [])
 
   useEffect(() => {
     if (selectedProduct) {
       loadParts(selectedProduct.id)
-      loadLogs(selectedProduct.id)
     }
   }, [selectedProduct])
 
@@ -250,8 +250,9 @@ export default function Dashboard() {
     const res = await apiFetch(`/api/products/${pid}/parts`)
     setPartsData(await res.json())
   }
-  async function loadLogs(pid) {
-    const res = await apiFetch(`/api/receive-logs?product_id=${pid}&limit=200`)
+  // 不再依 product_id 篩選——「最近紀錄」要顯示所有產品的紀錄
+  async function loadLogs() {
+    const res = await apiFetch('/api/receive-logs?limit=200')
     setLogs(await res.json())
   }
   async function loadTokens() {
@@ -390,7 +391,7 @@ export default function Dashboard() {
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
-              {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={() => loadLogs(selectedProduct?.id)} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
+              {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={loadLogs} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
               {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
@@ -3386,16 +3387,17 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                     <input type="checkbox" checked={allVisible} ref={el => { if (el) el.indeterminate = someVisible && !allVisible }}
                       onChange={toggleSelectAll} style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
                   </th>
-                  {['時間', '動作', '登記人', '零件', '來源去向', 'SKU', '數量', '不良', '遺失', '備註', ''].map((h, i) => (
+                  {['時間', '動作', '登記人', '產品', '零件', '來源去向', 'SKU', '數量', '不良', '遺失', '備註', ''].map((h, i) => (
                     <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {logs.length === 0 && <tr><td colSpan={12} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
+                {logs.length === 0 && <tr><td colSpan={13} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
                 {visibleLogs.map(log => {
                   const isEditing = editRow?.id === log.id
                   const isSel = selected.has(log.id)
+                  const isOtherProduct = selectedProduct && log.product_id !== selectedProduct.id
                   const ei = editRow // alias for brevity when isEditing
 
                   if (isEditing) {
@@ -3429,6 +3431,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                             {workers.filter(w => w.is_active).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                           </select>
                         </td>
+                        <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.product_name || '—'}</td>
                         <td style={{ padding: '6px 8px', minWidth: 100 }}>
                           <select value={ei.part_id || ''} style={IS}
                             onChange={e => {
@@ -3500,6 +3503,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
                       <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.worker_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.product_name || '—'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{getSourceDisplay(log)}</td>
                       <td style={{ padding: '12px 14px' }}>
@@ -3513,10 +3517,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       </td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 2 }}>
-                          <button title="編輯"
+                          <button title={isOtherProduct ? '請先切換到該紀錄的產品才能編輯' : '編輯'}
+                            disabled={isOtherProduct}
                             onClick={() => setEditRow({ id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id, sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0), lost_qty: String(log.lost_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '', logged_at: toDatetimeLocal(log.logged_at || new Date()) })}
-                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' }}
+                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: isOtherProduct ? 'not-allowed' : 'pointer', color: 'var(--text-3)', opacity: isOtherProduct ? 0.4 : 1, display: 'grid', placeItems: 'center' }}
+                            onMouseEnter={e => { if (!isOtherProduct) { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' } }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' }}>
                             <Icon.Edit />
                           </button>
