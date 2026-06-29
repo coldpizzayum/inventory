@@ -116,6 +116,7 @@ function ActionTag({ type }) {
     ship:    { label: '大貨',  color: 'var(--purple)', tint: 'var(--purple-tint)' },
     rework:  { label: '重工',  color: '#6B3FA0',       tint: '#EFE7F8' },
     scrap:   { label: '報廢',  color: 'var(--bad)',    tint: 'var(--bad-tint)' },
+    qc:      { label: '品檢',  color: '#185FA5',       tint: '#E6F0FB' },
   }
   const a = map[type] || { label: type, color: 'var(--text-3)', tint: 'var(--bg-2)' }
   return (
@@ -967,14 +968,14 @@ function StageCard({ stage }) {
         width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
         borderRadius: 'var(--r-md)', padding: '9px 11px',
         background: 'var(--bg-1)', border: '0.5px dashed var(--line-2)',
-        opacity: 0.7, display: 'flex', flexDirection: 'column',
+        opacity: 0.7, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
           <span style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--text-3)', display: 'inline-block', flexShrink: 0 }} />
           <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-3)' }}>等待中</span>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
-        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
         <div className="num" style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-3)' }}>—</div>
       </div>
     )
@@ -997,15 +998,15 @@ function StageCard({ stage }) {
       style={{
         position: 'relative', width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
         borderRadius: 'var(--r-md)', padding: '9px 11px', border, background: bg,
-        display: 'flex', flexDirection: 'column',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
         <span style={{ width: 5, height: 5, borderRadius: 999, background: dotColor, flexShrink: 0, display: 'inline-block' }} />
         <span style={{ fontSize: 10, fontWeight: 500, color: statusColor }}>{statusLabel}</span>
       </div>
-      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
-      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
         <span className="num" style={{ fontSize: 18, fontWeight: 500, color: mainNumColor }}>
           {mainNum !== null ? mainNum.toLocaleString() : '—'}
@@ -1037,6 +1038,38 @@ function StageCard({ stage }) {
       )}
     </div>
   )
+}
+
+// 品檢中卡片 —— 零件從加工廠回來、還沒分批點貨決定入庫/重工/報廢時，
+// 接在加工站卡片流程的最後面（回廠之後、入庫之前）
+function QcPendingCard({ qty, stockedTotal }) {
+  return (
+    <div style={{
+      width: 130, minHeight: 110, flexShrink: 0, alignSelf: 'flex-start',
+      borderRadius: 'var(--r-md)', padding: '9px 11px',
+      border: '1.5px solid #185FA5', background: '#EEF5FC',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+        <span style={{ width: 5, height: 5, borderRadius: 999, background: '#185FA5', flexShrink: 0, display: 'inline-block' }} />
+        <span style={{ fontSize: 10, fontWeight: 500, color: '#185FA5' }}>品檢中</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2 }}>廠內</div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 7 }}>品檢點貨</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+        <span className="num" style={{ fontSize: 18, fontWeight: 500, color: '#185FA5' }}>{qty.toLocaleString()}</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)' }}>待點貨</div>
+      <div style={{ fontSize: 9, color: 'var(--text-4)', marginTop: 'auto', paddingTop: 6, lineHeight: 1.5 }}>
+        <div>已入庫 {stockedTotal}</div>
+        <div>待處理 {qty}</div>
+      </div>
+    </div>
+  )
+}
+
+function qcConnector(key) {
+  return <span key={key} style={{ color: '#185FA5', userSelect: 'none', flexShrink: 0, alignSelf: 'center', fontSize: 14, opacity: 1 }}>›</span>
 }
 
 function InTransitSummary({ parts }) {
@@ -1395,7 +1428,7 @@ function PartView({ parts, skuEditMode, onReload }) {
                 {badge.label}
               </span>
             </div>
-            {stages.length > 0 && (
+            {(stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                 {stages.flatMap((stage, i) => {
                   const hasData = (stage.total_sent || 0) > 0
@@ -1411,6 +1444,10 @@ function PartView({ parts, skuEditMode, onReload }) {
                     ] : []),
                   ]
                 })}
+                {(part.qc_pending_qty || 0) > 0 && [
+                  stages.length > 0 && qcConnector('qc-a'),
+                  <QcPendingCard key="qc" qty={part.qc_pending_qty} stockedTotal={part.qc_stocked_total || 0} />,
+                ]}
               </div>
             )}
           </div>
@@ -1547,6 +1584,10 @@ function FactoryView({ parts }) {
                               ] : []),
                             ]
                           })}
+                          {(part.qc_pending_qty || 0) > 0 && [
+                            (part.stages || []).length > 0 && qcConnector('qc-a'),
+                            <QcPendingCard key="qc" qty={part.qc_pending_qty} stockedTotal={part.qc_stocked_total || 0} />,
+                          ]}
                         </div>
                       )}
                     </div>
@@ -1588,7 +1629,7 @@ function PartViewExpandable({ parts }) {
               onClick={() => setExpanded(e => ({ ...e, [part.id]: !isOpen }))}
               style={{
                 padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                cursor: 'pointer', borderBottom: isOpen && stages.length > 0 ? '0.5px solid var(--line-1)' : 'none',
+                cursor: 'pointer', borderBottom: isOpen && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) ? '0.5px solid var(--line-1)' : 'none',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
@@ -1601,7 +1642,7 @@ function PartViewExpandable({ parts }) {
                 <polyline points="6 9 12 15 18 9"/>
               </svg>
             </div>
-            {isOpen && stages.length > 0 && (
+            {isOpen && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                 {stages.flatMap((stage, i, arr) => {
                   const hasData = (stage.total_sent || 0) > 0
@@ -1616,6 +1657,10 @@ function PartViewExpandable({ parts }) {
                     ] : []),
                   ]
                 })}
+                {(part.qc_pending_qty || 0) > 0 && [
+                  stages.length > 0 && qcConnector('qc-a'),
+                  <QcPendingCard key="qc" qty={part.qc_pending_qty} stockedTotal={part.qc_stocked_total || 0} />,
+                ]}
               </div>
             )}
           </div>
@@ -2643,6 +2688,7 @@ function getSourceDisplay(log) {
     case 'receive': return '原料廠'
     case 'ship':    return '大貨出貨'
     case 'scrap':   return '報廢'
+    case 'qc':      return '品檢暫存'
     case 'return':
     case 'send':
       return log.stage_name || '—'
@@ -2838,6 +2884,10 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [loggedAt, setLoggedAt] = useState(() => toDatetimeLocal(new Date()))
   const [lostQty, setLostQty] = useState('')
   const [workerManagerOpen, setWorkerManagerOpen] = useState(false)
+  const [qcPending, setQcPending] = useState([])
+  const [qcOpen, setQcOpen] = useState(true)
+  const [qcExpandId, setQcExpandId] = useState(null)
+  const [qcForm, setQcForm] = useState(null) // { qty, action, reworkStageId }
 
   const dq = Math.max(0, parseInt(defectQty, 10) || 0)
   const actionType = source ? resolveActionType(direction, source) : null
@@ -2847,9 +2897,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const showLostQty = actionType === 'send' || actionType === 'return'
   const reworkStages = stages.filter(s => (s.in_transit || 0) > 0)
   const factories = uniqueFactoriesFromStages(stages)
-  const sourceOptions = direction === 'in'
-    ? [{ value: 'raw', label: '原料（倉庫）' }, ...factories.map(f => ({ value: f, label: f }))]
-    : [{ value: 'ship', label: '大貨出貨' }, ...factories.map(f => ({ value: f, label: f }))]
+  const sourceOptions = direction === 'qc'
+    ? factories.map(f => ({ value: f, label: f }))
+    : direction === 'in'
+      ? [{ value: 'raw', label: '原料（倉庫）' }, ...factories.map(f => ({ value: f, label: f }))]
+      : [{ value: 'ship', label: '大貨出貨' }, ...factories.map(f => ({ value: f, label: f }))]
 
   useEffect(() => {
     fetch('/api/workers').then(r => r.json()).then(setWorkers).catch(() => {})
@@ -2877,6 +2929,32 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     if (res.ok) setPendingDefects(await res.json())
   }
   useEffect(() => { loadPendingDefects() }, [pid])
+
+  async function loadQcPending() {
+    if (!pid) return
+    const res = await apiFetch(`/api/qc/pending?product_id=${pid}`)
+    if (res.ok) setQcPending(await res.json())
+  }
+  useEffect(() => { loadQcPending() }, [pid])
+
+  async function processQC(qc) {
+    if (!qcForm) return
+    const n = Math.max(0, parseInt(qcForm.qty, 10) || 0)
+    if (n <= 0 || n > qc.qty) return alert('請輸入正確的點貨數量')
+    if (qcForm.action === 'rework' && !qcForm.reworkStageId) return alert('請選擇重工站')
+    try {
+      const res = await apiFetch(`/api/qc/pending/${qc.id}/process`, {
+        method: 'POST',
+        body: JSON.stringify({
+          qty: n, action: qcForm.action,
+          rework_stage_id: qcForm.action === 'rework' ? qcForm.reworkStageId : null,
+          worker_id: workerId || null,
+        }),
+      })
+      if (!res.ok) { const b = await res.json().catch(() => ({})); return alert(b.error || `送出失敗 (${res.status})`) }
+      setQcExpandId(null); setQcForm(null); loadQcPending(); reload(); onLogSubmit?.()
+    } catch (e) { alert('送出失敗：' + e.message) }
+  }
 
   async function deleteLog(id) {
     if (!confirm('確認刪除此筆紀錄？庫存數字將一併還原。')) return
@@ -2994,6 +3072,28 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     setSubmitting(true)
     try {
       const loggedAtISO = new Date(loggedAt).toISOString()
+
+      // 品檢登記不走一般動作流程 —— 先暫存到 qc_pending，等分批點貨才決定
+      // 入庫/重工/報廢，所以不檢查不良品/重工站，直接送出後就結束
+      if (actionType === 'qc') {
+        await apiFetch('/api/qc/pending', {
+          method: 'POST',
+          body: JSON.stringify({
+            product_id: pid, part_id: part?.id, stage_id: stageId,
+            sku_color: sku || '', qty: +qty, note, worker_id: workerId || null,
+            logged_at: loggedAtISO,
+          }),
+        })
+        setQty(''); setNote(''); setLoggedAt(toDatetimeLocal(new Date()))
+        reload(); loadQcPending(); onLogSubmit?.()
+        apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).then(d => {
+          setPartsData(d)
+          const curPart = d.find(p => p.name === partName)
+          if (curPart) setStages(curPart.stages || [])
+        }).catch(() => {})
+        return
+      }
+
       await apiFetch('/api/receive-logs', {
         method: 'POST',
         body: JSON.stringify({
@@ -3164,6 +3264,125 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         </div>
       )}
 
+      {/* Pending QC banner */}
+      {qcPending.length > 0 && (
+        <div style={{
+          background: '#EEF5FC', border: '0.5px solid #185FA5', borderRadius: 'var(--border-radius-lg, 12px)',
+          padding: '12px 16px',
+        }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon.AlertTriangle size={16} color="#185FA5" />
+              <span style={{ fontSize: 14, fontWeight: 500, color: '#0F3D6E' }}>待點貨品檢</span>
+              <span style={{
+                fontSize: 12, fontWeight: 600, color: '#185FA5',
+                background: 'rgba(24,95,165,0.1)', padding: '1px 8px', borderRadius: 10,
+              }}>{qcPending.length} 筆</span>
+            </div>
+            <button onClick={() => setQcOpen(o => !o)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+              color: '#185FA5', display: 'flex', alignItems: 'center',
+            }}>
+              {qcOpen ? <Icon.ChevronUp size={16} color="#185FA5" /> : <Icon.ChevronDown size={16} color="#185FA5" />}
+            </button>
+          </div>
+
+          {/* Expandable list */}
+          {qcOpen && (
+            <div style={{ marginTop: 10 }}>
+              {qcPending.map((q, i) => {
+                const isLast = i === qcPending.length - 1
+                const isExpanding = qcExpandId === q.id
+                const qcPart = partsData.find(p => p.id === q.part_id)
+                const qcStages = qcPart?.stages || []
+                return (
+                  <div key={q.id} style={{ borderBottom: isLast && !isExpanding ? 'none' : '0.5px solid rgba(0,0,0,0.06)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, color: '#3A6694', minWidth: 72 }}>{formatLogTime(q.created_at)}</span>
+                      <span style={{ fontSize: 13, color: '#0F3D6E', fontWeight: 500 }}>{q.part_name || '—'}</span>
+                      <span style={{ fontSize: 12, color: '#3A6694' }}>{q.stage_name || '—'}</span>
+                      {q.sku_color && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#3A6694' }}>
+                          <SkuDot name={q.sku_color} />{q.sku_color}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#185FA5', marginLeft: 'auto' }}>{q.qty} 件</span>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => {
+                          setQcExpandId(isExpanding ? null : q.id)
+                          setQcForm(isExpanding ? null : { qty: String(q.qty), action: 'stock', reworkStageId: null })
+                        }} style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                          border: `1px solid ${isExpanding ? '#185FA5' : '#9CC2E8'}`,
+                          background: isExpanding ? '#DCEAFA' : 'rgba(24,95,165,0.08)',
+                          color: '#185FA5', fontWeight: 500,
+                        }}>點貨</button>
+                      </div>
+                    </div>
+                    {/* Inline 點貨表單 */}
+                    {isExpanding && qcForm && (
+                      <div style={{ padding: '10px 0 12px 0', borderTop: '0.5px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: '#3A6694' }}>本次點貨數量</span>
+                          <input type="number" min="1" max={q.qty} value={qcForm.qty}
+                            onChange={e => setQcForm(f => ({ ...f, qty: e.target.value }))}
+                            style={{ width: 80, padding: '4px 8px', borderRadius: 6, border: '1px solid #9CC2E8', fontSize: 13 }} />
+                          <span style={{ fontSize: 12, color: '#3A6694' }}>/ {q.qty} 件</span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {[
+                            { key: 'stock',   label: '✓ 入庫',   color: '#1A7A3C', tint: '#E8F5E9' },
+                            { key: 'rework',  label: '送重工',   color: '#B07D00', tint: '#FEF3CD' },
+                            { key: 'scrap',   label: '報廢',     color: '#DC2626', tint: '#FCEBEB' },
+                            { key: 'pending', label: '繼續待點', color: '#666',    tint: '#F0EFE8' },
+                          ].map(o => (
+                            <button key={o.key} onClick={() => setQcForm(f => ({ ...f, action: o.key, reworkStageId: o.key === 'rework' ? f.reworkStageId : null }))} style={{
+                              padding: '6px 14px', borderRadius: 999, cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                              border: `1.5px solid ${qcForm.action === o.key ? o.color : 'var(--line-2)'}`,
+                              background: qcForm.action === o.key ? o.tint : '#fff',
+                              color: qcForm.action === o.key ? o.color : 'var(--text-2)',
+                            }}>{o.label}</button>
+                          ))}
+                        </div>
+
+                        {qcForm.action === 'rework' && (
+                          qcStages.length === 0
+                            ? <span style={{ fontSize: 12, color: '#3A6694' }}>此零件尚未設定加工站</span>
+                            : (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {qcStages.map(s => (
+                                  <button key={s.id} onClick={() => setQcForm(f => ({ ...f, reworkStageId: s.id }))} style={{
+                                    padding: '5px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                                    border: `1.5px solid ${qcForm.reworkStageId === s.id ? '#B07D00' : '#F0D9A0'}`,
+                                    background: qcForm.reworkStageId === s.id ? '#FEF3CD' : 'rgba(240,160,64,0.08)',
+                                    color: qcForm.reworkStageId === s.id ? '#7A5A00' : '#B07D00',
+                                  }}>
+                                    {s.factory_name} · {s.action_name}
+                                    {(s.in_transit || 0) > 0 && <span style={{ marginLeft: 4, fontSize: 11, opacity: 0.7 }}>({s.in_transit})</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )
+                        )}
+
+                        <div>
+                          <button onClick={() => processQC(q)} style={{
+                            padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            border: 'none', background: '#185FA5', color: '#fff',
+                          }}>確認登記</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
 
         {/* Form */}
@@ -3173,10 +3392,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           {/* Direction */}
           <div className="field">
             <label>方向</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               {[
-                { key: 'in',  label: '進貨', color: '#2E7D32', tint: '#E8F5E9' },
-                { key: 'out', label: '出貨', color: '#E64A19', tint: '#FBE9E7' },
+                { key: 'in',  label: '進貨',   color: '#2E7D32', tint: '#E8F5E9' },
+                { key: 'out', label: '出貨',   color: '#E64A19', tint: '#FBE9E7' },
+                { key: 'qc',  label: '品檢登記', color: '#185FA5', tint: '#E6F0FB' },
               ].map(d => (
                 <button key={d.key} onClick={() => setDirection(d.key)} style={{
                   padding: '14px', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 600,
@@ -3190,7 +3410,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
           {/* Source / destination */}
           <div className="field">
-            <label>{direction === 'in' ? '來源' : '去向'}</label>
+            <label>{direction === 'out' ? '去向' : '來源'}</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {sourceOptions.map(opt => (
                 <button key={opt.value} onClick={() => setSource(opt.value)} style={{

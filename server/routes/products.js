@@ -61,17 +61,21 @@ router.get('/:id/parts', async (req, res) => {
     const parts = await db.prepare('SELECT * FROM parts WHERE product_id=? ORDER BY sort_order').all(req.params.id)
     const partIds = parts.map(p => p.id)
 
-    const [skus, stages] = partIds.length
+    const [skus, stages, qcPending, qcStocked] = partIds.length
       ? await Promise.all([
           db.prepare(`SELECT * FROM part_skus WHERE part_id IN (${partIds.map(() => '?').join(',')}) ORDER BY id`).all(...partIds),
           db.prepare(`SELECT * FROM process_stages WHERE part_id IN (${partIds.map(() => '?').join(',')}) ORDER BY sort_order`).all(...partIds),
+          db.prepare(`SELECT part_id, SUM(qty) as qty FROM qc_pending WHERE part_id IN (${partIds.map(() => '?').join(',')}) AND qty > 0 GROUP BY part_id`).all(...partIds),
+          db.prepare(`SELECT part_id, SUM(qty) as qty FROM qc_logs WHERE part_id IN (${partIds.map(() => '?').join(',')}) AND action='stock' GROUP BY part_id`).all(...partIds),
         ])
-      : [[], []]
+      : [[], [], [], []]
 
     const result = parts.map(part => ({
       ...part,
       skus:   skus.filter(s => s.part_id === part.id),
       stages: stages.filter(s => s.part_id === part.id),
+      qc_pending_qty:    Number(qcPending.find(q => q.part_id === part.id)?.qty || 0),
+      qc_stocked_total:  Number(qcStocked.find(q => q.part_id === part.id)?.qty || 0),
     }))
     res.json(result)
   } catch (e) { res.status(500).json({ error: e.message }) }
