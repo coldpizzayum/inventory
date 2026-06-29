@@ -147,6 +147,20 @@ const SQLITE_SCHEMA = `
     adjusted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+  CREATE TABLE IF NOT EXISTS factories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    specialty TEXT,
+    phone TEXT,
+    contact_name TEXT,
+    address TEXT,
+    status TEXT DEFAULT 'active',
+    note TEXT,
+    color TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `
 
 const PG_SCHEMA = `
@@ -266,7 +280,58 @@ const PG_SCHEMA = `
     adjusted_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+  CREATE TABLE IF NOT EXISTS factories (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    specialty TEXT,
+    phone TEXT,
+    contact_name TEXT,
+    address TEXT,
+    status TEXT DEFAULT 'active',
+    note TEXT,
+    color TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
 `
+
+// ─── 廠商目錄 backfill ──────────────────────────────────────────────────────
+// process_stages 只存 factory_name 字串，沒有獨立的廠商表。新增「加工廠商」
+// 管理頁面時，把既有紀錄裡出現過的廠商名稱（連同它們做過的加工類型，當作
+// specialty 的初始值）灌一份進 factories，讓頁面一開始就有資料，不是空的。
+// 只在某個廠商名稱還沒有對應的 factories row 時才補，重複執行不會重複新增。
+function seedFactoriesFromStages(raw) {
+  const existing = new Set(raw.prepare('SELECT name FROM factories').all().map(r => r.name))
+  const rows = raw.prepare('SELECT DISTINCT factory_name, action_name FROM process_stages').all()
+  const specialties = new Map()
+  for (const r of rows) {
+    if (!r.factory_name) continue
+    if (!specialties.has(r.factory_name)) specialties.set(r.factory_name, new Set())
+    if (r.action_name) specialties.get(r.factory_name).add(r.action_name)
+  }
+  const insert = raw.prepare('INSERT INTO factories (name, specialty, status) VALUES (?, ?, ?)')
+  for (const [name, actions] of specialties) {
+    if (existing.has(name)) continue
+    insert.run(name, [...actions].join('・'), 'active')
+  }
+}
+
+async function seedFactoriesFromStagesPg(pool) {
+  const { rows: existingRows } = await pool.query('SELECT name FROM factories')
+  const existing = new Set(existingRows.map(r => r.name))
+  const { rows } = await pool.query('SELECT DISTINCT factory_name, action_name FROM process_stages')
+  const specialties = new Map()
+  for (const r of rows) {
+    if (!r.factory_name) continue
+    if (!specialties.has(r.factory_name)) specialties.set(r.factory_name, new Set())
+    if (r.action_name) specialties.get(r.factory_name).add(r.action_name)
+  }
+  for (const [name, actions] of specialties) {
+    if (existing.has(name)) continue
+    await pool.query('INSERT INTO factories (name, specialty, status) VALUES ($1, $2, $3)', [name, [...actions].join('・'), 'active'])
+  }
+}
 
 // ─── SQLite adapter ───────────────────────────────────────────────────────
 
@@ -324,6 +389,10 @@ function createSqliteAdapter() {
   if (workerCount.n === 0) {
     raw.exec("INSERT INTO workers (name) VALUES ('阿明'), ('小芳'), ('阿勗'), ('小林')")
   }
+
+  // One-time backfill: turn existing process_stages 廠商名稱 into factories rows
+  // so the 加工廠商 management page starts pre-populated, not empty
+  seedFactoriesFromStages(raw)
 
   function makeStmt(sql) {
     const stmt = raw.prepare(sql)
@@ -412,6 +481,9 @@ async function createPgAdapter() {
   if (parseInt(wc[0].n) === 0) {
     await pool.query("INSERT INTO workers (name) VALUES ('阿明'), ('小芳'), ('阿勗'), ('小林')")
   }
+
+  // One-time backfill: turn existing process_stages 廠商名稱 into factories rows
+  await seedFactoriesFromStagesPg(pool)
 
   // Convert ? placeholders → $1, $2, ...
   function toPg(sql) {

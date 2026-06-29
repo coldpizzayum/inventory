@@ -23,6 +23,7 @@ import packingItemRoutes from './routes/packingItems.js'
 import workersRoutes from './routes/workers.js'
 import defectLogsRoutes from './routes/defectLogs.js'
 import stockAdjustmentsRoutes from './routes/stockAdjustments.js'
+import factoriesRoutes from './routes/factories.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -43,6 +44,7 @@ app.use('/api/packing-items', packingItemRoutes)
 app.use('/api/workers', workersRoutes)
 app.use('/api/defect-logs', defectLogsRoutes)
 app.use('/api/stock-adjustments', stockAdjustmentsRoutes)
+app.use('/api/factories', factoriesRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 
