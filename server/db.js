@@ -161,6 +161,34 @@ const SQLITE_SCHEMA = `
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS qc_pending (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id TEXT,
+    part_id TEXT,
+    stage_id INTEGER,
+    sku_color TEXT,
+    qty INTEGER NOT NULL DEFAULT 0,
+    source_log_id INTEGER,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (part_id) REFERENCES parts(id)
+  );
+  CREATE TABLE IF NOT EXISTS qc_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    qc_pending_id INTEGER NOT NULL,
+    product_id TEXT,
+    part_id TEXT,
+    sku_color TEXT,
+    qty INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    rework_stage_id INTEGER,
+    worker_id INTEGER,
+    note TEXT,
+    logged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (qc_pending_id) REFERENCES qc_pending(id)
+  );
 `
 
 const PG_SCHEMA = `
@@ -293,6 +321,34 @@ const PG_SCHEMA = `
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS qc_pending (
+    id SERIAL PRIMARY KEY,
+    product_id TEXT,
+    part_id TEXT,
+    stage_id INTEGER,
+    sku_color TEXT,
+    qty INTEGER NOT NULL DEFAULT 0,
+    source_log_id INTEGER,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (part_id) REFERENCES parts(id)
+  );
+  CREATE TABLE IF NOT EXISTS qc_logs (
+    id SERIAL PRIMARY KEY,
+    qc_pending_id INTEGER NOT NULL,
+    product_id TEXT,
+    part_id TEXT,
+    sku_color TEXT,
+    qty INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    rework_stage_id INTEGER,
+    worker_id INTEGER,
+    note TEXT,
+    logged_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (qc_pending_id) REFERENCES qc_pending(id)
   );
 `
 

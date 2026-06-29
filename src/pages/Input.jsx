@@ -8,17 +8,23 @@ export const ACTION_LABEL = {
   ship:    '出貨（大貨）',
   rework:  '重工',
   scrap:   '報廢',
+  qc:      '品檢點貨',
 }
 
 export function resolveActionType(direction, source) {
+  if (direction === 'qc') return 'qc'
   if (direction === 'in') return source === 'raw' ? 'receive' : 'return'
   return source === 'ship' ? 'ship' : 'send'
+}
+
+export function dirColor(direction) {
+  return direction === 'in' ? '#2E7D32' : direction === 'qc' ? '#185FA5' : '#E64A19'
 }
 
 export function resolveStageId(stages, source, actionType) {
   if (!source || actionType === 'receive' || actionType === 'ship') return null
   const byFactory = stages.filter(s => s.factory_name === source)
-  if (actionType === 'return') {
+  if (actionType === 'return' || actionType === 'qc') {
     const withTransit = byFactory.find(s => (s.in_transit || 0) > 0)
     if (withTransit) return withTransit.id
     // Fallback: stale local data may show in_transit=0 after a send; pick stage with most activity
@@ -49,6 +55,13 @@ const IcoOut = () => (
   <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>
     <path d="M5 17h-2v-11a1 1 0 0 1 1-1h9v12m-4 0h6m4 0h2v-6h-8m0-5h5l3 5"/>
+  </svg>
+)
+const IcoClipboardCheck = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
+    <rect x="9" y="3" width="6" height="4" rx="2"/>
+    <path d="M9 14l2 2l4 -4"/>
   </svg>
 )
 const IcoRefresh = () => (
@@ -220,10 +233,11 @@ function BottomBar({ onBack, onNext, nextLabel='下一步 →', nextColor, disab
 function StepAction({ onPick }) {
   return (
     <div style={{ padding:24, display:'flex', flexDirection:'column', gap:14, maxWidth:480, margin:'0 auto', paddingBottom:32 }}>
-      <div style={{ fontSize:13, color:'#888', fontWeight:500, marginBottom:4 }}>這筆是進貨還是出貨？</div>
+      <div style={{ fontSize:13, color:'#888', fontWeight:500, marginBottom:4 }}>這筆是進貨、出貨，還是品檢？</div>
       {[
         { dir:'in',  label:'進貨', sub:'東西進到倉庫', color:'#2E7D32', icon:<IcoIn /> },
         { dir:'out', label:'出貨', sub:'東西離開倉庫', color:'#E64A19', icon:<IcoOut /> },
+        { dir:'qc',  label:'品檢登記', sub:'從加工廠回來，先暫存品檢', color:'#185FA5', icon:<IcoClipboardCheck /> },
       ].map(d => (
         <button key={d.dir} onClick={() => onPick(d.dir)} style={{
           padding:0, background:'#fff', border:'1px solid #EBEBEB', borderRadius:14,
@@ -245,7 +259,7 @@ function StepAction({ onPick }) {
 
 // ─── Step 2: Product / Part / SKU / Source ────────────────────
 function StepPicks({ direction, products, onBack, onNext }) {
-  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const color = dirColor(direction)
   const [pid, setPid] = useState(products[0]?.id ?? null)
   const [parts, setParts] = useState([])
   const [partId, setPartId] = useState(null)
@@ -326,27 +340,33 @@ function StepPicks({ direction, products, onBack, onNext }) {
       {/* Source / Destination */}
       {partId && skuReady && (
         <div>
-          <SHead>{direction==='in' ? '來源' : '去向'}</SHead>
+          <SHead>{direction==='out' ? '去向' : '來源'}</SHead>
           <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-            <Divider label={direction==='in' ? '── 新原料 ──' : '── 出給客戶 ──'} />
-            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-              <Pill big color={color}
-                active={source==='raw'||source==='ship'}
-                onClick={() => setSource(direction==='in' ? 'raw' : 'ship')}>
-                {direction==='in' ? '原料廠（新原料）' : '大貨出貨（給客戶）'}
-              </Pill>
-            </div>
-            {factories.length > 0 && (
+            {direction !== 'qc' && (
               <>
-                <Divider label={direction==='in' ? '── 加工回廠 ──' : '── 送去加工 ──'} />
+                <Divider label={direction==='in' ? '── 新原料 ──' : '── 出給客戶 ──'} />
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                  <Pill big color={color}
+                    active={source==='raw'||source==='ship'}
+                    onClick={() => setSource(direction==='in' ? 'raw' : 'ship')}>
+                    {direction==='in' ? '原料廠（新原料）' : '大貨出貨（給客戶）'}
+                  </Pill>
+                </div>
+              </>
+            )}
+            {factories.length > 0 ? (
+              <>
+                <Divider label={direction==='in' ? '── 加工回廠 ──' : direction==='qc' ? '── 從加工廠回來 ──' : '── 送去加工 ──'} />
                 <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                   {factories.map(f => (
                     <Pill key={f} big color={color} active={source===f} onClick={() => setSource(f)}>
-                      {f}（{direction==='in' ? '加工回廠' : '送去加工'}）
+                      {direction==='qc' ? f : `${f}（${direction==='in' ? '加工回廠' : '送去加工'}）`}
                     </Pill>
                   ))}
                 </div>
               </>
+            ) : direction === 'qc' && (
+              <span style={{ fontSize:13, color:'#A8A6A0' }}>此零件尚未設定加工站</span>
             )}
           </div>
         </div>
@@ -359,7 +379,7 @@ function StepPicks({ direction, products, onBack, onNext }) {
 
 // ─── Step 3: Qty + defect handling ───────────────────────────
 function StepQty({ direction, picks, onBack, onNext }) {
-  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const color = dirColor(direction)
   const [qty, setQty] = useState('')
   const [hasDefect, setHasDefect] = useState(false)
   const [defect, setDefect] = useState('')
@@ -389,7 +409,7 @@ function StepQty({ direction, picks, onBack, onNext }) {
       {/* Context bar */}
       <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:10, padding:'9px 14px', fontSize:13, display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
         <span style={{ padding:'2px 8px', borderRadius:4, background:color, color:'#fff', fontSize:12, fontWeight:600 }}>
-          {direction==='in'?'進貨':'出貨'}
+          {direction==='in'?'進貨':direction==='qc'?'品檢':'出貨'}
         </span>
         <span style={{ color:'#C9C7C0' }}>·</span>
         <b>{picks.productName}</b>
@@ -544,7 +564,7 @@ function StepQty({ direction, picks, onBack, onNext }) {
 
 // ─── Confirm page ─────────────────────────────────────────────
 function StepConfirm({ direction, picks, qtyData, workers, workerId, onWorkerChange, onBack, onSubmit, submitting }) {
-  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const color = dirColor(direction)
   const actionType = resolveActionType(direction, picks.source)
   const { qty, defectQty, lostQty, handling, reworkStageName } = qtyData
   const worker = (workers || []).find(w => w.id === workerId) || null
@@ -558,7 +578,7 @@ function StepConfirm({ direction, picks, qtyData, workers, workerId, onWorkerCha
     { l:'產品',              v: picks.productName },
     { l:'零件',              v: picks.partName },
     ...(picks.sku           ? [{ l:'SKU',    v: picks.sku }] : []),
-    { l: direction==='in'?'來源':'去向',
+    { l: direction==='out'?'去向':'來源',
       v: picks.source==='raw'?'原料廠（新原料）': picks.source==='ship'?'大貨出貨（給客戶）': picks.source },
     { l:'數量',              v: `${qty.toLocaleString()} 件` },
     ...(defectQty > 0       ? [{ l:'不良品', v:`${defectQty} 件`, red:true }] : []),
@@ -618,7 +638,7 @@ function StepConfirm({ direction, picks, qtyData, workers, workerId, onWorkerCha
 
 // ─── Done page ────────────────────────────────────────────────
 function StepDone({ direction, picks, qtyData, onSame, onNew }) {
-  const color = direction === 'in' ? '#2E7D32' : '#E64A19'
+  const color = dirColor(direction)
   const actionType = resolveActionType(direction, picks.source)
   const { qty, defectQty, lostQty, handling, reworkStageName } = qtyData
   const hasPending = defectQty > 0 && !handling
@@ -696,6 +716,15 @@ export default function Input() {
     setSubmitting(true)
     try {
       const base = { product_id:picks.productId, part_id:picks.partId, sku_color:picks.sku, worker_id:workerId || null }
+
+      // 品檢登記不進 receive_logs 一般動作流程 —— 先暫存到 qc_pending，
+      // 等之後分批點貨才決定入庫/重工/報廢
+      if (direction === 'qc') {
+        await fetch('/api/qc/pending', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ...base, stage_id:stageId, qty:qtyData.qty }) })
+        setStep('done')
+        return
+      }
 
       // Main log
       await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
