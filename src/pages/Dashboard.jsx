@@ -38,6 +38,8 @@ const Icon = {
   Gear: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>),
   // ti-logout
   Logout: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>),
+  // ti-building-factory
+  Factory: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 21l18 0"/><path d="M5 21v-10l4 -2v3l4 -2v3l4 -2v10"/><path d="M5 14l1 0"/><path d="M9 14l1 0"/><path d="M13 14l1 0"/><path d="M17 21l0 -4"/></svg>),
 }
 
 const NAV = [
@@ -48,6 +50,7 @@ const NAV = [
   { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
   null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
+  { id: 'factories', label: '加工廠商',     icon: Icon.Factory },
   { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
 ]
 
@@ -58,6 +61,7 @@ const PAGE_TITLES = {
   log:       '進出貨登記',
   settings:  '產品管理',
   orders:    '訂單管理',
+  factories: '加工廠商',
   brands:    '設計品牌管理',
 }
 
@@ -379,7 +383,7 @@ export default function Dashboard() {
 
         {/* Page content */}
         <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
-          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'brands' ? (
+          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'brands' && page !== 'factories' ? (
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
@@ -397,6 +401,7 @@ export default function Dashboard() {
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
+              {page === 'factories' && <FactoriesPage />}
               {page === 'brands'    && <BrandsPage products={products} />}
             </>
           )}
@@ -4591,6 +4596,195 @@ function OrdersPage({ orders, saveOrders, products, showNew, setShowNew, filterP
 }
 
 // ─── Page: Brands ─────────────────────────────────────────────
+// ─── Page: Factories（加工廠商）────────────────────────────────
+const FACTORY_AVATAR_COLORS = ['#444441', '#378ADD', '#E8461A', '#1A7A3C', '#B07D00', '#6A1B9A']
+function factoryAvatarColor(f) {
+  if (f.color) return f.color
+  const code = f.name ? f.name.charCodeAt(0) : 0
+  return FACTORY_AVATAR_COLORS[code % FACTORY_AVATAR_COLORS.length]
+}
+
+function FactoryStatusBadge({ status }) {
+  const active = status !== 'inactive'
+  return (
+    <span style={{
+      fontSize: 12, padding: '2px 8px', borderRadius: 4, fontWeight: 500,
+      background: active ? '#EAF3DE' : '#F1EFE8', color: active ? '#27500A' : '#888',
+    }}>
+      {active ? '合作中' : '暫停合作'}
+    </span>
+  )
+}
+
+function FactoriesPage() {
+  const [factories, setFactories] = useState([])
+  const [search, setSearch] = useState('')
+  const [modal, setModal] = useState(null) // null | { mode: 'new' } | { mode: 'edit', factory }
+
+  useEffect(() => { loadFactories() }, [])
+
+  async function loadFactories() {
+    try {
+      const res = await apiFetch('/api/factories')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setFactories(await res.json())
+    } catch (e) { alert('載入廠商失敗：' + e.message) }
+  }
+
+  async function toggleStatus(f) {
+    const next = f.status === 'inactive' ? 'active' : 'inactive'
+    if (next === 'inactive' && !confirm(`停用「${f.name}」？停用後不會影響現有加工紀錄。`)) return
+    try {
+      const res = await apiFetch(`/api/factories/${f.id}/status`, { method: 'PUT', body: JSON.stringify({ status: next }) })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      loadFactories()
+    } catch (e) { alert('更新狀態失敗：' + e.message) }
+  }
+
+  const q = search.trim()
+  const filtered = !q ? factories : factories.filter(f =>
+    f.name?.includes(q) || f.specialty?.includes(q) || f.phone?.includes(q) || f.contact_name?.includes(q)
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>加工廠商</h2>
+        <button className="btn primary" onClick={() => setModal({ mode: 'new' })}><Icon.Plus />新增廠商</button>
+      </div>
+
+      <input className="input" placeholder="搜尋廠商名稱、加工類型、聯絡方式..." value={search} onChange={e => setSearch(e.target.value)} />
+
+      <div className="card" style={{ padding: 0 }}>
+        <div style={{ padding: '14px 20px 0' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{filtered.length} 個廠商</span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 800 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-2)' }}>
+                {['廠商名稱', '加工類型', '聯絡電話', '聯絡人', '地址', '狀態', '備註', ''].map((h, i) => (
+                  <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無廠商資料</td></tr>}
+              {filtered.map(f => {
+                const isInHouse = f.name === '廠內'
+                return (
+                  <tr key={f.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                          background: factoryAvatarColor(f), color: '#fff',
+                          display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600,
+                        }}>
+                          {f.name ? f.name[0] : '?'}
+                        </span>
+                        <span style={{ fontWeight: 500 }}>{f.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-2)' }}>{f.specialty || '—'}</td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-2)' }}>{isInHouse ? '—' : (f.phone || '—')}</td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-2)' }}>{isInHouse ? '—' : (f.contact_name || '—')}</td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-2)' }}>{isInHouse ? '廠內自製' : (f.address || '—')}</td>
+                    <td style={{ padding: '10px 14px' }}><FactoryStatusBadge status={f.status} /></td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12 }}>{f.note || ''}</td>
+                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setModal({ mode: 'edit', factory: f })}>編輯</button>
+                        {!isInHouse && (
+                          <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => toggleStatus(f)}>
+                            {f.status === 'inactive' ? '恢復' : '停用'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modal && (
+        <FactoryModal
+          mode={modal.mode}
+          factory={modal.factory}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); loadFactories() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function FactoryModal({ mode, factory, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: factory?.name || '', specialty: factory?.specialty || '', phone: factory?.phone || '',
+    contact_name: factory?.contact_name || '', address: factory?.address || '', note: factory?.note || '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!form.name.trim()) return alert('請填寫廠商名稱')
+    setSaving(true)
+    try {
+      const url = mode === 'edit' ? `/api/factories/${factory.id}` : '/api/factories'
+      const res = await apiFetch(url, { method: mode === 'edit' ? 'PUT' : 'POST', body: JSON.stringify(form) })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
+      onSaved()
+    } catch (e) { alert('儲存失敗：' + e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 480, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{mode === 'edit' ? '編輯廠商' : '新增廠商'}</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+
+        <div className="field">
+          <label>廠商名稱 <span style={{ color: 'var(--bad)', fontSize: 10, fontWeight: 500 }}>必填</span></label>
+          <input autoFocus className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && save()} />
+        </div>
+        <div className="field">
+          <label>加工類型</label>
+          <input className="input" placeholder="例如：CNC 車銑・陽極處理" value={form.specialty} onChange={e => setForm(p => ({ ...p, specialty: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label>聯絡電話</label>
+          <input className="input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label>聯絡人</label>
+          <input className="input" value={form.contact_name} onChange={e => setForm(p => ({ ...p, contact_name: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label>地址</label>
+          <input className="input" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} />
+        </div>
+        <div className="field">
+          <label>備註</label>
+          <textarea className="input" rows={3} style={{ resize: 'vertical' }} value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} />
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" disabled={saving || !form.name.trim()} onClick={save}>
+            {saving ? '儲存中…' : (mode === 'edit' ? '儲存' : '新增')}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
+
 function BrandsPage({ products }) {
   const [brands, setBrands] = useState([])
   const [newName, setNewName] = useState('')
