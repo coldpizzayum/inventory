@@ -374,7 +374,9 @@ function StepQty({ direction, picks, onBack, onNext }) {
   const defectNum = hasDefect ? (parseInt(defect)||0) : 0
   const lostNum = hasLost ? (parseInt(lost)||0) : 0
   const showHandling = direction === 'in' && hasDefect && defectNum > 0
-  const reworkStages = (picks.partStages || []).filter(s => (s.in_transit||0) > 0)
+  // 工人有時想把不良品送去「目前沒有在途件數」的加工站重工（例如改送一個
+  // 還沒用過的站），所以這裡列出零件全部的加工站，不再只顯示有在途件數的
+  const reworkStages = picks.partStages || []
   const canNext = !!(qty && parseInt(qty)>0) && (handling !== 'rework' || reworkStageId)
 
   function go() {
@@ -501,21 +503,28 @@ function StepQty({ direction, picks, onBack, onNext }) {
             <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid #F0D9A0' }}>
               <div style={{ fontSize:12, color:'#666', marginBottom:8, fontWeight:500 }}>送回哪個加工站？</div>
               {reworkStages.length === 0
-                ? <span style={{ fontSize:12, color:'#A8A6A0' }}>目前無加工中數量的加工站</span>
+                ? <span style={{ fontSize:12, color:'#A8A6A0' }}>此零件尚未設定加工站</span>
                 : (
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {reworkStages.map(s => (
-                      <button key={s.id} onClick={() => { setReworkStageId(s.id); setReworkStageName(`${s.factory_name}・${s.action_name}`) }} style={{
-                        padding:'8px 14px', borderRadius:999, cursor:'pointer', fontFamily:'inherit',
-                        border:`1.5px solid ${reworkStageId===s.id?'#B07D00':'#F0D9A0'}`,
-                        background:reworkStageId===s.id?'#FEF3CD':'#fff',
-                        color:reworkStageId===s.id?'#7A5A00':'#555',
-                        fontSize:13, fontWeight:reworkStageId===s.id?600:400,
-                      }}>
-                        {s.factory_name}・{s.action_name}
-                        <span style={{ fontSize:11, opacity:0.7, marginLeft:4 }}>({s.in_transit})</span>
-                      </button>
-                    ))}
+                    {reworkStages.map(s => {
+                      const selected = reworkStageId === s.id
+                      return (
+                        <button key={s.id} onClick={() => { setReworkStageId(s.id); setReworkStageName(`${s.factory_name}・${s.action_name}`) }} style={{
+                          padding:'8px 14px', borderRadius:999, cursor:'pointer', fontFamily:'inherit',
+                          border:`1.5px solid ${selected?'#E8461A':'#D9D7D0'}`,
+                          background:selected?'#E8461A':'#fff',
+                          color:selected?'#fff':'#555',
+                          fontSize:13, fontWeight:selected?600:400,
+                        }}>
+                          {s.factory_name}・{s.action_name}
+                          {(s.in_transit||0) > 0 && (
+                            <span style={{ fontSize:11, marginLeft:4, color:selected?'rgba(255,255,255,0.8)':'#999' }}>
+                              （{s.in_transit} 件在途）
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
                 )
               }
