@@ -2822,6 +2822,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [workerId, setWorkerId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [editRow, setEditRow] = useState(null)
+  const [editPartsData, setEditPartsData] = useState([])
   const [pendingDefects, setPendingDefects] = useState([])
   const [defectOpen, setDefectOpen] = useState(true)
   const [reworkExpandId, setReworkExpandId] = useState(null)
@@ -2879,6 +2880,28 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
       reload(); onLogSubmit?.()
     } catch (e) { alert('刪除失敗：' + e.message) }
+  }
+
+  // 「最近紀錄」現在會顯示所有產品的紀錄（見 25dfa75），但編輯卡片裡的零件/
+  // 加工站下拉選單需要該筆紀錄所屬產品的零件清單 —— 跟目前分頁開著的產品不一定
+  // 相同，所以另外抓一份，不要混用分頁本身的 partsData
+  async function startEdit(log) {
+    setEditRow({
+      id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id,
+      sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0),
+      lost_qty: String(log.lost_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '',
+      logged_at: toDatetimeLocal(log.logged_at || new Date()),
+    })
+    if (log.product_id === pid) {
+      setEditPartsData(partsData)
+      return
+    }
+    try {
+      const res = await apiFetch(`/api/products/${log.product_id}/parts`)
+      setEditPartsData(res.ok ? await res.json() : [])
+    } catch {
+      setEditPartsData([])
+    }
   }
 
   async function saveEdit() {
@@ -3397,12 +3420,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                 {visibleLogs.map(log => {
                   const isEditing = editRow?.id === log.id
                   const isSel = selected.has(log.id)
-                  const isOtherProduct = selectedProduct && log.product_id !== selectedProduct.id
                   const ei = editRow // alias for brevity when isEditing
 
                   if (isEditing) {
                     const IS = { border: '0.5px solid #E8461A', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' }
-                    const editPart = partsData.find(p => p.id === ei.part_id)
+                    const editPart = editPartsData.find(p => p.id === ei.part_id)
                     const editStages = editPart?.stages || []
                     const editSkus = editPart?.skus || []
                     const stageNeeded = ['return', 'send', 'rework'].includes(ei.action_type)
@@ -3436,11 +3458,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                           <select value={ei.part_id || ''} style={IS}
                             onChange={e => {
                               const pid2 = e.target.value
-                              const p = partsData.find(x => x.id === pid2)
+                              const p = editPartsData.find(x => x.id === pid2)
                               setEditRow(r => ({ ...r, part_id: pid2, stage_id: null, sku_color: p?.skus?.[0]?.color_name || '' }))
                             }}>
                             <option value="">—</option>
-                            {partsData.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {editPartsData.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         </td>
                         <td style={{ padding: '6px 8px', minWidth: 130 }}>
@@ -3517,11 +3539,10 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       </td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 2 }}>
-                          <button title={isOtherProduct ? '請先切換到該紀錄的產品才能編輯' : '編輯'}
-                            disabled={isOtherProduct}
-                            onClick={() => setEditRow({ id: log.id, action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id, sku_color: log.sku_color || '', qty: String(log.qty), defect_qty: String(log.defect_qty || 0), lost_qty: String(log.lost_qty || 0), note: log.note || '', worker_id: log.worker_id ?? '', logged_at: toDatetimeLocal(log.logged_at || new Date()) })}
-                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: isOtherProduct ? 'not-allowed' : 'pointer', color: 'var(--text-3)', opacity: isOtherProduct ? 0.4 : 1, display: 'grid', placeItems: 'center' }}
-                            onMouseEnter={e => { if (!isOtherProduct) { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' } }}
+                          <button title="編輯"
+                            onClick={() => startEdit(log)}
+                            style={{ padding: '4px 6px', borderRadius: 5, border: '1px solid var(--line-2)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'grid', placeItems: 'center' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-1)' }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' }}>
                             <Icon.Edit />
                           </button>
