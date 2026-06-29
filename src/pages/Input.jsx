@@ -543,10 +543,11 @@ function StepQty({ direction, picks, onBack, onNext }) {
 }
 
 // ─── Confirm page ─────────────────────────────────────────────
-function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, submitting }) {
+function StepConfirm({ direction, picks, qtyData, workers, workerId, onWorkerChange, onBack, onSubmit, submitting }) {
   const color = direction === 'in' ? '#2E7D32' : '#E64A19'
   const actionType = resolveActionType(direction, picks.source)
   const { qty, defectQty, lostQty, handling, reworkStageName } = qtyData
+  const worker = (workers || []).find(w => w.id === workerId) || null
 
   const defectDesc = handling === 'rework' ? `重工（${reworkStageName||'—'}）`
     : handling === 'scrap' ? '報廢'
@@ -577,6 +578,33 @@ function StepConfirm({ direction, picks, qtyData, worker, onBack, onSubmit, subm
           </div>
         ))}
       </div>
+
+      {/* 登記人（選填）*/}
+      <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16 }}>
+        <div style={{ fontSize:12, color:'#888', marginBottom:10, fontWeight:500 }}>登記人（選填）</div>
+        {(workers || []).length === 0
+          ? <span style={{ fontSize:12, color:'#A8A6A0' }}>尚未設定登記人</span>
+          : (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+              {workers.map(w => {
+                const selected = workerId === w.id
+                return (
+                  <button key={w.id} onClick={() => onWorkerChange(selected ? null : w.id)} style={{
+                    padding:'8px 14px', borderRadius:999, cursor:'pointer', fontFamily:'inherit',
+                    border:`1.5px solid ${selected?'#E8461A':'#D9D7D0'}`,
+                    background:selected?'#E8461A':'#fff',
+                    color:selected?'#fff':'#555',
+                    fontSize:13, fontWeight:selected?600:400,
+                  }}>
+                    {w.name}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        }
+      </div>
+
       <BottomBar
         onBack={onBack}
         onNext={onSubmit}
@@ -642,8 +670,6 @@ function StepDone({ direction, picks, qtyData, onSame, onNew }) {
   )
 }
 
-// ─── Worker header & picker ───────────────────────────────────
-
 // ─── Main ─────────────────────────────────────────────────────
 export default function Input() {
   const [step, setStep] = useState('action')
@@ -651,13 +677,16 @@ export default function Input() {
   const [picks, setPicks] = useState(null)
   const [qtyData, setQtyData] = useState(null)
   const [products, setProducts] = useState([])
+  const [workers, setWorkers] = useState([])
+  const [workerId, setWorkerId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     fetch('/api/products').then(r => r.json()).then(setProducts).catch(() => {})
+    fetch('/api/workers').then(r => r.json()).then(setWorkers).catch(() => {})
   }, [])
 
-  function reset() { setStep('action'); setDirection(null); setPicks(null); setQtyData(null) }
+  function reset() { setStep('action'); setDirection(null); setPicks(null); setQtyData(null); setWorkerId(null) }
   function sameAgain() { setQtyData(null); setStep('qty') }
 
   async function handleSubmit() {
@@ -666,7 +695,7 @@ export default function Input() {
     const stageId = resolveStageId(picks.partStages, picks.source, actionType)
     setSubmitting(true)
     try {
-      const base = { product_id:picks.productId, part_id:picks.partId, sku_color:picks.sku, worker_id:null }
+      const base = { product_id:picks.productId, part_id:picks.partId, sku_color:picks.sku, worker_id:workerId || null }
 
       // Main log
       await fetch('/api/receive-logs', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -709,7 +738,8 @@ export default function Input() {
             onNext={d => { setQtyData(d); setStep('confirm') }} />
         )}
         {step === 'confirm' && picks && qtyData && (
-          <StepConfirm direction={direction} picks={picks} qtyData={qtyData} worker={null}
+          <StepConfirm direction={direction} picks={picks} qtyData={qtyData}
+            workers={workers} workerId={workerId} onWorkerChange={setWorkerId}
             onBack={() => setStep('qty')} onSubmit={handleSubmit} submitting={submitting} />
         )}
         {step === 'done' && picks && qtyData && (
