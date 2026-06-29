@@ -968,14 +968,14 @@ function StageCard({ stage }) {
         width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
         borderRadius: 'var(--r-md)', padding: '9px 11px',
         background: 'var(--bg-1)', border: '0.5px dashed var(--line-2)',
-        opacity: 0.7, display: 'flex', flexDirection: 'column',
+        opacity: 0.7, display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
           <span style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--text-3)', display: 'inline-block', flexShrink: 0 }} />
           <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-3)' }}>等待中</span>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
-        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
         <div className="num" style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-3)' }}>—</div>
       </div>
     )
@@ -998,15 +998,15 @@ function StageCard({ stage }) {
       style={{
         position: 'relative', width: 120, height: 110, flexShrink: 0, alignSelf: 'flex-start',
         borderRadius: 'var(--r-md)', padding: '9px 11px', border, background: bg,
-        display: 'flex', flexDirection: 'column',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
         <span style={{ width: 5, height: 5, borderRadius: 999, background: dotColor, flexShrink: 0, display: 'inline-block' }} />
         <span style={{ fontSize: 10, fontWeight: 500, color: statusColor }}>{statusLabel}</span>
       </div>
-      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.factory_name}</div>
-      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stage.action_name}</div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
         <span className="num" style={{ fontSize: 18, fontWeight: 500, color: mainNumColor }}>
           {mainNum !== null ? mainNum.toLocaleString() : '—'}
