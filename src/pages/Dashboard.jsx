@@ -257,7 +257,7 @@ export default function Dashboard() {
   }
   // 不再依 product_id 篩選——「最近紀錄」要顯示所有產品的紀錄
   async function loadLogs() {
-    const res = await apiFetch('/api/receive-logs?limit=200')
+    const res = await apiFetch('/api/receive-logs?limit=500')
     setLogs(await res.json())
   }
   async function loadTokens() {
@@ -3067,6 +3067,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [reworkExpandId, setReworkExpandId] = useState(null)
   const [reworkSelInline, setReworkSelInline] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
+  const [logPage, setLogPage] = useState(0)
   const [batchNoteMode, setBatchNoteMode] = useState(false)
   const [batchNote, setBatchNote] = useState('')
   const [loggedAt, setLoggedAt] = useState(() => toDatetimeLocal(new Date()))
@@ -3195,7 +3196,10 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
     } catch (e) { alert('儲存失敗：' + e.message) }
   }
 
-  const visibleLogs = logs.slice(0, 50)
+  const LOG_PAGE_SIZE = 50
+  const totalLogPages = Math.max(1, Math.ceil(logs.length / LOG_PAGE_SIZE))
+  useEffect(() => { setLogPage(0) }, [logs])
+  const visibleLogs = logs.slice(logPage * LOG_PAGE_SIZE, (logPage + 1) * LOG_PAGE_SIZE)
   const allVisible = visibleLogs.length > 0 && visibleLogs.every(l => selected.has(l.id))
   const someVisible = visibleLogs.some(l => selected.has(l.id))
 
@@ -3975,6 +3979,19 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               </tbody>
             </table>
           </div>
+          {logs.length > LOG_PAGE_SIZE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '12px 16px' }}>
+              <button onClick={() => setLogPage(p => Math.max(0, p - 1))} disabled={logPage === 0} style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--bg-1)', border: '1px solid var(--line-2)',
+                color: logPage === 0 ? 'var(--text-4)' : 'var(--text-2)', cursor: logPage === 0 ? 'default' : 'pointer',
+              }}>上一頁</button>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>第 {logPage + 1} / {totalLogPages} 頁</span>
+              <button onClick={() => setLogPage(p => Math.min(totalLogPages - 1, p + 1))} disabled={logPage >= totalLogPages - 1} style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 12, background: 'var(--bg-1)', border: '1px solid var(--line-2)',
+                color: logPage >= totalLogPages - 1 ? 'var(--text-4)' : 'var(--text-2)', cursor: logPage >= totalLogPages - 1 ? 'default' : 'pointer',
+              }}>下一頁</button>
+            </div>
+          )}
         </div>
       </div>
 
