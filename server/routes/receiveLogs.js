@@ -44,6 +44,11 @@ router.post('/', async (req, res) => {
     const { product_id, part_id, stage_id, sku_color, action_type, qty, defect_qty, note, worker_id, logged_at, lost_qty } = req.body
     if (!action_type || qty === undefined) return res.status(400).json({ error: '缺少必要欄位' })
 
+    if (part_id && !sku_color) {
+      const skuCount = await db.prepare('SELECT COUNT(*) as c FROM part_skus WHERE part_id=?').get(part_id)
+      if ((skuCount?.c || 0) > 1) return res.status(400).json({ error: '此零件有多個 SKU 顏色，請選擇顏色' })
+    }
+
     const dq = Math.max(0, defect_qty || 0)
     const lq = Math.max(0, lost_qty || 0)
     const net = qty - dq

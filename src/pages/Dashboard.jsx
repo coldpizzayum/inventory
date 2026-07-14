@@ -1158,6 +1158,18 @@ function calcPartStatus(stages) {
   return 'pending'
 }
 
+// 檢查 SKU 分列加總是否等於加工站的權威在途數（process_stages.in_transit）。
+// 歷史紀錄若缺顏色標記或顏色改過名，分色加總會兜不起來，此時整個零件退回單排卡片，
+// 避免顯示誤導性的分色數字。
+function skuBreakdownReliable(part, breakdown) {
+  const skuNames = (part.skus || []).map(s => s.color_name)
+  for (const stage of (part.stages || [])) {
+    const sum = skuNames.reduce((s, name) => s + (breakdown[name]?.[stage.id] || 0), 0)
+    if (sum !== (stage.in_transit || 0)) return false
+  }
+  return true
+}
+
 function SkuAddPopover({ rect, onAdd, onClose }) {
   const [input, setInput] = useState('')
   const ref = useRef(null)
@@ -1555,9 +1567,10 @@ function FactoryView({ parts }) {
       apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
         const sentSets = {}
         for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: data.breakdown || {}, sent: sentSets } }))
+        const breakdown = data.breakdown || {}
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
       }).catch(() => {
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {} } }))
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
       })
     }
   }
@@ -1633,12 +1646,15 @@ function FactoryView({ parts }) {
                           <polyline points="6 9 12 15 18 9"/>
                         </svg>
                       </div>
-                      {isExpanded && skus.length > 0 && (
+                      {isExpanded && skus.length > 0 && bd?.loading && (
+                        <div style={{ padding: '12px 13px', fontSize: 11, color: 'var(--text-4)', background: 'var(--bg-2)' }}>載入中…</div>
+                      )}
+                      {isExpanded && skus.length > 0 && bd && !bd.loading && bd.reliable && (
                         <div style={{ background: 'var(--bg-2)' }}>
                           {skus.map((sku, si) => {
                             const color = sku.color_name
-                            const breakdown = bd?.breakdown || {}
-                            const sent = bd?.sent || {}
+                            const breakdown = bd.breakdown || {}
+                            const sent = bd.sent || {}
                             return (
                               <div key={sku.id || color} style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 13px',
@@ -1649,9 +1665,7 @@ function FactoryView({ parts }) {
                                   <span style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{color}</span>
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
-                                  {bd?.loading ? (
-                                    <div style={{ padding: '10px 0', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
-                                  ) : (part.stages || []).flatMap((stage, i, arr) => {
+                                  {(part.stages || []).flatMap((stage, i, arr) => {
                                     const hasSent = sent[color]?.has(stage.id)
                                     const nextHasSent = i < arr.length - 1 && sent[color]?.has(arr[i + 1]?.id)
                                     return [
@@ -1676,7 +1690,7 @@ function FactoryView({ parts }) {
                           )}
                         </div>
                       )}
-                      {isExpanded && skus.length === 0 && (
+                      {isExpanded && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
                           {(part.stages || []).flatMap((stage, i, arr) => {
                             const hasData = (stage.total_sent || 0) > 0
@@ -1730,9 +1744,10 @@ function PartViewExpandable({ parts }) {
       apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
         const sentSets = {}
         for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: data.breakdown || {}, sent: sentSets } }))
+        const breakdown = data.breakdown || {}
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
       }).catch(() => {
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {} } }))
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
       })
     }
   }
@@ -1769,12 +1784,16 @@ function PartViewExpandable({ parts }) {
               </svg>
             </div>
 
-            {isOpen && skus.length > 0 && (
+            {isOpen && skus.length > 0 && bd?.loading && (
+              <div style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
+            )}
+
+            {isOpen && skus.length > 0 && bd && !bd.loading && bd.reliable && (
               <div>
                 {skus.map((sku, si) => {
                   const color = sku.color_name
-                  const breakdown = bd?.breakdown || {}
-                  const sent = bd?.sent || {}
+                  const breakdown = bd.breakdown || {}
+                  const sent = bd.sent || {}
                   return (
                     <div key={sku.id || color} style={{
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 14px',
@@ -1785,9 +1804,7 @@ function PartViewExpandable({ parts }) {
                         <span style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{color}</span>
                       </div>
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
-                        {bd?.loading ? (
-                          <div style={{ padding: '10px 0', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
-                        ) : stages.flatMap((stage, i, arr) => {
+                        {stages.flatMap((stage, i, arr) => {
                           const hasSent = sent[color]?.has(stage.id)
                           const nextHasSent = i < arr.length - 1 && sent[color]?.has(arr[i + 1]?.id)
                           return [
@@ -1813,7 +1830,7 @@ function PartViewExpandable({ parts }) {
               </div>
             )}
 
-            {isOpen && skus.length === 0 && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
+            {isOpen && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                 {stages.flatMap((stage, i, arr) => {
                   const hasData = (stage.total_sent || 0) > 0
@@ -3085,7 +3102,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
       const first = d[0]
       setPartName(first?.name || '')
       setStages(first?.stages || [])
-      setSku(first?.skus?.[0]?.color_name || '')
+      setSku(first?.skus?.length === 1 ? (first.skus[0].color_name ?? '') : '')
       setSource(null)
     })
   }, [pid])
@@ -3239,6 +3256,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   async function submit() {
     if (!qty || isNaN(+qty) || +qty <= 0) return alert('請輸入正確數量')
     if (!source) return alert('請選擇來源／去向')
+    if ((part?.skus?.length ?? 0) > 1 && !sku) return alert('請選擇 SKU 顏色')
     if (showDefectHandling && handling === 'rework' && !reworkStageId) return alert('請選擇重工站')
     setSubmitting(true)
     try {
@@ -3615,7 +3633,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               setPartName(name)
               const p = partsData.find(x => x.name === name)
               setStages(p?.stages || [])
-              setSku(p?.skus?.[0]?.color_name || '')
+              setSku(p?.skus?.length === 1 ? (p.skus[0].color_name ?? '') : '')
               setSource(null)
             }}>
               {partsData.map(p => <option key={p.id}>{p.name}</option>)}
@@ -3625,7 +3643,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           {/* SKU */}
           {part?.skus?.length > 1 && (
             <div className="field">
-              <label>SKU 顏色</label>
+              <label style={{ color: sku ? undefined : 'var(--bad)' }}>SKU 顏色 *</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {part.skus.map(s => (
                   <button key={s.id} onClick={() => setSku(s.color_name)} style={{
@@ -3639,6 +3657,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                   </button>
                 ))}
               </div>
+              {!sku && <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>請選擇顏色才能送出</div>}
             </div>
           )}
 
