@@ -1,14 +1,16 @@
 'use strict'
 
+// 只記錄、不關閉服務 —— 這裡以前會 process.exit(1)，導致任何一次偶發的小錯誤
+// （例如 ctx.reply() 剛好遇到 Telegram API 短暫逾時）就把整個 Bot 服務關掉，
+// Railway 重啟前這段時間所有工人的訊息都不會有回應。真正需要中止程序的
+// 只有啟動階段的致命錯誤，那邊 start() 自己有獨立的 process.exit(1)。
 process.on('uncaughtException', (err) => {
   console.error('未捕捉錯誤：', err.message)
   console.error(err.stack)
-  process.exit(1)
 })
 
 process.on('unhandledRejection', (reason) => {
   console.error('未處理的 Promise 錯誤：', reason)
-  process.exit(1)
 })
 
 const http = require('http')
@@ -70,7 +72,7 @@ bot.start(ctx => {
     '我會幫忙處理，或是回報給 Yiting。\n\n' +
     '📋 /history — 查看最近 5 筆紀錄\n' +
     '📝 /feedback — 回報問題或建議'
-  )
+  ).catch(err => console.error('/start reply 失敗：', err.message))
 })
 
 // ── /feedback ────────────────────────────────────────────────────────────────
@@ -85,7 +87,7 @@ bot.command('feedback', ctx => {
     '如果說不清楚，也可以直接說「我想聯絡 Yiting」，\n' +
     '我會給你聯絡方式。\n\n' +
     '（輸入 /cancel 取消）'
-  )
+  ).catch(err => console.error('/feedback reply 失敗：', err.message))
 })
 
 bot.command('cancel', ctx => {
@@ -93,7 +95,7 @@ bot.command('cancel', ctx => {
   if (session.feedbackMode) {
     session.feedbackMode = false
     session.feedbackHistory = []
-    ctx.reply('已取消回饋。')
+    ctx.reply('已取消回饋。').catch(err => console.error('/cancel reply 失敗：', err.message))
   }
 })
 
@@ -380,6 +382,15 @@ bot.on('text', async ctx => {
     session.history.pop()
     await ctx.reply('抱歉，發生錯誤，請重試。')
   }
+})
+
+// Telegraf 自己的錯誤攔截 —— 接住 middleware/handler 裡任何沒被個別 try/catch
+// 蓋到的錯誤，避免它們變成 unhandled rejection 而拖垮整個服務。
+bot.catch((err, ctx) => {
+  console.error(`Bot 處理更新時發生錯誤（update ${ctx.update.update_id}）：`, err.message)
+})
+adminBot?.catch((err, ctx) => {
+  console.error(`管理員 Bot 處理更新時發生錯誤（update ${ctx.update.update_id}）：`, err.message)
 })
 
 // ── Launch ───────────────────────────────────────────────────────────────────
