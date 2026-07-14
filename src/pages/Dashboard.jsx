@@ -91,8 +91,8 @@ async function apiFetch(url, opts = {}) {
 }
 
 // ─── Atoms ───────────────────────────────────────────────────
-function SkuDot({ name, size = 12 }) {
-  const c = SKU_COLORS[name] || '#999'
+function SkuDot({ name, hex, size = 12 }) {
+  const c = SKU_COLORS[name] || hex || '#999'
   return <span className="sku-dot" style={{ background: c, width: size, height: size }} title={name} />
 }
 
@@ -1395,7 +1395,7 @@ function PartView({ parts, skuEditMode, onReload }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', position: 'relative' }}>
                   {(part.skus || []).map(s => (
                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <SkuDot name={s.color_name} size={7} />
+                      <SkuDot name={s.color_name} hex={s.color_hex} size={7} />
                       {skuEditMode && (
                         <button onClick={() => deleteSku(part.id, s.id)} style={{
                           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
@@ -1555,7 +1555,7 @@ function FactoryView({ parts }) {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)', whiteSpace: 'nowrap' }}>{part.name}</span>
-                          {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+                          {(part.skus || []).slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={7} />)}
                         </div>
                         <span style={{ fontSize: 11, color: 'var(--text-3)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {actionLabel}
@@ -1635,7 +1635,7 @@ function PartViewExpandable({ parts }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
                 <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 9px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>{badge.label}</span>
-                {(part.skus || []).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} size={7} />)}
+                {(part.skus || []).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={7} />)}
               </div>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0, marginLeft: 8 }}>
@@ -2159,7 +2159,7 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate, reloadParts, produc
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-                            {row.skus.slice(0, 4).map(s => <SkuDot key={s} name={s} size={7} />)}
+                            {row.rawSkus.slice(0, 4).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={7} />)}
                             {row.skus.length > 4 && <span style={{ fontSize: 10, color: '#888' }}>+{row.skus.length - 4}</span>}
                           </div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
@@ -2201,7 +2201,7 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate, reloadParts, produc
                                 const removed = e.removedIds.includes(sku.id)
                                 return (
                                   <span key={sku.id} style={skuPill(removed ? '#F0EFE8' : '#fff', removed ? '#DDDBD3' : '#C9C8C2', removed ? '#A8A6A0' : '#1A1A1A')}>
-                                    <SkuDot name={sku.color_name} size={6} />
+                                    <SkuDot name={sku.color_name} hex={sku.color_hex} size={6} />
                                     <span style={{ textDecoration: removed ? 'line-through' : 'none' }}>{sku.color_name}</span>
                                     <button onClick={() => toggleSkuRemove(row.id, sku.id)}
                                       style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: removed ? '#A8A6A0' : '#9A9A95', display: 'grid', placeItems: 'center', marginLeft: 2 }}>
@@ -2553,7 +2553,7 @@ function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 2l4 4-4 4"/></svg>
           </span>
           <span style={{ fontSize: 15, fontWeight: 500 }}>{part.name}</span>
-          <div style={{ display: 'flex', gap: 4 }}>{part.skus?.map(s => <SkuDot key={s.id} name={s.color_name} />)}</div>
+          <div style={{ display: 'flex', gap: 4 }}>{part.skus?.map(s => <SkuDot key={s.id} name={s.color_name} hex={s.color_hex} />)}</div>
           <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{part.skus?.length || 0} 個 SKU</span>
         </button>
         <button onClick={onDelete} style={{
@@ -2592,7 +2592,7 @@ function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
                     <tr key={sku.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
                       <td style={{ padding: '10px 0' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <SkuDot name={sku.color_name} />{sku.color_name}
+                          <SkuDot name={sku.color_name} hex={sku.color_hex} />{sku.color_name}
                         </span>
                       </td>
                       {[receive, send, ret, ship, defect].map((v, i) => (
@@ -3464,7 +3464,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                     color: sku === s.color_name ? 'var(--accent)' : 'var(--text-2)',
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                   }}>
-                    <SkuDot name={s.color_name} />{s.color_name}
+                    <SkuDot name={s.color_name} hex={s.color_hex} />{s.color_name}
                   </button>
                 ))}
               </div>
