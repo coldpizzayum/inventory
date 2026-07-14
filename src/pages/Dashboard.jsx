@@ -1040,6 +1040,56 @@ function StageCard({ stage }) {
   )
 }
 
+// SKU 分列版加工站卡片 —— 追零件 tab 展開後，同一站底下每個顏色各自一張、比 StageCard 矮
+function SkuStageCard({ stage, skuColor, breakdown, sent }) {
+  const qty = breakdown[skuColor]?.[stage.id] || 0
+  const hasSent = sent[skuColor]?.has(stage.id) || false
+  const isCurrent = qty > 0
+  const isDone = !isCurrent && hasSent
+
+  if (!hasSent) {
+    return (
+      <div style={{
+        width: 110, height: 90, flexShrink: 0, alignSelf: 'flex-start',
+        borderRadius: 'var(--r-md)', padding: '7px 9px',
+        background: 'var(--bg-1)', border: '0.5px dashed var(--line-2)',
+        opacity: 0.35, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+          <span style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--text-3)', display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-3)' }}>等待中</span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
+        <div className="num" style={{ fontSize: 15, fontWeight: 500, color: 'var(--text-3)' }}>—</div>
+      </div>
+    )
+  }
+
+  const bg = isDone ? 'var(--bg-2)' : isCurrent ? '#FEF6F4' : 'var(--bg-1)'
+  const border = isCurrent ? '1.5px solid #E8461A' : '0.5px solid var(--line-1)'
+  const dotColor = isDone ? '#1A7A3C' : isCurrent ? '#E8461A' : 'var(--text-4)'
+  const statusLabel = isDone ? '完成' : '加工中'
+  const mainNum = isDone ? '✓' : qty
+  const mainNumColor = isCurrent ? '#E8461A' : isDone ? '#1A7A3C' : 'var(--text-1)'
+
+  return (
+    <div style={{
+      width: 110, height: 90, flexShrink: 0, alignSelf: 'flex-start',
+      borderRadius: 'var(--r-md)', padding: '7px 9px', border, background: bg,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+        <span style={{ width: 5, height: 5, borderRadius: 999, background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+        <span style={{ fontSize: 10, fontWeight: 500, color: dotColor }}>{statusLabel}</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.factory_name}</div>
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-1)', marginBottom: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', minWidth: 0 }}>{stage.action_name}</div>
+      <div className="num" style={{ fontSize: 15, fontWeight: 500, color: mainNumColor }}>{typeof mainNum === 'number' ? mainNum.toLocaleString() : mainNum}</div>
+    </div>
+  )
+}
+
 // 品檢中卡片 —— 零件從加工廠回來、還沒分批點貨決定入庫/重工/報廢時，
 // 接在加工站卡片流程的最後面（回廠之後、入庫之前）
 function QcPendingCard({ qty, stockedTotal }) {
@@ -1491,13 +1541,25 @@ function calcFactoryGroups(parts) {
 
 function FactoryView({ parts }) {
   const [expandedParts, setExpandedParts] = useState({})
+  const [breakdowns, setBreakdowns] = useState({})
   const groups = calcFactoryGroups(parts)
   if (groups.length === 0) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工廠資料，請先新增加工站</div>
   }
-  const togglePart = (factory, partId) => {
-    const key = `${factory}__${partId}`
-    setExpandedParts(e => ({ ...e, [key]: !e[key] }))
+  const togglePart = (factory, part) => {
+    const key = `${factory}__${part.id}`
+    const nowOpen = !expandedParts[key]
+    setExpandedParts(e => ({ ...e, [key]: nowOpen }))
+    if (nowOpen && (part.skus || []).length > 0 && !breakdowns[part.id]) {
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
+      apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
+        const sentSets = {}
+        for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: data.breakdown || {}, sent: sentSets } }))
+      }).catch(() => {
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {} } }))
+      })
+    }
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1541,10 +1603,12 @@ function FactoryView({ parts }) {
                   const actionLabel = [...new Set(activeStagesHere.map(s => s.action_name))].join('・')
                   const partKey = `${name}__${part.id}`
                   const isExpanded = expandedParts[partKey] ?? false
+                  const skus = part.skus || []
+                  const bd = breakdowns[part.id]
                   return (
                     <div key={part.id} style={{ borderBottom: pi < activeParts.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
                       <div
-                        onClick={() => togglePart(name, part.id)}
+                        onClick={() => togglePart(name, part)}
                         style={{
                           padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10,
                           cursor: 'pointer', transition: 'background .1s',
@@ -1569,7 +1633,50 @@ function FactoryView({ parts }) {
                           <polyline points="6 9 12 15 18 9"/>
                         </svg>
                       </div>
-                      {isExpanded && (
+                      {isExpanded && skus.length > 0 && (
+                        <div style={{ background: 'var(--bg-2)' }}>
+                          {skus.map((sku, si) => {
+                            const color = sku.color_name
+                            const breakdown = bd?.breakdown || {}
+                            const sent = bd?.sent || {}
+                            return (
+                              <div key={sku.id || color} style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 13px',
+                                borderBottom: si < skus.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+                              }}>
+                                <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
+                                  <SkuDot name={color} hex={sku.color_hex} size={10} />
+                                  <span style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{color}</span>
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                                  {bd?.loading ? (
+                                    <div style={{ padding: '10px 0', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
+                                  ) : (part.stages || []).flatMap((stage, i, arr) => {
+                                    const hasSent = sent[color]?.has(stage.id)
+                                    const nextHasSent = i < arr.length - 1 && sent[color]?.has(arr[i + 1]?.id)
+                                    return [
+                                      <SkuStageCard key={stage.id} stage={stage} skuColor={color} breakdown={breakdown} sent={sent} />,
+                                      ...(i < arr.length - 1 ? [
+                                        <span key={`a${i}`} style={{
+                                          color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                                          fontSize: hasSent || nextHasSent ? 14 : 12, opacity: hasSent || nextHasSent ? 1 : 0.3,
+                                        }}>›</span>,
+                                      ] : []),
+                                    ]
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                          {(part.qc_pending_qty || 0) > 0 && (
+                            <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                              {(part.stages || []).length > 0 && qcConnector('qc-a')}
+                              <QcPendingCard qty={part.qc_pending_qty} stockedTotal={part.qc_stocked_total || 0} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {isExpanded && skus.length === 0 && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
                           {(part.stages || []).flatMap((stage, i, arr) => {
                             const hasData = (stage.total_sent || 0) > 0
@@ -1604,6 +1711,7 @@ function FactoryView({ parts }) {
 
 function PartViewExpandable({ parts }) {
   const [expanded, setExpanded] = useState({})
+  const [breakdowns, setBreakdowns] = useState({})
   const statusConfig = {
     processing: { label: '加工中', bg: '#FEE9E4', color: '#E8461A' },
     returned:   { label: '已回廠', bg: 'var(--ok-tint)', color: 'var(--ok)' },
@@ -1613,6 +1721,22 @@ function PartViewExpandable({ parts }) {
   if (!parts.length) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無零件資料</div>
   }
+
+  function toggleOpen(part) {
+    const nowOpen = !(expanded[part.id] ?? false)
+    setExpanded(e => ({ ...e, [part.id]: nowOpen }))
+    if (nowOpen && (part.skus || []).length > 0 && !breakdowns[part.id]) {
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
+      apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
+        const sentSets = {}
+        for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: data.breakdown || {}, sent: sentSets } }))
+      }).catch(() => {
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {} } }))
+      })
+    }
+  }
+
   return (
     <div>
       {parts.map(part => {
@@ -1620,13 +1744,15 @@ function PartViewExpandable({ parts }) {
         const status = calcPartStatus(stages)
         const badge = statusConfig[status]
         const isOpen = expanded[part.id] ?? false
+        const skus = part.skus || []
+        const bd = breakdowns[part.id]
         return (
           <div key={part.id} style={{
             background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
             borderRadius: 'var(--r-lg)', marginBottom: 8, overflow: 'hidden',
           }}>
             <div
-              onClick={() => setExpanded(e => ({ ...e, [part.id]: !isOpen }))}
+              onClick={() => toggleOpen(part)}
               style={{
                 padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 cursor: 'pointer', borderBottom: isOpen && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) ? '0.5px solid var(--line-1)' : 'none',
@@ -1635,14 +1761,59 @@ function PartViewExpandable({ parts }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</span>
                 <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 9px', borderRadius: 999, background: badge.bg, color: badge.color, flexShrink: 0 }}>{badge.label}</span>
-                {(part.skus || []).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={7} />)}
+                {skus.map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={7} />)}
               </div>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0, marginLeft: 8 }}>
                 <polyline points="6 9 12 15 18 9"/>
               </svg>
             </div>
-            {isOpen && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
+
+            {isOpen && skus.length > 0 && (
+              <div>
+                {skus.map((sku, si) => {
+                  const color = sku.color_name
+                  const breakdown = bd?.breakdown || {}
+                  const sent = bd?.sent || {}
+                  return (
+                    <div key={sku.id || color} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 14px',
+                      borderBottom: si < skus.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+                    }}>
+                      <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
+                        <SkuDot name={color} hex={sku.color_hex} size={10} />
+                        <span style={{ fontSize: 11, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{color}</span>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                        {bd?.loading ? (
+                          <div style={{ padding: '10px 0', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
+                        ) : stages.flatMap((stage, i, arr) => {
+                          const hasSent = sent[color]?.has(stage.id)
+                          const nextHasSent = i < arr.length - 1 && sent[color]?.has(arr[i + 1]?.id)
+                          return [
+                            <SkuStageCard key={stage.id} stage={stage} skuColor={color} breakdown={breakdown} sent={sent} />,
+                            ...(i < arr.length - 1 ? [
+                              <span key={`a${i}`} style={{
+                                color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                                fontSize: hasSent || nextHasSent ? 14 : 12, opacity: hasSent || nextHasSent ? 1 : 0.3,
+                              }}>›</span>,
+                            ] : []),
+                          ]
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+                {(part.qc_pending_qty || 0) > 0 && (
+                  <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                    {stages.length > 0 && qcConnector('qc-a')}
+                    <QcPendingCard qty={part.qc_pending_qty} stockedTotal={part.qc_stocked_total || 0} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isOpen && skus.length === 0 && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                 {stages.flatMap((stage, i, arr) => {
                   const hasData = (stage.total_sent || 0) > 0

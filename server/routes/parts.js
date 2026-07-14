@@ -53,6 +53,34 @@ router.delete('/:partId/skus/:skuId', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+router.get('/:id/sku-breakdown', async (req, res) => {
+  try {
+    const db = getDb()
+    const rows = await db.prepare(
+      `SELECT sku_color, stage_id, action_type, qty FROM receive_logs
+       WHERE part_id=? AND action_type IN ('send','return','rework','qc')
+         AND sku_color IS NOT NULL AND sku_color != '' AND stage_id IS NOT NULL`
+    ).all(req.params.id)
+
+    const breakdown = {}
+    const sent = {}
+    for (const { sku_color, stage_id, action_type, qty } of rows) {
+      if (!breakdown[sku_color]) breakdown[sku_color] = {}
+      if (breakdown[sku_color][stage_id] === undefined) breakdown[sku_color][stage_id] = 0
+      if (action_type === 'send' || action_type === 'rework') breakdown[sku_color][stage_id] += qty
+      if (action_type === 'return') breakdown[sku_color][stage_id] -= qty
+      if (action_type === 'send') {
+        if (!sent[sku_color]) sent[sku_color] = new Set()
+        sent[sku_color].add(stage_id)
+      }
+    }
+    const sentOut = {}
+    for (const color in sent) sentOut[color] = [...sent[color]]
+
+    res.json({ breakdown, sent: sentOut })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.post('/:id/stages', requireAuth, async (req, res) => {
   try {
     const db = getDb()
