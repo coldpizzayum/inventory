@@ -3102,7 +3102,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
       const first = d[0]
       setPartName(first?.name || '')
       setStages(first?.stages || [])
-      setSku(first?.skus?.[0]?.color_name || '')
+      setSku(first?.skus?.length === 1 ? (first.skus[0].color_name ?? '') : '')
       setSource(null)
     })
   }, [pid])
@@ -3256,6 +3256,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   async function submit() {
     if (!qty || isNaN(+qty) || +qty <= 0) return alert('請輸入正確數量')
     if (!source) return alert('請選擇來源／去向')
+    if ((part?.skus?.length ?? 0) > 1 && !sku) return alert('請選擇 SKU 顏色')
     if (showDefectHandling && handling === 'rework' && !reworkStageId) return alert('請選擇重工站')
     setSubmitting(true)
     try {
@@ -3632,7 +3633,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
               setPartName(name)
               const p = partsData.find(x => x.name === name)
               setStages(p?.stages || [])
-              setSku(p?.skus?.[0]?.color_name || '')
+              setSku(p?.skus?.length === 1 ? (p.skus[0].color_name ?? '') : '')
               setSource(null)
             }}>
               {partsData.map(p => <option key={p.id}>{p.name}</option>)}
@@ -3642,7 +3643,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           {/* SKU */}
           {part?.skus?.length > 1 && (
             <div className="field">
-              <label>SKU 顏色</label>
+              <label style={{ color: sku ? undefined : 'var(--bad)' }}>SKU 顏色 *</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {part.skus.map(s => (
                   <button key={s.id} onClick={() => setSku(s.color_name)} style={{
@@ -3656,6 +3657,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                   </button>
                 ))}
               </div>
+              {!sku && <div style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>請選擇顏色才能送出</div>}
             </div>
           )}
 

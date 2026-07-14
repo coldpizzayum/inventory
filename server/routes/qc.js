@@ -38,6 +38,11 @@ router.post('/pending', async (req, res) => {
     const { product_id, part_id, stage_id, sku_color, qty, note, worker_id, logged_at } = req.body
     if (!part_id || !qty || qty <= 0) return res.status(400).json({ error: '缺少必要欄位' })
 
+    if (!sku_color) {
+      const skuCount = await db.prepare('SELECT COUNT(*) as c FROM part_skus WHERE part_id=?').get(part_id)
+      if ((skuCount?.c || 0) > 1) return res.status(400).json({ error: '此零件有多個 SKU 顏色，請選擇顏色' })
+    }
+
     const id = await db.transaction(async (tx) => {
       const logResult = logged_at
         ? await tx.prepare(
