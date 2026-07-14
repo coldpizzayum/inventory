@@ -5030,6 +5030,7 @@ function FactoriesPage() {
   const [factories, setFactories] = useState([])
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null) // null | { mode: 'new' } | { mode: 'edit', factory }
+  const [mergeTarget, setMergeTarget] = useState(null) // factory being merged away
 
   useEffect(() => { loadFactories() }, [])
 
@@ -5110,6 +5111,18 @@ function FactoriesPage() {
                             {f.status === 'inactive' ? '恢復' : '停用'}
                           </button>
                         )}
+                        {!isInHouse && (
+                          <button
+                            onClick={() => setMergeTarget(f)}
+                            style={{
+                              fontSize: 11, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                              color: 'var(--text-3)', border: '0.5px solid var(--line-2)', background: 'var(--bg-1)',
+                              transition: 'color .1s, border-color .1s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.color = '#185FA5'; e.currentTarget.style.borderColor = '#185FA5' }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}
+                          >合併</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -5128,7 +5141,102 @@ function FactoriesPage() {
           onSaved={() => { setModal(null); loadFactories() }}
         />
       )}
+
+      {mergeTarget && (
+        <FactoryMergeModal
+          factory={mergeTarget}
+          factories={factories}
+          onClose={() => setMergeTarget(null)}
+          onMerged={() => { setMergeTarget(null); loadFactories() }}
+        />
+      )}
     </div>
+  )
+}
+
+function FactoryMergeModal({ factory, factories, onClose, onMerged }) {
+  const others = factories.filter(f => f.id !== factory.id && f.name !== '廠內')
+  const [targetId, setTargetId] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const target = others.find(f => String(f.id) === String(targetId))
+
+  async function confirmMerge() {
+    if (!targetId || !target) return alert('請選擇合併目標')
+    if (!confirm(`確認將「${factory.name}」合併到「${target.name}」？此動作無法還原。`)) return
+    setSaving(true)
+    try {
+      const res = await apiFetch(`/api/factories/${factory.id}/merge`, {
+        method: 'POST', body: JSON.stringify({ target_id: targetId, note: note.trim() }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
+      onMerged()
+    } catch (e) { alert('合併失敗：' + e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 440, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>合併廠商</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: -6 }}>
+          將此廠商的所有加工紀錄合併到另一個廠商，合併後此廠商將被刪除。
+        </div>
+
+        <div className="field">
+          <label>來源廠商</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 'var(--r-md)' }}>
+            <span style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+              background: factoryAvatarColor(factory), color: '#fff',
+              display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600,
+            }}>{factory.name ? factory.name[0] : '?'}</span>
+            <span style={{ fontWeight: 500 }}>{factory.name}</span>
+          </div>
+        </div>
+
+        <div className="field">
+          <label>合併到 <span style={{ color: 'var(--bad)', fontSize: 10, fontWeight: 500 }}>必填</span></label>
+          <select className="select" value={targetId} onChange={e => setTargetId(e.target.value)}>
+            <option value="">請選擇目標廠商</option>
+            {others.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+          {target && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginTop: 8, background: 'var(--bg-2)', borderRadius: 'var(--r-md)' }}>
+              <span style={{
+                width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                background: factoryAvatarColor(target), color: '#fff',
+                display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 600,
+              }}>{target.name ? target.name[0] : '?'}</span>
+              <span style={{ fontWeight: 500 }}>{target.name}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <label>備註（選填）</label>
+          <textarea className="input" rows={2} style={{ resize: 'vertical' }}
+            placeholder="例如：花壇廠、主廠聯絡人改為..."
+            value={note} onChange={e => setNote(e.target.value)} />
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button
+            disabled={saving || !targetId}
+            onClick={confirmMerge}
+            style={{
+              padding: '7px 16px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 500,
+              background: '#185FA5', color: '#fff', border: '1px solid #185FA5',
+              cursor: saving || !targetId ? 'default' : 'pointer',
+              opacity: saving || !targetId ? 0.6 : 1,
+            }}
+          >{saving ? '合併中…' : '確認合併'}</button>
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 
@@ -5160,8 +5268,13 @@ function FactoryModal({ mode, factory, onClose, onSaved }) {
 
         <div className="field">
           <label>廠商名稱 <span style={{ color: 'var(--bad)', fontSize: 10, fontWeight: 500 }}>必填</span></label>
-          <input autoFocus className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+          <input autoFocus className="input" placeholder="例如：崇淮企業" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
             onKeyDown={e => e.key === 'Enter' && save()} />
+          {mode !== 'edit' && (
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
+              廠商名稱請使用正式名稱，備註欄可填寫暱稱或分廠說明
+            </div>
+          )}
         </div>
         <div className="field">
           <label>加工類型</label>
