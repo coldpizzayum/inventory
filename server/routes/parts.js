@@ -84,6 +84,29 @@ router.get('/:id/sku-breakdown', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// 找出讓 SKU 分列加總對不起來的原始紀錄，讓使用者可以直接在 UI 上修正：
+// 1. noStage —— 送出/回廠/重工/品檢紀錄完全沒有記錄加工站，沒辦法歸到任何一站
+// 2. unknownColor —— 有記錄加工站，但顏色名稱對不上這個零件目前任何一個已註冊的
+//    SKU（通常是顏色後來改過名，舊紀錄沒有跟著更新）
+router.get('/:id/log-issues', async (req, res) => {
+  try {
+    const db = getDb()
+    const skus = await db.prepare('SELECT color_name FROM part_skus WHERE part_id=?').all(req.params.id)
+    const validNames = new Set(skus.map(s => s.color_name))
+
+    const rows = await db.prepare(
+      `SELECT id, action_type, stage_id, sku_color, qty, defect_qty, lost_qty, note, worker_id, logged_at, part_id
+       FROM receive_logs WHERE part_id=? AND action_type IN ('send','return','rework','qc')
+       ORDER BY logged_at ASC`
+    ).all(req.params.id)
+
+    const noStage = rows.filter(r => !r.stage_id)
+    const unknownColor = rows.filter(r => r.stage_id && r.sku_color && !validNames.has(r.sku_color))
+
+    res.json({ noStage, unknownColor })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.post('/:id/stages', requireAuth, async (req, res) => {
   try {
     const db = getDb()
