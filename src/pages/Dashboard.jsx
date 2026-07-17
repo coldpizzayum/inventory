@@ -1568,14 +1568,18 @@ function InventoryView({ parts }) {
 
   function fetchBreakdown(part) {
     setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {} } }))
-    apiFetch(`/api/parts/${part.id}/warehouse-breakdown`).then(r => r.json()).then(data => {
+    apiFetch(`/api/parts/${part.id}/warehouse-breakdown`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      if (!data || typeof data.breakdown !== 'object') throw new Error('bad response')
       const breakdown = data.breakdown || {}
       const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
       const sum = skuNames.reduce((s, name) => s + (breakdown[name] || 0), 0)
       const reliable = sum === (part.warehouse_stock || 0)
       setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable } }))
     }).catch(() => {
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false } }))
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false, loadError: true } }))
     })
   }
 
@@ -1657,7 +1661,7 @@ function InventoryView({ parts }) {
               {isOpen && bd && !bd.loading && !bd.reliable && (
                 <div style={{ padding: '8px 16px', fontSize: 11, color: '#B54A1F', background: '#FEF6F4', borderTop: '1px solid #FCD6CC', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon.Warn />
-                  顏色分布資料不完整，暫時只顯示總庫存
+                  {bd.loadError ? '載入分色資料失敗，可能是伺服器還沒更新到最新版本，請稍後再試' : '顏色分布資料不完整，暫時只顯示總庫存'}
                 </div>
               )}
             </div>
