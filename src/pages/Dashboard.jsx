@@ -1565,6 +1565,7 @@ function InventoryView({ parts }) {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
+  const [mismatchModal, setMismatchModal] = useState(null)
 
   function fetchBreakdown(part) {
     setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {} } }))
@@ -1576,8 +1577,9 @@ function InventoryView({ parts }) {
       const breakdown = data.breakdown || {}
       const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
       const sum = skuNames.reduce((s, name) => s + (breakdown[name] || 0), 0)
-      const reliable = sum === (part.warehouse_stock || 0)
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable } }))
+      const expected = part.warehouse_stock || 0
+      const reliable = sum === expected
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable, sum, expected } }))
     }).catch(() => {
       setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false, loadError: true } }))
     })
@@ -1658,17 +1660,185 @@ function InventoryView({ parts }) {
                   ))}
                 </div>
               )}
-              {isOpen && bd && !bd.loading && !bd.reliable && (
+              {isOpen && bd && !bd.loading && !bd.reliable && bd.loadError && (
                 <div style={{ padding: '8px 16px', fontSize: 11, color: '#B54A1F', background: '#FEF6F4', borderTop: '1px solid #FCD6CC', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon.Warn />
-                  {bd.loadError ? '載入分色資料失敗，可能是伺服器還沒更新到最新版本，請稍後再試' : '顏色分布資料不完整，暫時只顯示總庫存'}
+                  載入分色資料失敗，可能是伺服器還沒更新到最新版本，請稍後再試
                 </div>
+              )}
+              {isOpen && bd && !bd.loading && !bd.reliable && !bd.loadError && (
+                <button
+                  onClick={() => setMismatchModal({ part, sum: bd.sum, expected: bd.expected })}
+                  style={{
+                    width: '100%', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6,
+                    background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
+                    fontSize: 11, color: '#B54A1F', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                  }}
+                >
+                  <Icon.Warn />
+                  顏色分布資料不完整，暫時只顯示總庫存
+                  <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
+                </button>
               )}
             </div>
           )
         })}
       </div>
+      {mismatchModal && (
+        <WarehouseMismatchModal
+          part={mismatchModal.part} sum={mismatchModal.sum} expected={mismatchModal.expected}
+          onClose={() => setMismatchModal(null)}
+          onFixed={() => { fetchBreakdown(mismatchModal.part); setMismatchModal(null) }}
+        />
+      )}
     </div>
+  )
+}
+
+const WAREHOUSE_FIX_NONE = '__NONE__'
+
+function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
+  const [issues, setIssues] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [colorEdits, setColorEdits] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    apiFetch(`/api/parts/${part.id}/warehouse-log-issues`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      if (!data || !Array.isArray(data.unknownColor)) throw new Error('bad response')
+      setIssues(data)
+      setLoading(false)
+    }).catch(() => { setLoadError(true); setLoading(false) })
+  }, [part.id])
+
+  const skus = part.skus || []
+  const editCount = Object.values(colorEdits).filter(Boolean).length
+
+  async function applyFixes() {
+    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄')
+    if (!confirm(`確認套用 ${editCount} 筆修正？這會重新計算倉庫庫存數字，此動作無法還原。`)) return
+    setSaving(true)
+    let failed = 0
+    for (const [id, color] of Object.entries(colorEdits)) {
+      if (!color) continue
+      const log = issues.unknownColor.find(l => String(l.id) === String(id))
+      if (!log) continue
+      try {
+        const res = await apiFetch(`/api/receive-logs/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id,
+            sku_color: color === WAREHOUSE_FIX_NONE ? '' : color, qty: log.qty, defect_qty: log.defect_qty || 0,
+            lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
+            logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    setSaving(false)
+    if (failed > 0) alert(`${failed} 筆修正失敗，其餘已完成`)
+    onFixed()
+  }
+
+  const diff = sum - expected
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 640, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>「{part.name}」顏色分布資料不完整</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+          這個零件的分色庫存加總，跟倉庫實際總庫存對不起來：
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-2)' }}>
+                {['分色加總', '實際總庫存', '差異'].map((h, i) => (
+                  <th key={i} style={{ padding: '6px 10px', textAlign: i === 0 ? 'left' : 'right', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="num" style={{ padding: '6px 10px' }}>{sum.toLocaleString()}</td>
+                <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{expected.toLocaleString()}</td>
+                <td className="num" style={{ padding: '6px 10px', textAlign: 'right', color: '#E8461A', fontWeight: 500 }}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>載入相關紀錄中…</div>
+        ) : loadError ? (
+          <div style={{ padding: '10px 12px', fontSize: 12, color: '#B54A1F', background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 'var(--r-md)' }}>
+            載入詳細紀錄失敗，可能是伺服器還沒更新到最新版本，請稍後再試一次。
+          </div>
+        ) : (
+          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {issues.unknownColor.length > 0 ? (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>顏色名稱對不上的紀錄（{issues.unknownColor.length} 筆）</div>
+                <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
+                  這幾筆記錄的顏色名稱，跟這個零件現在註冊的顏色都對不上（通常是顏色改過名）。選擇對應的現在顏色即可修正。
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-2)' }}>
+                        {['時間', '動作', '目前顏色', '數量', '改成'].map((h, i) => (
+                          <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {issues.unknownColor.map(log => (
+                        <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                          <td style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
+                          <td style={{ padding: '6px 8px' }}><ActionTag type={log.action_type} /></td>
+                          <td style={{ padding: '6px 8px' }}>{log.sku_color}</td>
+                          <td className="num" style={{ padding: '6px 8px' }}>{log.qty}</td>
+                          <td style={{ padding: '6px 8px' }}>
+                            <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
+                              value={colorEdits[log.id] || ''}
+                              onChange={e => setColorEdits(c => ({ ...c, [log.id]: e.target.value }))}>
+                              <option value="">— 不變更 —</option>
+                              <option value={WAREHOUSE_FIX_NONE}>無顏色</option>
+                              {skus.map(s => <option key={s.id} value={s.color_name}>{s.color_name}</option>)}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                沒有找到顏色名稱對不上的紀錄。這個落差可能來自品檢點貨批次入庫或其他無法自動比對的操作，建議人工核對。
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>關閉</button>
+          {!loading && !loadError && issues.unknownColor.length > 0 && (
+            <button className="btn primary" disabled={saving || editCount === 0} onClick={applyFixes}>
+              {saving ? '套用中…' : `套用修正（${editCount}）`}
+            </button>
+          )}
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 

@@ -86,6 +86,8 @@ router.get('/:id/sku-breakdown', async (req, res) => {
 
 // 依顏色拆解倉庫庫存（parts.warehouse_stock 只有總數，沒有分色）。
 // 邏輯跟 warehouse_stock 本身的計算方式一致：receive/return 進倉、send/ship 出倉。
+// 另外品檢點貨批次入庫（qc_logs, action='stock'）也會直接加進 warehouse_stock，
+// 但寫在 qc_logs 而不是 receive_logs，這裡要一起算，不然分色加總會少算。
 router.get('/:id/warehouse-breakdown', async (req, res) => {
   try {
     const db = getDb()
@@ -103,7 +105,37 @@ router.get('/:id/warehouse-breakdown', async (req, res) => {
       if (action_type === 'send' || action_type === 'ship') breakdown[color] -= qty
     }
 
+    const qcRows = await db.prepare(
+      `SELECT sku_color, qty FROM qc_logs WHERE part_id=? AND action='stock'`
+    ).all(req.params.id)
+    for (const { sku_color, qty } of qcRows) {
+      const color = sku_color || '未分類'
+      if (breakdown[color] === undefined) breakdown[color] = 0
+      breakdown[color] += qty
+    }
+
     res.json({ breakdown })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// 找出讓「倉庫庫存分色加總」對不起來的原始紀錄——顏色名稱對不上這個零件目前
+// 任何一個已註冊 SKU 的 receive_logs 紀錄（通常是顏色改過名，舊紀錄沒跟著更新）。
+// 這裡沒有「缺加工站」這個分類，因為倉庫庫存沒有加工站這個維度。
+router.get('/:id/warehouse-log-issues', async (req, res) => {
+  try {
+    const db = getDb()
+    const skus = await db.prepare('SELECT color_name FROM part_skus WHERE part_id=?').all(req.params.id)
+    const validNames = new Set(skus.map(s => s.color_name))
+
+    const rows = await db.prepare(
+      `SELECT id, action_type, stage_id, sku_color, qty, defect_qty, lost_qty, note, worker_id, logged_at, part_id
+       FROM receive_logs WHERE part_id=? AND action_type IN ('receive','send','ship','return')
+       ORDER BY logged_at ASC`
+    ).all(req.params.id)
+
+    const unknownColor = rows.filter(r => r.sku_color && !validNames.has(r.sku_color))
+
+    res.json({ unknownColor })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
