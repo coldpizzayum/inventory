@@ -1557,6 +1557,118 @@ function calcFactoryGroups(parts) {
   })
 }
 
+// 庫存 tab —— 跨產品攤平列出每個零件的倉庫總庫存，展開可看依 SKU 顏色拆分的數字。
+// warehouse_stock 本身只有總數（跟 process_stages.in_transit 一樣），分色數字是
+// 從 receive_logs 現算現拆，同樣可能因為歷史紀錄缺顏色/加工站對不起來，此時只
+// 顯示總庫存並提示資料不完整。
+function InventoryView({ parts }) {
+  const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState({})
+  const [breakdowns, setBreakdowns] = useState({})
+
+  function fetchBreakdown(part) {
+    setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {} } }))
+    apiFetch(`/api/parts/${part.id}/warehouse-breakdown`).then(r => r.json()).then(data => {
+      const breakdown = data.breakdown || {}
+      const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
+      const sum = skuNames.reduce((s, name) => s + (breakdown[name] || 0), 0)
+      const reliable = sum === (part.warehouse_stock || 0)
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable } }))
+    }).catch(() => {
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false } }))
+    })
+  }
+
+  function toggle(part) {
+    if (!(part.skus || []).length) return
+    const nowOpen = !(expanded[part.id] ?? false)
+    setExpanded(e => ({ ...e, [part.id]: nowOpen }))
+    if (nowOpen && !breakdowns[part.id]) fetchBreakdown(part)
+  }
+
+  if (!parts.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無零件資料</div>
+  }
+
+  const q = search.trim()
+  const filtered = !q ? parts : parts.filter(p => p.name?.includes(q) || p.product_name?.includes(q))
+  const sorted = [...filtered].sort((a, b) => (b.warehouse_stock || 0) - (a.warehouse_stock || 0))
+  const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件或產品名稱..." value={search} onChange={e => setSearch(e.target.value)} />
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {sorted.length === 0 && <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>沒有符合的零件</div>}
+        {sorted.map((part, pi) => {
+          const isOpen = expanded[part.id] ?? false
+          const skus = part.skus || []
+          const bd = breakdowns[part.id]
+          return (
+            <div key={part.id} style={{ borderBottom: pi < sorted.length - 1 ? '0.5px solid var(--line-1)' : 'none' }}>
+              <div
+                onClick={() => toggle(part)}
+                style={{
+                  padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+                  cursor: skus.length > 0 ? 'pointer' : 'default', transition: 'background .1s',
+                }}
+                onMouseEnter={e => { if (skus.length > 0) e.currentTarget.style.background = 'var(--bg-2)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{part.product_name || ''}</div>
+                </div>
+                {skus.length > 0 && (
+                  <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                    {skus.slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={8} />)}
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0, minWidth: 90, justifyContent: 'flex-end' }}>
+                  <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(part.warehouse_stock || 0).toLocaleString()}</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
+                </div>
+                {skus.length > 0 && (
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0 }}>
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                )}
+              </div>
+              {isOpen && bd?.loading && (
+                <div style={{ padding: '10px 16px', fontSize: 11, color: 'var(--text-4)', background: 'var(--bg-2)' }}>載入中…</div>
+              )}
+              {isOpen && bd && !bd.loading && bd.reliable && (
+                <div style={{ background: 'var(--bg-2)', padding: '8px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {skus.map(s => (
+                    <div key={s.id || s.color_name} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                      background: 'var(--bg-1)', border: '0.5px solid var(--line-1)', borderRadius: 999,
+                    }}>
+                      <SkuDot name={s.color_name} hex={s.color_hex} size={9} />
+                      <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{s.color_name}</span>
+                      <span className="num" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{(bd.breakdown[s.color_name] || 0).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isOpen && bd && !bd.loading && !bd.reliable && (
+                <div style={{ padding: '8px 16px', fontSize: 11, color: '#B54A1F', background: '#FEF6F4', borderTop: '1px solid #FCD6CC', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon.Warn />
+                  顏色分布資料不完整，暫時只顯示總庫存
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function FactoryView({ parts }) {
   const [expandedParts, setExpandedParts] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
@@ -2232,7 +2344,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
   useEffect(() => {
     if (!products.length) return
-    if (tab === 'factory') _loadAllParts()
+    if (tab === 'factory' || tab === 'inventory') _loadAllParts()
     else if (tab === 'part') {
       if (!tabBProd && products[0]) setTabBProd(products[0])
       else if (tabBProd) _loadTabB(tabBProd.id)
@@ -2261,7 +2373,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
   async function _loadAllParts() {
     const results = await Promise.all(
-      products.map(p => apiFetch(`/api/products/${p.id}/parts`).then(r => r.json()).catch(() => []))
+      products.map(p => apiFetch(`/api/products/${p.id}/parts`).then(r => r.json()).then(data => data.map(part => ({ ...part, product_name: p.name }))).catch(() => []))
     )
     setAllParts(results.flat())
   }
@@ -2344,6 +2456,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
             { key: 'factory', label: '追廠商' },
             { key: 'part',    label: '追零件' },
             { key: 'product', label: '追產品' },
+            { key: 'inventory', label: '庫存' },
           ].map(({ key, label }) => {
             const active = tab === key
             return (
@@ -2440,6 +2553,11 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
           </div>
           <PartView parts={tabCParts} skuEditMode={skuEditMode} onReload={() => _loadTabC(curProd?.id)} />
         </>
+      )}
+
+      {/* Tab D: 庫存 */}
+      {tab === 'inventory' && (
+        <InventoryView parts={allParts} />
       )}
 
       {editPicker && (
