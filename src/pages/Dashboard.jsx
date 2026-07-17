@@ -1717,6 +1717,15 @@ function FactoryView({ parts }) {
                         </div>
                         )
                       })()}
+                      {isExpanded && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
+                        <div style={{
+                          padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 6,
+                          background: '#FEF6F4', borderTop: '1px solid #FCD6CC', fontSize: 11, color: '#B54A1F',
+                        }}>
+                          <Icon.Warn />
+                          顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
+                        </div>
+                      )}
                       {isExpanded && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
                           {(part.stages || []).flatMap((stage, i, arr) => {
@@ -1882,6 +1891,16 @@ function PartViewExpandable({ parts }) {
               </div>
               )
             })()}
+
+            {isOpen && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
+              <div style={{
+                padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6,
+                background: '#FEF6F4', borderTop: '1px solid #FCD6CC', fontSize: 11, color: '#B54A1F',
+              }}>
+                <Icon.Warn />
+                顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
+              </div>
+            )}
 
             {isOpen && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
