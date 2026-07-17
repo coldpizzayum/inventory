@@ -1160,15 +1160,20 @@ function calcPartStatus(stages) {
 
 // 檢查 SKU 分列加總是否等於加工站的權威在途數（process_stages.in_transit）。
 // 「未分類」桶已經把沒標顏色的歷史紀錄都算進來，所以正常情況下加總會兜起來；
-// 如果還是兜不起來，代表顏色本身改過名對不上（不是單純缺標記），此時整個零件
-// 退回單排卡片，避免顯示誤導性的分色數字。
-function skuBreakdownReliable(part, breakdown) {
+// 如果還是兜不起來，代表顏色本身改過名對不上、或歷史紀錄連加工站都沒標記
+// （不是單純缺顏色標記），此時整個零件退回單排卡片，避免顯示誤導性的分色數字。
+// 回傳每一站對不起來的細節，讓 UI 可以點開解釋給使用者看。
+function diagnoseSkuBreakdown(part, breakdown) {
   const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
+  const mismatches = []
   for (const stage of (part.stages || [])) {
     const sum = skuNames.reduce((s, name) => s + (breakdown[name]?.[stage.id] || 0), 0)
-    if (sum !== (stage.in_transit || 0)) return false
+    const expected = stage.in_transit || 0
+    if (sum !== expected) {
+      mismatches.push({ stageId: stage.id, factoryName: stage.factory_name, actionName: stage.action_name, sum, expected })
+    }
   }
-  return true
+  return { reliable: mismatches.length === 0, mismatches }
 }
 
 function SkuAddPopover({ rect, onAdd, onClose }) {
@@ -1555,6 +1560,7 @@ function calcFactoryGroups(parts) {
 function FactoryView({ parts }) {
   const [expandedParts, setExpandedParts] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
+  const [mismatchModal, setMismatchModal] = useState(null)
   const groups = calcFactoryGroups(parts)
   if (groups.length === 0) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工廠資料，請先新增加工站</div>
@@ -1569,13 +1575,14 @@ function FactoryView({ parts }) {
         const sentSets = {}
         for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
         const breakdown = data.breakdown || {}
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, ...diagnoseSkuBreakdown(part, breakdown) } }))
       }).catch(() => {
         setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
       })
     }
   }
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {groups.map(({ name, totalInTransit, activeParts, isActive, isDone, isWaiting }) => {
         const badge = isActive
@@ -1718,13 +1725,18 @@ function FactoryView({ parts }) {
                         )
                       })()}
                       {isExpanded && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
-                        <div style={{
-                          padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 6,
-                          background: '#FEF6F4', borderTop: '1px solid #FCD6CC', fontSize: 11, color: '#B54A1F',
-                        }}>
+                        <button
+                          onClick={() => setMismatchModal({ part, mismatches: bd.mismatches || [] })}
+                          style={{
+                            width: '100%', padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 6,
+                            background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
+                            fontSize: 11, color: '#B54A1F', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                          }}
+                        >
                           <Icon.Warn />
                           顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
-                        </div>
+                          <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
+                        </button>
                       )}
                       {isExpanded && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
@@ -1756,12 +1768,17 @@ function FactoryView({ parts }) {
         )
       })}
     </div>
+    {mismatchModal && (
+      <SkuMismatchModal part={mismatchModal.part} mismatches={mismatchModal.mismatches} onClose={() => setMismatchModal(null)} />
+    )}
+    </>
   )
 }
 
 function PartViewExpandable({ parts }) {
   const [expanded, setExpanded] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
+  const [mismatchModal, setMismatchModal] = useState(null)
   const statusConfig = {
     processing: { label: '加工中', bg: '#FEE9E4', color: '#E8461A' },
     returned:   { label: '已回廠', bg: 'var(--ok-tint)', color: 'var(--ok)' },
@@ -1781,7 +1798,7 @@ function PartViewExpandable({ parts }) {
         const sentSets = {}
         for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
         const breakdown = data.breakdown || {}
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
+        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, ...diagnoseSkuBreakdown(part, breakdown) } }))
       }).catch(() => {
         setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
       })
@@ -1789,6 +1806,7 @@ function PartViewExpandable({ parts }) {
   }
 
   return (
+    <>
     <div>
       {parts.map(part => {
         const stages = part.stages || []
@@ -1893,13 +1911,18 @@ function PartViewExpandable({ parts }) {
             })()}
 
             {isOpen && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
-              <div style={{
-                padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6,
-                background: '#FEF6F4', borderTop: '1px solid #FCD6CC', fontSize: 11, color: '#B54A1F',
-              }}>
+              <button
+                onClick={() => setMismatchModal({ part, mismatches: bd.mismatches || [] })}
+                style={{
+                  width: '100%', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6,
+                  background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
+                  fontSize: 11, color: '#B54A1F', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                }}
+              >
                 <Icon.Warn />
                 顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
-              </div>
+                <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
+              </button>
             )}
 
             {isOpen && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
@@ -1927,6 +1950,56 @@ function PartViewExpandable({ parts }) {
         )
       })}
     </div>
+    {mismatchModal && (
+      <SkuMismatchModal part={mismatchModal.part} mismatches={mismatchModal.mismatches} onClose={() => setMismatchModal(null)} />
+    )}
+    </>
+  )
+}
+
+function SkuMismatchModal({ part, mismatches, onClose }) {
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 480, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>「{part.name}」顏色分列資料不完整</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+          這個零件暫時無法依顏色分別顯示在途數量，因為下面這些加工站的「各顏色加總」跟「該站實際在途數」對不起來——通常是早期的送出/回廠登記沒有記錄選了哪個加工站，或顏色名稱後來改過名，導致舊紀錄追不回來。
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-2)' }}>
+                {['加工站', '分色加總', '實際在途', '差異'].map((h, i) => (
+                  <th key={i} style={{ padding: '6px 10px', textAlign: i === 0 ? 'left' : 'right', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {mismatches.map(m => {
+                const diff = m.sum - m.expected
+                return (
+                  <tr key={m.stageId} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{m.factoryName} · {m.actionName}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{m.sum.toLocaleString()}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{m.expected.toLocaleString()}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right', color: '#E8461A', fontWeight: 500 }}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.6 }}>
+          建議：確認之後的送出/回廠登記都有選加工站與 SKU 顏色，避免新增更多對不起來的紀錄。歷史紀錄如果要人工修正，建議先逐筆確認實際加工站再處理，避免用猜的讓資料更不準確。
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>關閉</button>
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 
