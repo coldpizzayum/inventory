@@ -1160,15 +1160,20 @@ function calcPartStatus(stages) {
 
 // 檢查 SKU 分列加總是否等於加工站的權威在途數（process_stages.in_transit）。
 // 「未分類」桶已經把沒標顏色的歷史紀錄都算進來，所以正常情況下加總會兜起來；
-// 如果還是兜不起來，代表顏色本身改過名對不上（不是單純缺標記），此時整個零件
-// 退回單排卡片，避免顯示誤導性的分色數字。
-function skuBreakdownReliable(part, breakdown) {
+// 如果還是兜不起來，代表顏色本身改過名對不上、或歷史紀錄連加工站都沒標記
+// （不是單純缺顏色標記），此時整個零件退回單排卡片，避免顯示誤導性的分色數字。
+// 回傳每一站對不起來的細節，讓 UI 可以點開解釋給使用者看。
+function diagnoseSkuBreakdown(part, breakdown) {
   const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
+  const mismatches = []
   for (const stage of (part.stages || [])) {
     const sum = skuNames.reduce((s, name) => s + (breakdown[name]?.[stage.id] || 0), 0)
-    if (sum !== (stage.in_transit || 0)) return false
+    const expected = stage.in_transit || 0
+    if (sum !== expected) {
+      mismatches.push({ stageId: stage.id, factoryName: stage.factory_name, actionName: stage.action_name, sum, expected })
+    }
   }
-  return true
+  return { reliable: mismatches.length === 0, mismatches }
 }
 
 function SkuAddPopover({ rect, onAdd, onClose }) {
@@ -1555,27 +1560,32 @@ function calcFactoryGroups(parts) {
 function FactoryView({ parts }) {
   const [expandedParts, setExpandedParts] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
+  const [mismatchModal, setMismatchModal] = useState(null)
   const groups = calcFactoryGroups(parts)
   if (groups.length === 0) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無加工廠資料，請先新增加工站</div>
+  }
+  function fetchBreakdown(part) {
+    setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
+    apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
+      const sentSets = {}
+      for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
+      const breakdown = data.breakdown || {}
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, ...diagnoseSkuBreakdown(part, breakdown) } }))
+    }).catch(() => {
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
+    })
   }
   const togglePart = (factory, part) => {
     const key = `${factory}__${part.id}`
     const nowOpen = !expandedParts[key]
     setExpandedParts(e => ({ ...e, [key]: nowOpen }))
     if (nowOpen && (part.skus || []).length > 0 && !breakdowns[part.id]) {
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
-      apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
-        const sentSets = {}
-        for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
-        const breakdown = data.breakdown || {}
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
-      }).catch(() => {
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
-      })
+      fetchBreakdown(part)
     }
   }
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {groups.map(({ name, totalInTransit, activeParts, isActive, isDone, isWaiting }) => {
         const badge = isActive
@@ -1717,6 +1727,20 @@ function FactoryView({ parts }) {
                         </div>
                         )
                       })()}
+                      {isExpanded && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
+                        <button
+                          onClick={() => setMismatchModal({ part, mismatches: bd.mismatches || [] })}
+                          style={{
+                            width: '100%', padding: '8px 13px', display: 'flex', alignItems: 'center', gap: 6,
+                            background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
+                            fontSize: 11, color: '#B54A1F', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                          }}
+                        >
+                          <Icon.Warn />
+                          顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
+                          <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
+                        </button>
+                      )}
                       {isExpanded && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
                           {(part.stages || []).flatMap((stage, i, arr) => {
@@ -1747,12 +1771,18 @@ function FactoryView({ parts }) {
         )
       })}
     </div>
+    {mismatchModal && (
+      <SkuMismatchModal part={mismatchModal.part} mismatches={mismatchModal.mismatches} onClose={() => setMismatchModal(null)}
+        onFixed={() => { fetchBreakdown(mismatchModal.part); setMismatchModal(null) }} />
+    )}
+    </>
   )
 }
 
 function PartViewExpandable({ parts }) {
   const [expanded, setExpanded] = useState({})
   const [breakdowns, setBreakdowns] = useState({})
+  const [mismatchModal, setMismatchModal] = useState(null)
   const statusConfig = {
     processing: { label: '加工中', bg: '#FEE9E4', color: '#E8461A' },
     returned:   { label: '已回廠', bg: 'var(--ok-tint)', color: 'var(--ok)' },
@@ -1763,23 +1793,27 @@ function PartViewExpandable({ parts }) {
     return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無零件資料</div>
   }
 
+  function fetchBreakdown(part) {
+    setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
+    apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
+      const sentSets = {}
+      for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
+      const breakdown = data.breakdown || {}
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, ...diagnoseSkuBreakdown(part, breakdown) } }))
+    }).catch(() => {
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
+    })
+  }
   function toggleOpen(part) {
     const nowOpen = !(expanded[part.id] ?? false)
     setExpanded(e => ({ ...e, [part.id]: nowOpen }))
     if (nowOpen && (part.skus || []).length > 0 && !breakdowns[part.id]) {
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: true, breakdown: {}, sent: {} } }))
-      apiFetch(`/api/parts/${part.id}/sku-breakdown`).then(r => r.json()).then(data => {
-        const sentSets = {}
-        for (const color in (data.sent || {})) sentSets[color] = new Set(data.sent[color])
-        const breakdown = data.breakdown || {}
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, sent: sentSets, reliable: skuBreakdownReliable(part, breakdown) } }))
-      }).catch(() => {
-        setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, sent: {}, reliable: false } }))
-      })
+      fetchBreakdown(part)
     }
   }
 
   return (
+    <>
     <div>
       {parts.map(part => {
         const stages = part.stages || []
@@ -1883,6 +1917,21 @@ function PartViewExpandable({ parts }) {
               )
             })()}
 
+            {isOpen && skus.length > 0 && bd && !bd.loading && !bd.reliable && (
+              <button
+                onClick={() => setMismatchModal({ part, mismatches: bd.mismatches || [] })}
+                style={{
+                  width: '100%', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6,
+                  background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
+                  fontSize: 11, color: '#B54A1F', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                }}
+              >
+                <Icon.Warn />
+                顏色分列資料不完整（部分歷史紀錄缺加工站或顏色記錄），暫時顯示彙總數字
+                <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
+              </button>
+            )}
+
             {isOpen && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                 {stages.flatMap((stage, i, arr) => {
@@ -1908,6 +1957,229 @@ function PartViewExpandable({ parts }) {
         )
       })}
     </div>
+    {mismatchModal && (
+      <SkuMismatchModal part={mismatchModal.part} mismatches={mismatchModal.mismatches} onClose={() => setMismatchModal(null)}
+        onFixed={() => { fetchBreakdown(mismatchModal.part); setMismatchModal(null) }} />
+    )}
+    </>
+  )
+}
+
+const SKU_FIX_NONE = '__NONE__'
+
+function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
+  const [issues, setIssues] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [stageEdits, setStageEdits] = useState({})
+  const [colorEdits, setColorEdits] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    apiFetch(`/api/parts/${part.id}/log-issues`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      if (!data || (!Array.isArray(data.noStage) && !Array.isArray(data.unknownColor))) throw new Error('bad response')
+      setIssues(data)
+      setLoading(false)
+    }).catch(() => { setLoadError(true); setLoading(false) })
+  }, [part.id])
+
+  const stages = part.stages || []
+  const skus = part.skus || []
+  const stageEditCount = Object.values(stageEdits).filter(Boolean).length
+  const colorEditCount = Object.values(colorEdits).filter(Boolean).length
+  const totalEdits = stageEditCount + colorEditCount
+
+  async function applyFixes() {
+    if (totalEdits === 0) return alert('請至少選擇一筆要修正的紀錄')
+    if (!confirm(`確認套用 ${totalEdits} 筆修正？這會重新計算對應加工站的庫存數字，此動作無法還原。`)) return
+    setSaving(true)
+    let failed = 0
+    const allIssues = [...(issues.noStage || []), ...(issues.unknownColor || [])]
+
+    for (const [id, stageId] of Object.entries(stageEdits)) {
+      if (!stageId) continue
+      const log = allIssues.find(l => String(l.id) === String(id))
+      if (!log) continue
+      try {
+        const res = await apiFetch(`/api/receive-logs/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            action_type: log.action_type, part_id: log.part_id, stage_id: stageId,
+            sku_color: log.sku_color || '', qty: log.qty, defect_qty: log.defect_qty || 0,
+            lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
+            logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+
+    for (const [id, color] of Object.entries(colorEdits)) {
+      if (!color) continue
+      const log = allIssues.find(l => String(l.id) === String(id))
+      if (!log) continue
+      try {
+        const res = await apiFetch(`/api/receive-logs/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id,
+            sku_color: color === SKU_FIX_NONE ? '' : color, qty: log.qty, defect_qty: log.defect_qty || 0,
+            lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
+            logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+
+    setSaving(false)
+    if (failed > 0) alert(`${failed} 筆修正失敗，其餘已完成`)
+    onFixed()
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 680, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>「{part.name}」顏色分列資料不完整</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
+          下面這些加工站的「各顏色加總」跟「該站實際在途數」對不起來：
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-2)' }}>
+                {['加工站', '分色加總', '實際在途', '差異'].map((h, i) => (
+                  <th key={i} style={{ padding: '6px 10px', textAlign: i === 0 ? 'left' : 'right', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {mismatches.map(m => {
+                const diff = m.sum - m.expected
+                return (
+                  <tr key={m.stageId} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{m.factoryName} · {m.actionName}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{m.sum.toLocaleString()}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{m.expected.toLocaleString()}</td>
+                    <td className="num" style={{ padding: '6px 10px', textAlign: 'right', color: '#E8461A', fontWeight: 500 }}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>載入相關紀錄中…</div>
+        ) : loadError ? (
+          <div style={{ padding: '10px 12px', fontSize: 12, color: '#B54A1F', background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 'var(--r-md)' }}>
+            載入詳細紀錄失敗，可能是伺服器還沒更新到最新版本，請稍後再試一次。
+          </div>
+        ) : (
+          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {issues.noStage.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>缺加工站的紀錄（{issues.noStage.length} 筆）</div>
+                <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
+                  指定加工站後，這筆數量會正式算進該站的在途數，請確認你知道這批貨當初送去哪裡再選；不確定就先留白。
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-2)' }}>
+                        {['時間', '動作', '顏色', '數量', '指定加工站'].map((h, i) => (
+                          <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {issues.noStage.map(log => (
+                        <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                          <td style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
+                          <td style={{ padding: '6px 8px' }}><ActionTag type={log.action_type} /></td>
+                          <td style={{ padding: '6px 8px' }}>{log.sku_color || '未分類'}</td>
+                          <td className="num" style={{ padding: '6px 8px' }}>{log.qty}</td>
+                          <td style={{ padding: '6px 8px' }}>
+                            <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
+                              value={stageEdits[log.id] || ''}
+                              onChange={e => setStageEdits(s => ({ ...s, [log.id]: e.target.value }))}>
+                              <option value="">— 先留白 —</option>
+                              {stages.map(s => <option key={s.id} value={s.id}>{s.factory_name} · {s.action_name}</option>)}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {issues.unknownColor.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>顏色名稱對不上的紀錄（{issues.unknownColor.length} 筆）</div>
+                <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
+                  這幾筆記錄的顏色名稱，跟這個零件現在註冊的顏色都對不上（通常是顏色改過名）。選擇對應的現在顏色即可修正。
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-2)' }}>
+                        {['時間', '動作', '加工站', '目前顏色', '數量', '改成'].map((h, i) => (
+                          <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {issues.unknownColor.map(log => {
+                        const stage = stages.find(s => s.id === log.stage_id)
+                        return (
+                          <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                            <td style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
+                            <td style={{ padding: '6px 8px' }}><ActionTag type={log.action_type} /></td>
+                            <td style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{stage ? `${stage.factory_name} · ${stage.action_name}` : '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{log.sku_color}</td>
+                            <td className="num" style={{ padding: '6px 8px' }}>{log.qty}</td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
+                                value={colorEdits[log.id] || ''}
+                                onChange={e => setColorEdits(c => ({ ...c, [log.id]: e.target.value }))}>
+                                <option value="">— 不變更 —</option>
+                                <option value={SKU_FIX_NONE}>無顏色</option>
+                                {skus.map(s => <option key={s.id} value={s.color_name}>{s.color_name}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {issues.noStage.length === 0 && issues.unknownColor.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>沒有找到可以直接修正的紀錄，這個落差可能來自其他原因，建議人工核對。</div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>關閉</button>
+          {!loading && !loadError && (issues.noStage.length > 0 || issues.unknownColor.length > 0) && (
+            <button className="btn primary" disabled={saving || totalEdits === 0} onClick={applyFixes}>
+              {saving ? '套用中…' : `套用修正（${totalEdits}）`}
+            </button>
+          )}
+        </div>
+      </div>
+    </ModalOverlay>
   )
 }
 
