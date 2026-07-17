@@ -1159,10 +1159,11 @@ function calcPartStatus(stages) {
 }
 
 // 檢查 SKU 分列加總是否等於加工站的權威在途數（process_stages.in_transit）。
-// 歷史紀錄若缺顏色標記或顏色改過名，分色加總會兜不起來，此時整個零件退回單排卡片，
-// 避免顯示誤導性的分色數字。
+// 「未分類」桶已經把沒標顏色的歷史紀錄都算進來，所以正常情況下加總會兜起來；
+// 如果還是兜不起來，代表顏色本身改過名對不上（不是單純缺標記），此時整個零件
+// 退回單排卡片，避免顯示誤導性的分色數字。
 function skuBreakdownReliable(part, breakdown) {
-  const skuNames = (part.skus || []).map(s => s.color_name)
+  const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
   for (const stage of (part.stages || [])) {
     const sum = skuNames.reduce((s, name) => s + (breakdown[name]?.[stage.id] || 0), 0)
     if (sum !== (stage.in_transit || 0)) return false
@@ -1649,16 +1650,18 @@ function FactoryView({ parts }) {
                       {isExpanded && skus.length > 0 && bd?.loading && (
                         <div style={{ padding: '12px 13px', fontSize: 11, color: 'var(--text-4)', background: 'var(--bg-2)' }}>載入中…</div>
                       )}
-                      {isExpanded && skus.length > 0 && bd && !bd.loading && bd.reliable && (
+                      {isExpanded && skus.length > 0 && bd && !bd.loading && bd.reliable && (() => {
+                        const breakdown = bd.breakdown || {}
+                        const sent = bd.sent || {}
+                        const hasUnclassified = (part.stages || []).some(stage => (breakdown['未分類']?.[stage.id] || 0) !== 0 || sent['未分類']?.has(stage.id))
+                        return (
                         <div style={{ background: 'var(--bg-2)' }}>
                           {skus.map((sku, si) => {
                             const color = sku.color_name
-                            const breakdown = bd.breakdown || {}
-                            const sent = bd.sent || {}
                             return (
                               <div key={sku.id || color} style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 13px',
-                                borderBottom: si < skus.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+                                borderBottom: si < skus.length - 1 || hasUnclassified ? '0.5px solid var(--line-1)' : 'none',
                               }}>
                                 <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
                                   <SkuDot name={color} hex={sku.color_hex} size={10} />
@@ -1682,6 +1685,29 @@ function FactoryView({ parts }) {
                               </div>
                             )
                           })}
+                          {hasUnclassified && (
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 13px', opacity: 0.7 }}>
+                              <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
+                                <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#B4B2A9', border: '1px dashed #8A8880', flexShrink: 0, boxSizing: 'border-box' }} />
+                                <span style={{ fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' }}>未分類</span>
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                                {(part.stages || []).flatMap((stage, i, arr) => {
+                                  const hasSent = sent['未分類']?.has(stage.id)
+                                  const nextHasSent = i < arr.length - 1 && sent['未分類']?.has(arr[i + 1]?.id)
+                                  return [
+                                    <SkuStageCard key={stage.id} stage={stage} skuColor="未分類" breakdown={breakdown} sent={sent} />,
+                                    ...(i < arr.length - 1 ? [
+                                      <span key={`u${i}`} style={{
+                                        color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                                        fontSize: hasSent || nextHasSent ? 14 : 12, opacity: hasSent || nextHasSent ? 1 : 0.3,
+                                      }}>›</span>,
+                                    ] : []),
+                                  ]
+                                })}
+                              </div>
+                            </div>
+                          )}
                           {(part.qc_pending_qty || 0) > 0 && (
                             <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                               {(part.stages || []).length > 0 && qcConnector('qc-a')}
@@ -1689,7 +1715,8 @@ function FactoryView({ parts }) {
                             </div>
                           )}
                         </div>
-                      )}
+                        )
+                      })()}
                       {isExpanded && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (
                         <div style={{ padding: '12px 13px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto', background: 'var(--bg-2)' }}>
                           {(part.stages || []).flatMap((stage, i, arr) => {
@@ -1788,16 +1815,18 @@ function PartViewExpandable({ parts }) {
               <div style={{ padding: '12px 14px', fontSize: 11, color: 'var(--text-4)' }}>載入中…</div>
             )}
 
-            {isOpen && skus.length > 0 && bd && !bd.loading && bd.reliable && (
+            {isOpen && skus.length > 0 && bd && !bd.loading && bd.reliable && (() => {
+              const breakdown = bd.breakdown || {}
+              const sent = bd.sent || {}
+              const hasUnclassified = stages.some(stage => (breakdown['未分類']?.[stage.id] || 0) !== 0 || sent['未分類']?.has(stage.id))
+              return (
               <div>
                 {skus.map((sku, si) => {
                   const color = sku.color_name
-                  const breakdown = bd.breakdown || {}
-                  const sent = bd.sent || {}
                   return (
                     <div key={sku.id || color} style={{
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 14px',
-                      borderBottom: si < skus.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+                      borderBottom: si < skus.length - 1 || hasUnclassified ? '0.5px solid var(--line-1)' : 'none',
                     }}>
                       <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
                         <SkuDot name={color} hex={sku.color_hex} size={10} />
@@ -1821,6 +1850,29 @@ function PartViewExpandable({ parts }) {
                     </div>
                   )
                 })}
+                {hasUnclassified && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 14px', opacity: 0.7 }}>
+                    <div style={{ width: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, paddingTop: 9 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#B4B2A9', border: '1px dashed #8A8880', flexShrink: 0, boxSizing: 'border-box' }} />
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' }}>未分類</span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
+                      {stages.flatMap((stage, i, arr) => {
+                        const hasSent = sent['未分類']?.has(stage.id)
+                        const nextHasSent = i < arr.length - 1 && sent['未分類']?.has(arr[i + 1]?.id)
+                        return [
+                          <SkuStageCard key={stage.id} stage={stage} skuColor="未分類" breakdown={breakdown} sent={sent} />,
+                          ...(i < arr.length - 1 ? [
+                            <span key={`u${i}`} style={{
+                              color: 'var(--text-4)', userSelect: 'none', flexShrink: 0, alignSelf: 'center',
+                              fontSize: hasSent || nextHasSent ? 14 : 12, opacity: hasSent || nextHasSent ? 1 : 0.3,
+                            }}>›</span>,
+                          ] : []),
+                        ]
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(part.qc_pending_qty || 0) > 0 && (
                   <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
                     {stages.length > 0 && qcConnector('qc-a')}
@@ -1828,7 +1880,8 @@ function PartViewExpandable({ parts }) {
                   </div>
                 )}
               </div>
-            )}
+              )
+            })()}
 
             {isOpen && (skus.length === 0 || (bd && !bd.loading && !bd.reliable)) && (stages.length > 0 || (part.qc_pending_qty || 0) > 0) && (
               <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 6, overflowX: 'auto' }}>
@@ -3068,6 +3121,9 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [reworkSelInline, setReworkSelInline] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [logPage, setLogPage] = useState(0)
+  const [backfillOpen, setBackfillOpen] = useState(false)
+  const showTools = new URLSearchParams(window.location.search).get('tools') === '1'
+  const untaggedCount = logs.filter(l => !l.sku_color && l.part_id).length
   const [batchNoteMode, setBatchNoteMode] = useState(false)
   const [batchNote, setBatchNote] = useState('')
   const [loggedAt, setLoggedAt] = useState(() => toDatetimeLocal(new Date()))
@@ -3082,6 +3138,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const actionType = source ? resolveActionType(direction, source) : null
   const stageId = (actionType && stages.length) ? resolveStageId(stages, source, actionType) : null
   const part = partsData.find(p => p.name === partName)
+  const skuMissing = (part?.skus?.length ?? 0) >= 1 && !sku
   const showDefectHandling = direction === 'in' && dq > 0
   const showLostQty = actionType === 'send' || actionType === 'return'
   const reworkStages = stages.filter(s => (s.in_transit || 0) > 0)
@@ -3260,7 +3317,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   async function submit() {
     if (!qty || isNaN(+qty) || +qty <= 0) return alert('請輸入正確數量')
     if (!source) return alert('請選擇來源／去向')
-    if ((part?.skus?.length ?? 0) > 1 && !sku) return alert('請選擇 SKU 顏色')
+    if (skuMissing) return alert('請選擇 SKU 顏色')
     if (showDefectHandling && handling === 'rework' && !reworkStageId) return alert('請選擇重工站')
     setSubmitting(true)
     try {
@@ -3647,7 +3704,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           {/* SKU */}
           {part?.skus?.length > 1 && (
             <div className="field">
-              <label style={{ color: sku ? undefined : 'var(--bad)' }}>SKU 顏色 *</label>
+              <label>SKU 顏色 <span style={{ color: 'var(--bad)' }}>*</span></label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {part.skus.map(s => (
                   <button key={s.id} onClick={() => setSku(s.color_name)} style={{
@@ -3778,11 +3835,25 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             <input className="input" placeholder="（選填）" value={note} onChange={e => setNote(e.target.value)} />
           </div>
 
-          <button className="btn primary" onClick={submit} disabled={submitting}
+          <button className="btn primary" onClick={submit} disabled={submitting || skuMissing}
+            title={skuMissing ? '請選擇 SKU 顏色' : undefined}
             style={{ width: '100%', padding: 14, justifyContent: 'center', fontSize: 15 }}>
             {submitting ? '送出中...' : '確認送出'}
           </button>
         </div>
+
+        {showTools && untaggedCount > 0 && (
+          <div className="card" style={{
+            padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#FEF6F4', border: '1px solid #FCD6CC',
+          }}>
+            <span style={{ fontSize: 13, color: '#E8461A' }}>共 {untaggedCount} 筆紀錄沒有 SKU 顏色</span>
+            <button onClick={() => setBackfillOpen(true)} style={{
+              padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              background: '#E8461A', color: '#fff', border: 'none',
+            }}>點此批次補登</button>
+          </div>
+        )}
 
         {/* Log table */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -3895,12 +3966,26 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                           }
                         </td>
                         <td style={{ padding: '6px 8px', minWidth: 90 }}>
-                          {editSkus.length > 1
-                            ? <select value={ei.sku_color || ''} style={IS}
-                                onChange={e => setEditRow(r => ({ ...r, sku_color: e.target.value }))}>
-                                <option value="">—</option>
-                                {editSkus.map(s => <option key={s.id} value={s.color_name}>{s.color_name}</option>)}
-                              </select>
+                          {editSkus.length > 0
+                            ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 170 }}>
+                                <button type="button" onClick={() => setEditRow(r => ({ ...r, sku_color: '' }))} style={{
+                                  padding: '3px 8px', borderRadius: 999, fontSize: 11, cursor: 'pointer',
+                                  border: `1px solid ${!ei.sku_color ? 'var(--accent)' : 'var(--line-2)'}`,
+                                  background: !ei.sku_color ? 'var(--accent-tint)' : 'var(--bg-1)',
+                                  color: !ei.sku_color ? 'var(--accent)' : 'var(--text-3)',
+                                }}>無顏色</button>
+                                {editSkus.map(s => (
+                                  <button type="button" key={s.id} onClick={() => setEditRow(r => ({ ...r, sku_color: s.color_name }))} style={{
+                                    padding: '3px 8px', borderRadius: 999, fontSize: 11, cursor: 'pointer',
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    border: `1px solid ${ei.sku_color === s.color_name ? 'var(--accent)' : 'var(--line-2)'}`,
+                                    background: ei.sku_color === s.color_name ? 'var(--accent-tint)' : 'var(--bg-1)',
+                                    color: ei.sku_color === s.color_name ? 'var(--accent)' : 'var(--text-2)',
+                                  }}>
+                                    <SkuDot name={s.color_name} hex={s.color_hex} size={7} />{s.color_name}
+                                  </button>
+                                ))}
+                              </div>
                             : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{ei.sku_color || '—'}</span>
                           }
                         </td>
@@ -3948,7 +4033,9 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                       <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
                       <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{getSourceDisplay(log)}</td>
                       <td style={{ padding: '12px 14px' }}>
-                        {log.sku_color && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>}
+                        {log.sku_color
+                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>
+                          : <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: '#FEE9E4', color: '#E8461A' }}>未選顏色</span>}
                       </td>
                       <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
@@ -3995,10 +4082,118 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         </div>
       </div>
 
+      {backfillOpen && (
+        <SkuBackfillModal
+          logs={logs}
+          onClose={() => setBackfillOpen(false)}
+          onDone={() => { setBackfillOpen(false); reload(); onLogSubmit?.() }}
+        />
+      )}
     </div>
   )
 }
 
+function SkuBackfillModal({ logs, onClose, onDone }) {
+  const untagged = logs.filter(l => !l.sku_color && l.part_id)
+  const [skusByPart, setSkusByPart] = useState({})
+  const [choices, setChoices] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const productIds = [...new Set(untagged.map(l => l.product_id).filter(Boolean))]
+    Promise.all(productIds.map(pid => apiFetch(`/api/products/${pid}/parts`).then(r => r.json()).catch(() => [])))
+      .then(results => {
+        const map = {}
+        results.flat().forEach(p => { map[p.id] = p.skus || [] })
+        setSkusByPart(map)
+        setLoading(false)
+      })
+  }, [])
+
+  async function batchSave() {
+    const entries = Object.entries(choices).filter(([, color]) => color)
+    if (!entries.length) return alert('請至少選擇一筆的顏色')
+    setSaving(true)
+    let failed = 0
+    for (const [logId, color] of entries) {
+      const log = untagged.find(l => String(l.id) === String(logId))
+      if (!log) continue
+      try {
+        const res = await apiFetch(`/api/receive-logs/${log.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            action_type: log.action_type, part_id: log.part_id, stage_id: log.stage_id,
+            sku_color: color, qty: log.qty, defect_qty: log.defect_qty || 0,
+            lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
+            logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    setSaving(false)
+    if (failed > 0) alert(`${failed} 筆儲存失敗，其餘已完成`)
+    onDone()
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div style={{ width: 720, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>批次補登 SKU 顏色（共 {untagged.length} 筆）</div>
+          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>載入中…</div>
+        ) : (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-2)' }}>
+                  {['時間', '零件', '數量', '選擇顏色'].map((h, i) => (
+                    <th key={i} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 12, fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {untagged.map(log => {
+                  const skus = skusByPart[log.part_id] || []
+                  return (
+                    <tr key={log.id} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                      <td style={{ padding: '8px 10px', fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
+                      <td style={{ padding: '8px 10px' }}>{log.part_name || '—'}</td>
+                      <td className="num" style={{ padding: '8px 10px' }}>{log.qty}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {skus.length === 0
+                          ? <span style={{ fontSize: 12, color: 'var(--text-4)' }}>此零件無 SKU</span>
+                          : <select className="select" style={{ fontSize: 12, padding: '4px 8px' }}
+                              value={choices[log.id] || ''}
+                              onChange={e => setChoices(c => ({ ...c, [log.id]: e.target.value }))}>
+                              <option value="">— 不變更 —</option>
+                              {skus.map(s => <option key={s.id} value={s.color_name}>{s.color_name}</option>)}
+                            </select>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" disabled={saving || loading} onClick={batchSave}>
+            {saving ? '儲存中…' : '批次儲存'}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  )
+}
 
 // ─── Page: Packaging ─────────────────────────────────────────
 

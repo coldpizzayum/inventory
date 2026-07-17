@@ -59,19 +59,22 @@ router.get('/:id/sku-breakdown', async (req, res) => {
     const rows = await db.prepare(
       `SELECT sku_color, stage_id, action_type, qty FROM receive_logs
        WHERE part_id=? AND action_type IN ('send','return','rework','qc')
-         AND sku_color IS NOT NULL AND sku_color != '' AND stage_id IS NOT NULL`
+         AND stage_id IS NOT NULL`
     ).all(req.params.id)
 
+    // 早期登記沒有強制選顏色，sku_color 可能是 NULL 或空字串——這類歷史紀錄
+    // 歸入「未分類」桶，而不是直接排除，避免分色加總對不上加工站的權威在途數
     const breakdown = {}
     const sent = {}
     for (const { sku_color, stage_id, action_type, qty } of rows) {
-      if (!breakdown[sku_color]) breakdown[sku_color] = {}
-      if (breakdown[sku_color][stage_id] === undefined) breakdown[sku_color][stage_id] = 0
-      if (action_type === 'send' || action_type === 'rework') breakdown[sku_color][stage_id] += qty
-      if (action_type === 'return') breakdown[sku_color][stage_id] -= qty
+      const color = sku_color || '未分類'
+      if (!breakdown[color]) breakdown[color] = {}
+      if (breakdown[color][stage_id] === undefined) breakdown[color][stage_id] = 0
+      if (action_type === 'send' || action_type === 'rework') breakdown[color][stage_id] += qty
+      if (action_type === 'return') breakdown[color][stage_id] -= qty
       if (action_type === 'send') {
-        if (!sent[sku_color]) sent[sku_color] = new Set()
-        sent[sku_color].add(stage_id)
+        if (!sent[color]) sent[color] = new Set()
+        sent[color].add(stage_id)
       }
     }
     const sentOut = {}
