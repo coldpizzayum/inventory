@@ -1591,14 +1591,14 @@ function InventoryView({ parts }) {
   }
 
   const q = search.trim()
-  const filtered = !q ? parts : parts.filter(p => p.name?.includes(q) || p.product_name?.includes(q))
+  const filtered = !q ? parts : parts.filter(p => p.name?.includes(q))
   const sorted = [...filtered].sort((a, b) => (b.warehouse_stock || 0) - (a.warehouse_stock || 0))
   const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件或產品名稱..." value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件名稱..." value={search} onChange={e => setSearch(e.target.value)} />
         <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -1620,7 +1620,6 @@ function InventoryView({ parts }) {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{part.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{part.product_name || ''}</div>
                 </div>
                 {skus.length > 0 && (
                   <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
@@ -2333,6 +2332,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   const [allParts, setAllParts] = useState([])
   const [tabBProd, setTabBProd] = useState(null)
   const [tabBParts, setTabBParts] = useState([])
+  const [tabDProd, setTabDProd] = useState(null)
   const [tabCParts, setTabCParts] = useState([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [skuEditMode, setSkuEditMode] = useState(false)
@@ -2389,6 +2389,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   function handleTabChange(newTab) {
     if (newTab !== 'product') setSkuEditMode(false)
     if (newTab === 'part' && !tabBProd && products.length) setTabBProd(products[0])
+    if (newTab === 'inventory' && !tabDProd && products.length) setTabDProd(products[0])
     setTab(newTab)
   }
 
@@ -2557,7 +2558,15 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
       {/* Tab D: 庫存 */}
       {tab === 'inventory' && (
-        <InventoryView parts={allParts} />
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={tabDProd?.id === p.id} onClick={() => setTabDProd(p)} />)}
+          </div>
+          {tabDProd
+            ? <InventoryView parts={allParts.filter(p => p.product_id === tabDProd.id)} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
+          }
+        </>
       )}
 
       {editPicker && (
