@@ -1970,15 +1970,20 @@ const SKU_FIX_NONE = '__NONE__'
 function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
   const [issues, setIssues] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [stageEdits, setStageEdits] = useState({})
   const [colorEdits, setColorEdits] = useState({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    apiFetch(`/api/parts/${part.id}/log-issues`).then(r => r.json()).then(data => {
+    apiFetch(`/api/parts/${part.id}/log-issues`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      if (!data || (!Array.isArray(data.noStage) && !Array.isArray(data.unknownColor))) throw new Error('bad response')
       setIssues(data)
       setLoading(false)
-    }).catch(() => { setIssues({ noStage: [], unknownColor: [] }); setLoading(false) })
+    }).catch(() => { setLoadError(true); setLoading(false) })
   }, [part.id])
 
   const stages = part.stages || []
@@ -2072,6 +2077,10 @@ function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
 
         {loading ? (
           <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>載入相關紀錄中…</div>
+        ) : loadError ? (
+          <div style={{ padding: '10px 12px', fontSize: 12, color: '#B54A1F', background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 'var(--r-md)' }}>
+            載入詳細紀錄失敗，可能是伺服器還沒更新到最新版本，請稍後再試一次。
+          </div>
         ) : (
           <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
             {issues.noStage.length > 0 && (
@@ -2163,7 +2172,7 @@ function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
           <button className="btn" onClick={onClose}>關閉</button>
-          {!loading && (issues.noStage.length > 0 || issues.unknownColor.length > 0) && (
+          {!loading && !loadError && (issues.noStage.length > 0 || issues.unknownColor.length > 0) && (
             <button className="btn primary" disabled={saving || totalEdits === 0} onClick={applyFixes}>
               {saving ? '套用中…' : `套用修正（${totalEdits}）`}
             </button>
