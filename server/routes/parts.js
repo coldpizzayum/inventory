@@ -84,6 +84,29 @@ router.get('/:id/sku-breakdown', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// 依顏色拆解倉庫庫存（parts.warehouse_stock 只有總數，沒有分色）。
+// 邏輯跟 warehouse_stock 本身的計算方式一致：receive/return 進倉、send/ship 出倉。
+router.get('/:id/warehouse-breakdown', async (req, res) => {
+  try {
+    const db = getDb()
+    const rows = await db.prepare(
+      `SELECT sku_color, action_type, qty, defect_qty FROM receive_logs
+       WHERE part_id=? AND action_type IN ('receive','send','ship','return')`
+    ).all(req.params.id)
+
+    const breakdown = {}
+    for (const { sku_color, action_type, qty, defect_qty } of rows) {
+      const color = sku_color || '未分類'
+      if (breakdown[color] === undefined) breakdown[color] = 0
+      const net = qty - (defect_qty || 0)
+      if (action_type === 'receive' || action_type === 'return') breakdown[color] += net
+      if (action_type === 'send' || action_type === 'ship') breakdown[color] -= qty
+    }
+
+    res.json({ breakdown })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // 找出讓 SKU 分列加總對不起來的原始紀錄，讓使用者可以直接在 UI 上修正：
 // 1. noStage —— 送出/回廠/重工/品檢紀錄完全沒有記錄加工站，沒辦法歸到任何一站
 // 2. unknownColor —— 有記錄加工站，但顏色名稱對不上這個零件目前任何一個已註冊的
