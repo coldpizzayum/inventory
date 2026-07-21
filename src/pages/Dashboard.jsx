@@ -47,8 +47,6 @@ const NAV = [
   { id: 'process',   label: '加工流程',     icon: Icon.Flow },
   { id: 'log',       label: '進出貨登記',   icon: Icon.Log },
   null,
-  { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
-  null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'factories', label: '加工廠商',     icon: Icon.Factory },
   { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
@@ -514,7 +512,6 @@ function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
         <div style={{ display: 'flex', gap: 10 }}>
           {[
             { label: '加工流程', icon: Icon.Flow, action: onGoToProcess },
-            { label: '訂單',     icon: Icon.Order, action: onGoToOrders },
           ].map(({ label, icon: Ic, action }) => (
             <button key={label} onClick={e => { e.stopPropagation(); action() }}
               style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}
@@ -524,11 +521,6 @@ function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
             </button>
           ))}
         </div>
-        {orderCount > 0 && (
-          <span style={{ background: '#FEE9E4', color: '#E8461A', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, lineHeight: 1.5 }}>
-            訂單 {orderCount}
-          </span>
-        )}
       </div>
     </div>
   )
@@ -600,16 +592,6 @@ function OrderRow({ order, product, clientName, onGoToOrders }) {
 function BrandRow({ brand, products }) {
   const assignedNames = (brand.products || []).map(p => p.name).join('、') || '—'
   const initials = brand.name?.slice(0, 1) || '?'
-  const [copied, setCopied] = useState(false)
-
-  function copyLink(e) {
-    e.stopPropagation()
-    const url = `${window.location.origin}/brand/${brand.token}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1800)
-    })
-  }
 
   return (
     <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
@@ -622,19 +604,6 @@ function BrandRow({ brand, products }) {
         <div style={{ fontSize: 12, fontWeight: 500 }}>{brand.name}</div>
         <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignedNames}</div>
       </div>
-      <button onClick={copyLink} title="複製設計師連結" style={{
-        flexShrink: 0, border: copied ? '1px solid #1A7A3C' : '1px solid var(--line-2)',
-        background: copied ? '#E6F4EC' : '#fff', borderRadius: 6,
-        padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-        fontSize: 11, fontWeight: 500, color: copied ? '#1A7A3C' : 'var(--text-2)',
-        transition: 'all 0.15s',
-      }}>
-        {copied
-          ? <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          : <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        }
-        {copied ? '已複製' : '分享連結'}
-      </button>
     </div>
   )
 }
@@ -694,43 +663,16 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
         </div>
       </div>
 
-      {/* Section 2 + 3 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
-        {/* Orders */}
-        <div>
-          <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} link2Label="訂單管理" onLink2={() => onGoToOrders(null)} linkLabel="進出貨登記" onLink={onGoToLog} />
-          {orders.length === 0
-            ? <div style={{ padding: '24px 16px', background: 'var(--bg-2)', borderRadius: 8, textAlign: 'center' }}>
-                <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
-                <button onClick={() => onGoToOrders(null)} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
-              </div>
-            : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {orders.map(o => (
-                  <OrderRow key={o.id} order={o}
-                    product={products.find(p => p.id === o.productId)}
-                    clientName={tokenMap[o.productId]}
-                    onGoToOrders={onGoToOrders}
-                  />
-                ))}
-                <div style={{ fontSize: 12, textAlign: 'center', padding: '6px 0', color: 'var(--text-3)' }}>
-                  其他產品尚無訂單 ·{' '}
-                  <span onClick={() => onGoToOrders(null)} style={{ color: '#E8461A', cursor: 'pointer' }}>新增訂單</span>
-                </div>
-              </div>
+      {/* Section 2: Brands */}
+      <div style={{ maxWidth: 480 }}>
+        <OvSectionHead icon={Icon.Brand} title="品牌總覽" count={`${brands.length} 個`} linkLabel="設計師管理" onLink={onGoToBrands} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {brandsLoading
+            ? [1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F0EFE8' }} />)
+            : brands.length === 0
+              ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無品牌</div>
+              : brands.map(b => <BrandRow key={b.id} brand={b} products={products} />)
           }
-        </div>
-
-        {/* Brands */}
-        <div>
-          <OvSectionHead icon={Icon.Brand} title="品牌總覽" count={`${brands.length} 個`} linkLabel="設計師管理" onLink={onGoToBrands} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {brandsLoading
-              ? [1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F0EFE8' }} />)
-              : brands.length === 0
-                ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無品牌</div>
-                : brands.map(b => <BrandRow key={b.id} brand={b} products={products} />)
-            }
-          </div>
         </div>
       </div>
     </div>
@@ -5766,14 +5708,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                 <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setManagePartsTarget(p)}>
                   管理零件
                 </button>
-                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
-                  <Icon.Order />訂單
-                  {orderCount > 0 && (
-                    <span style={{ marginLeft: 4, background: 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
-                      {orderCount}
-                    </span>
-                  )}
-                </button>
               </div>
 
               {/* Adjustment history */}
@@ -6254,7 +6188,6 @@ function BrandsPage({ products }) {
       {/* Brand list */}
       {brands.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無品牌，請先新增。</p>}
       {brands.map(brand => {
-        const link = `${window.location.origin}/brand/${brand.token}`
         const assignedIds = new Set(brand.products.map(p => p.id))
         const unassigned = products.filter(p => !assignedIds.has(p.id))
         return (
@@ -6263,10 +6196,6 @@ function BrandsPage({ products }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{brand.name}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={() => { navigator.clipboard.writeText(link); alert('連結已複製！') }}
-                  style={{ background: 'none', border: '1px solid var(--line-2)', borderRadius: 6, cursor: 'pointer', color: 'var(--info)', fontSize: 12, padding: '4px 10px' }}>
-                  複製連結
-                </button>
                 <button onClick={() => deleteBrand(brand.id)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>
                   刪除品牌
