@@ -113,4 +113,23 @@ router.get('/:id/parts', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+router.get('/:id/variants', async (req, res) => {
+  try {
+    const db = getDb()
+    const rows = await db.prepare('SELECT DISTINCT variant_name FROM product_boms WHERE product_id=?').all(req.params.id)
+    res.json(rows.map(r => r.variant_name))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.post('/:id/produce', async (req, res) => {
+  try {
+    const db = getDb()
+    const { variant_name, quantity, note } = req.body
+    if (!variant_name) return res.status(400).json({ error: '缺少款式' })
+    if (!quantity || quantity <= 0) return res.status(400).json({ error: '數量必須是正整數' })
+    const row = await db.prepare('SELECT * FROM fn_produce_product(?, ?, ?, ?)').get(req.params.id, variant_name, quantity, note || '')
+    res.json(row || { ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 export default router

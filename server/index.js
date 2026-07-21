@@ -25,6 +25,7 @@ import defectLogsRoutes from './routes/defectLogs.js'
 import stockAdjustmentsRoutes from './routes/stockAdjustments.js'
 import factoriesRoutes from './routes/factories.js'
 import qcRoutes from './routes/qc.js'
+import subAssemblyRoutes from './routes/subAssemblies.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -47,6 +48,7 @@ app.use('/api/defect-logs', defectLogsRoutes)
 app.use('/api/stock-adjustments', stockAdjustmentsRoutes)
 app.use('/api/factories', factoriesRoutes)
 app.use('/api/qc', qcRoutes)
+app.use('/api/sub-assemblies', subAssemblyRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 
