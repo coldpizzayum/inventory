@@ -1698,6 +1698,44 @@ function InventoryView({ parts }) {
   )
 }
 
+function SubAssemblyInventoryView({ items, loading }) {
+  if (loading) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>載入中…</div>
+  }
+  if (!items.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>此產品尚未設定半成品資料</div>
+  }
+
+  const sorted = [...items].sort((a, b) => (a.tier || 0) - (b.tier || 0) || (a.code || '').localeCompare(b.code || ''))
+  const totalStock = items.reduce((s, it) => s + (it.stock_qty || 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個半成品・總庫存 {totalStock.toLocaleString()} 件</span>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {sorted.map((it, i) => (
+          <div key={it.id} style={{
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            borderBottom: i < sorted.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: 'var(--text-3)', fontFamily: 'var(--font-mono)',
+              padding: '2px 7px', borderRadius: 4, background: 'var(--bg-2)', flexShrink: 0,
+            }}>{it.code}</span>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{it.name}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+              <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(it.stock_qty || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const WAREHOUSE_FIX_NONE = '__NONE__'
 
 function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onClose, onFixed }) {
@@ -2536,6 +2574,9 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   const [tabBProd, setTabBProd] = useState(null)
   const [tabBParts, setTabBParts] = useState([])
   const [tabDProd, setTabDProd] = useState(null)
+  const [tabEProd, setTabEProd] = useState(null)
+  const [tabESubAssemblies, setTabESubAssemblies] = useState([])
+  const [tabELoading, setTabELoading] = useState(false)
   const [tabCParts, setTabCParts] = useState([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [skuEditMode, setSkuEditMode] = useState(false)
@@ -2561,6 +2602,18 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   useEffect(() => {
     if (tabBProd) _loadTabB(tabBProd.id)
   }, [tabBProd?.id])
+
+  useEffect(() => {
+    if (tab !== 'subassembly' || !tabEProd) return
+    setTabELoading(true)
+    apiFetch(`/api/sub-assemblies?product_id=${tabEProd.id}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      setTabESubAssemblies(data)
+      setTabELoading(false)
+    }).catch(() => { setTabESubAssemblies([]); setTabELoading(false) })
+  }, [tab, tabEProd?.id])
 
   useEffect(() => {
     if (headerActionsSlot) headerActionsSlot.set(null)
@@ -2593,6 +2646,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
     if (newTab !== 'product') setSkuEditMode(false)
     if (newTab === 'part' && !tabBProd && products.length) setTabBProd(products[0])
     if (newTab === 'inventory' && !tabDProd && products.length) setTabDProd(products[0])
+    if (newTab === 'subassembly' && !tabEProd && products.length) setTabEProd(products[0])
     setTab(newTab)
   }
 
@@ -2661,6 +2715,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
             { key: 'part',    label: '追零件' },
             { key: 'product', label: '追產品' },
             { key: 'inventory', label: '庫存' },
+            { key: 'subassembly', label: '半成品' },
           ].map(({ key, label }) => {
             const active = tab === key
             return (
@@ -2768,6 +2823,19 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
           {tabDProd
             ? <InventoryView parts={allParts.filter(p => p.product_id === tabDProd.id)} />
             : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
+          }
+        </>
+      )}
+
+      {/* Tab E: 半成品 */}
+      {tab === 'subassembly' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={tabEProd?.id === p.id} onClick={() => setTabEProd(p)} />)}
+          </div>
+          {tabEProd
+            ? <SubAssemblyInventoryView items={tabESubAssemblies} loading={tabELoading} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看半成品庫存</div>
           }
         </>
       )}
