@@ -68,14 +68,17 @@ router.delete('/:id', requireAuth, async (req, res) => {
         await tx.prepare(`DELETE FROM process_stages WHERE part_id IN (${partPh})`).run(...partIds)
       }
 
+      // defect_logs / receive_logs 在正式站的 Postgres 上對 part_id 有外鍵約束
+      // （本地 sqlite schema 沒宣告，但正式站已存在），必須在刪 parts 之前先清掉
+      await tx.prepare('DELETE FROM defect_logs WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM receive_logs WHERE product_id=?').run(productId)
+
       await tx.prepare('DELETE FROM parts WHERE product_id=?').run(productId)
       await tx.prepare('DELETE FROM packing_items WHERE product_id=?').run(productId)
       await tx.prepare('DELETE FROM designer_tokens WHERE product_id=?').run(productId)
       await tx.prepare('DELETE FROM brand_products WHERE product_id=?').run(productId)
       await tx.prepare('DELETE FROM stock_adjustments WHERE product_id=?').run(productId)
       await tx.prepare('DELETE FROM orders WHERE product_id=?').run(productId)
-      await tx.prepare('DELETE FROM defect_logs WHERE product_id=?').run(productId)
-      await tx.prepare('DELETE FROM receive_logs WHERE product_id=?').run(productId)
 
       await tx.prepare('DELETE FROM products WHERE id=?').run(productId)
     })
