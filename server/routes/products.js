@@ -49,8 +49,37 @@ router.put('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const db = getDb()
-    await db.prepare('DELETE FROM parts WHERE product_id=?').run(req.params.id)
-    await db.prepare('DELETE FROM products WHERE id=?').run(req.params.id)
+    const productId = req.params.id
+
+    await db.transaction(async (tx) => {
+      const parts = await tx.prepare('SELECT id FROM parts WHERE product_id=?').all(productId)
+      const partIds = parts.map(p => p.id)
+      const partPh = partIds.map(() => '?').join(',')
+
+      const qcPending = await tx.prepare('SELECT id FROM qc_pending WHERE product_id=?').all(productId)
+      const qcPendingIds = qcPending.map(q => q.id)
+      if (qcPendingIds.length) {
+        await tx.prepare(`DELETE FROM qc_logs WHERE qc_pending_id IN (${qcPendingIds.map(() => '?').join(',')})`).run(...qcPendingIds)
+      }
+      await tx.prepare('DELETE FROM qc_pending WHERE product_id=?').run(productId)
+
+      if (partIds.length) {
+        await tx.prepare(`DELETE FROM part_skus WHERE part_id IN (${partPh})`).run(...partIds)
+        await tx.prepare(`DELETE FROM process_stages WHERE part_id IN (${partPh})`).run(...partIds)
+      }
+
+      await tx.prepare('DELETE FROM parts WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM packing_items WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM designer_tokens WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM brand_products WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM stock_adjustments WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM orders WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM defect_logs WHERE product_id=?').run(productId)
+      await tx.prepare('DELETE FROM receive_logs WHERE product_id=?').run(productId)
+
+      await tx.prepare('DELETE FROM products WHERE id=?').run(productId)
+    })
+
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

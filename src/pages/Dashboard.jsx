@@ -1578,8 +1578,11 @@ function InventoryView({ parts }) {
       const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
       const sum = skuNames.reduce((s, name) => s + (breakdown[name] || 0), 0)
       const expected = part.warehouse_stock || 0
-      const reliable = sum === expected
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable, sum, expected } }))
+      const negativeColors = Object.entries(breakdown).filter(([, qty]) => qty < 0).map(([name, qty]) => ({ name, qty }))
+      // 就算加總對得起來，只要有任何顏色是負庫存就不算可靠——負庫存代表送出比回廠
+      // 多，兩個顏色的誤差剛好互相抵銷才讓總數看起來一致，個別數字仍然是錯的。
+      const reliable = sum === expected && negativeColors.length === 0
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable, sum, expected, negativeColors } }))
     }).catch(() => {
       setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false, loadError: true } }))
     })
@@ -1668,7 +1671,7 @@ function InventoryView({ parts }) {
               )}
               {isOpen && bd && !bd.loading && !bd.reliable && !bd.loadError && (
                 <button
-                  onClick={() => setMismatchModal({ part, sum: bd.sum, expected: bd.expected })}
+                  onClick={() => setMismatchModal({ part, sum: bd.sum, expected: bd.expected, negativeColors: bd.negativeColors || [] })}
                   style={{
                     width: '100%', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6,
                     background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
@@ -1686,7 +1689,7 @@ function InventoryView({ parts }) {
       </div>
       {mismatchModal && (
         <WarehouseMismatchModal
-          part={mismatchModal.part} sum={mismatchModal.sum} expected={mismatchModal.expected}
+          part={mismatchModal.part} sum={mismatchModal.sum} expected={mismatchModal.expected} negativeColors={mismatchModal.negativeColors}
           onClose={() => setMismatchModal(null)}
           onFixed={() => { fetchBreakdown(mismatchModal.part); setMismatchModal(null) }}
         />
@@ -1697,7 +1700,7 @@ function InventoryView({ parts }) {
 
 const WAREHOUSE_FIX_NONE = '__NONE__'
 
-function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
+function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onClose, onFixed }) {
   const [issues, setIssues] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -1746,6 +1749,8 @@ function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
   }
 
   const diff = sum - expected
+  const hasDiff = diff !== 0
+  const hasNegative = negativeColors.length > 0
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -1755,7 +1760,11 @@ function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
           <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          這個零件的分色庫存加總，跟倉庫實際總庫存對不起來：
+          {hasDiff && hasNegative
+            ? '這個零件的分色庫存加總跟倉庫實際總庫存對不起來，而且有顏色出現負庫存：'
+            : hasDiff
+              ? '這個零件的分色庫存加總，跟倉庫實際總庫存對不起來：'
+              : '這個零件的分色加總雖然跟倉庫總庫存一致，但其中有顏色出現負庫存，個別數字仍然不正確：'}
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -1784,6 +1793,26 @@ function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
           </div>
         ) : (
           <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {negativeColors.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#B54A1F' }}>負庫存的顏色（{negativeColors.length} 個）</div>
+                <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
+                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。建議先確認實際狀況，用「進出貨登記」補登對應的不良品/遺失數量；如果單純是登記數字打錯，需要回頭找到是哪一筆修正——這兩種情況都無法自動判斷，需要人工核對。
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {negativeColors.map(nc => (
+                    <div key={nc.name} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                      background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 999,
+                    }}>
+                      <SkuDot name={nc.name} size={9} />
+                      <span style={{ fontSize: 12 }}>{nc.name}</span>
+                      <span className="num" style={{ fontSize: 12, fontWeight: 600, color: '#E8461A' }}>{nc.qty.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {issues.unknownColor.length > 0 ? (
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>顏色名稱對不上的紀錄（{issues.unknownColor.length} 筆）</div>
@@ -1821,11 +1850,11 @@ function WarehouseMismatchModal({ part, sum, expected, onClose, onFixed }) {
                   </table>
                 </div>
               </div>
-            ) : (
+            ) : negativeColors.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
                 沒有找到顏色名稱對不上的紀錄。這個落差可能來自品檢點貨批次入庫或其他無法自動比對的操作，建議人工核對。
               </div>
-            )}
+            ) : null}
           </div>
         )}
 
@@ -5537,9 +5566,12 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
 
   async function deleteProduct(p) {
     if (!confirm(`確認刪除「${p.name}」？此操作無法復原，該產品的所有零件也會一併刪除。`)) return
-    await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' })
-    localStorage.removeItem(`prod-img-${p.id}`)
-    reload()
+    try {
+      const res = await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
+      localStorage.removeItem(`prod-img-${p.id}`)
+      reload()
+    } catch (e) { alert('刪除失敗：' + e.message) }
   }
 
   // ti-adjustments-horizontal icon
