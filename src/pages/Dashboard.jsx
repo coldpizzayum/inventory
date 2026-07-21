@@ -32,8 +32,6 @@ const Icon = {
   Photo: () => (<svg {...S} width="16" height="16"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
   // ti-clipboard-list
   Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
-  // ti-palette
-  Brand: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/><path d="M8.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M16.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>),
   // ti-settings (gear)
   Gear: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>),
   // ti-logout
@@ -49,7 +47,6 @@ const NAV = [
   null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'factories', label: '加工廠商',     icon: Icon.Factory },
-  { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
 ]
 
 const PAGE_TITLES = {
@@ -60,7 +57,6 @@ const PAGE_TITLES = {
   settings:  '產品管理',
   orders:    '訂單管理',
   factories: '加工廠商',
-  brands:    '設計品牌管理',
 }
 
 const SKU_COLORS = {
@@ -218,7 +214,6 @@ export default function Dashboard() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [partsData, setPartsData] = useState([])
   const [logs, setLogs] = useState([])
-  const [tokens, setTokens] = useState([])
   const [orders, setOrders] = useState(() => {
     const saved = localStorage.getItem('dicas:orders')
     if (saved) { try { return JSON.parse(saved) } catch {} }
@@ -258,11 +253,6 @@ export default function Dashboard() {
     const res = await apiFetch('/api/receive-logs?limit=500')
     setLogs(await res.json())
   }
-  async function loadTokens() {
-    const res = await apiFetch('/api/designer-tokens')
-    setTokens(await res.json())
-  }
-
   function logout() {
     localStorage.removeItem('token')
     navigate('/login')
@@ -323,7 +313,7 @@ export default function Dashboard() {
             <button
               key={n.id}
               className={`nav-item ${page === n.id ? 'active' : ''}`}
-              onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens(); if (n.id === 'process') setProcessReloadKey(k => k + 1) }}
+              onClick={() => { setPage(n.id); if (n.id === 'process') setProcessReloadKey(k => k + 1) }}
               title={collapsed ? n.label : undefined}
               style={collapsed ? { justifyContent: 'center', marginBottom: 2 } : undefined}
             >
@@ -382,7 +372,7 @@ export default function Dashboard() {
 
         {/* Page content */}
         <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
-          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'brands' && page !== 'factories' ? (
+          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'factories' ? (
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
@@ -390,7 +380,6 @@ export default function Dashboard() {
                 onGoToProcess={p => { if (p) { setSelectedProduct(p); loadParts(p.id) } setPage('process') }}
                 onGoToParts={p => { if (p) setSelectedProduct(p); setPage('process') }}
                 onGoToLog={() => setPage('log')}
-                onGoToBrands={() => { loadTokens(); setPage('brands') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
@@ -401,7 +390,6 @@ export default function Dashboard() {
               />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
               {page === 'factories' && <FactoriesPage />}
-              {page === 'brands'    && <BrandsPage products={products} />}
             </>
           )}
         </div>
@@ -589,40 +577,8 @@ function OrderRow({ order, product, clientName, onGoToOrders }) {
   )
 }
 
-function BrandRow({ brand, products }) {
-  const assignedNames = (brand.products || []).map(p => p.name).join('、') || '—'
-  const initials = brand.name?.slice(0, 1) || '?'
-
-  return (
-    <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
-      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
-      onMouseLeave={e => e.currentTarget.style.background = '#F8F8F6'}>
-      <div style={{ width: 28, height: 28, borderRadius: 999, background: '#E8461A', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-        {initials}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 500 }}>{brand.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignedNames}</div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Page: Overview ───────────────────────────────────────────
-function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands, onGoToOrders }) {
-  const [brands, setBrands] = useState([])
-  const [brandsLoading, setBrandsLoading] = useState(true)
-  const [tokenMap, setTokenMap] = useState({}) // product_id → label
-
-  useEffect(() => {
-    apiFetch('/api/brands').then(r => r.json()).then(d => setBrands(d)).catch(() => {}).finally(() => setBrandsLoading(false))
-    apiFetch('/api/designer-tokens').then(r => r.json()).then(tokens => {
-      const map = {}
-      tokens.forEach(t => { if (t.label && !map[t.product_id]) map[t.product_id] = t.label })
-      setTokenMap(map)
-    }).catch(() => {})
-  }, [])
-
+function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToOrders }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
       {/* Sub-header */}
@@ -660,19 +616,6 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
           {products.length === 0 && (
             <div style={{ gridColumn: '1 / -1', padding: '40px 0', color: 'var(--text-4)', fontSize: 13, textAlign: 'center' }}>尚無產品</div>
           )}
-        </div>
-      </div>
-
-      {/* Section 2: Brands */}
-      <div style={{ maxWidth: 480 }}>
-        <OvSectionHead icon={Icon.Brand} title="品牌總覽" count={`${brands.length} 個`} linkLabel="設計師管理" onLink={onGoToBrands} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {brandsLoading
-            ? [1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F0EFE8' }} />)
-            : brands.length === 0
-              ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無品牌</div>
-              : brands.map(b => <BrandRow key={b.id} brand={b} products={products} />)
-          }
         </div>
       </div>
     </div>
@@ -6124,131 +6067,6 @@ function FactoryModal({ mode, factory, onClose, onSaved }) {
         </div>
       </div>
     </ModalOverlay>
-  )
-}
-
-function BrandsPage({ products }) {
-  const [brands, setBrands] = useState([])
-  const [newName, setNewName] = useState('')
-  const [assignSelects, setAssignSelects] = useState({}) // brandId → selected product_id
-
-  useEffect(() => { loadBrands() }, [])
-
-  async function loadBrands() {
-    try {
-      const res = await apiFetch('/api/brands')
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setBrands(await res.json())
-    } catch (e) { alert('載入品牌失敗：' + e.message) }
-  }
-  async function createBrand() {
-    if (!newName.trim()) return alert('請填寫品牌名稱')
-    try {
-      const res = await apiFetch('/api/brands', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setNewName(''); loadBrands()
-    } catch (e) { alert('新增品牌失敗：' + e.message) }
-  }
-  async function deleteBrand(id) {
-    if (!confirm('確認刪除此品牌？')) return
-    try {
-      const res = await apiFetch(`/api/brands/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      loadBrands()
-    } catch (e) { alert('刪除品牌失敗：' + e.message) }
-  }
-  async function assignProduct(brandId) {
-    const productId = assignSelects[brandId]
-    if (!productId) return alert('請先選擇產品')
-    try {
-      const res = await apiFetch(`/api/brands/${brandId}/products`, { method: 'POST', body: JSON.stringify({ product_id: productId }) })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setAssignSelects(s => ({ ...s, [brandId]: '' })); loadBrands()
-    } catch (e) { alert('指派失敗：' + e.message) }
-  }
-  async function removeProduct(brandId, productId) {
-    try {
-      const res = await apiFetch(`/api/brands/${brandId}/products/${productId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      loadBrands()
-    } catch (e) { alert('移除失敗：' + e.message) }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
-      {/* Create brand */}
-      <SettingsSection title="新增品牌">
-        <div style={{ display: 'flex', gap: 10 }}>
-          <input className="input" style={{ flex: 1 }} placeholder="品牌名稱（如：Cumei）" value={newName} onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && createBrand()} />
-          <button className="btn primary" onClick={createBrand}><Icon.Plus />新增</button>
-        </div>
-      </SettingsSection>
-
-      {/* Brand list */}
-      {brands.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無品牌，請先新增。</p>}
-      {brands.map(brand => {
-        const assignedIds = new Set(brand.products.map(p => p.id))
-        const unassigned = products.filter(p => !assignedIds.has(p.id))
-        return (
-          <div key={brand.id} className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Brand header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{brand.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={() => deleteBrand(brand.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>
-                  刪除品牌
-                </button>
-              </div>
-            </div>
-
-            {/* Assigned products */}
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
-                已指派產品 ({brand.products.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {brand.products.map(p => (
-                  <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 20, padding: '4px 10px 4px 12px', fontSize: 13 }}>
-                    {p.name}
-                    <button onClick={() => removeProduct(brand.id, p.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-3)', display: 'grid', placeItems: 'center', lineHeight: 1 }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-                      <Icon.X />
-                    </button>
-                  </span>
-                ))}
-                {brand.products.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-4)' }}>尚未指派任何產品</span>}
-              </div>
-            </div>
-
-            {/* Assign product */}
-            {unassigned.length > 0 && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select className="select" style={{ flex: 1 }}
-                  value={assignSelects[brand.id] || ''}
-                  onChange={e => setAssignSelects(s => ({ ...s, [brand.id]: e.target.value }))}>
-                  <option value="">選擇要指派的產品…</option>
-                  {unassigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <button className="btn primary" onClick={() => assignProduct(brand.id)}><Icon.Plus />指派</button>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function SettingsSection({ title, children }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, fontFamily: 'var(--font-mono)' }}>{title}</div>
-      <div className="card" style={{ padding: 20 }}>{children}</div>
-    </div>
   )
 }
 

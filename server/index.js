@@ -16,8 +16,6 @@ import partRoutes from './routes/parts.js'
 import receiveLogRoutes from './routes/receiveLogs.js'
 import alertRoutes from './routes/alerts.js'
 import exportRoutes from './routes/export.js'
-import designerTokenRoutes from './routes/designerTokens.js'
-import brandsRoutes from './routes/brands.js'
 import packingItemRoutes from './routes/packingItems.js'
 import workersRoutes from './routes/workers.js'
 import defectLogsRoutes from './routes/defectLogs.js'
@@ -38,8 +36,6 @@ app.use('/api/parts', partRoutes)
 app.use('/api/receive-logs', receiveLogRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/export', exportRoutes)
-app.use('/api/designer-tokens', designerTokenRoutes)
-app.use('/api/brands', brandsRoutes)
 app.use('/api/packing-items', packingItemRoutes)
 app.use('/api/workers', workersRoutes)
 app.use('/api/defect-logs', defectLogsRoutes)
