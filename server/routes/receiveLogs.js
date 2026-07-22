@@ -177,10 +177,15 @@ router.patch('/:id', async (req, res) => {
       const olq = olq_ || 0
       const onet = oq - odq_
 
-      // Reverse original stock effects
+      // Reverse original stock effects.
+      // These undo an add we know actually happened, so the subtraction must be
+      // exact — never floor-guarded. Flooring here was silently truncating the
+      // reversal whenever intervening send/ship activity had already brought the
+      // counter below the amount being undone, permanently desyncing
+      // warehouse_stock from the receive_logs ledger.
       if (oa === 'receive') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?')
-          .run(onet, onet, odq_, odq_, odq_, odq_, op)
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?')
+          .run(onet, odq_, odq_, op)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
       } else if (oa === 'send') {
         await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(oq, olq, olq, op)
@@ -188,8 +193,8 @@ router.patch('/:id', async (req, res) => {
       } else if (oa === 'ship') {
         await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(oq, op)
       } else if (oa === 'return') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?')
-          .run(onet, onet, odq_, odq_, odq_, odq_, olq, olq, op)
+        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?')
+          .run(onet, odq_, odq_, olq, op)
         if (os) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?')
           .run(oq + olq, oq, oq, odq_, odq_, os)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
@@ -248,10 +253,13 @@ router.delete('/:id', async (req, res) => {
       const lq = lq_ || 0
       const net = qty - dq
 
+      // Undoing a receive/return means reversing an add we know actually happened,
+      // so the subtraction must be exact — never floor-guarded (see PATCH handler
+      // above for why flooring here silently corrupts warehouse_stock).
       if (action_type === 'receive') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
-        ).run(net, net, dq, dq, dq, dq, part_id)
+          'UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?'
+        ).run(net, dq, dq, part_id)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
 
       } else if (action_type === 'send') {
@@ -267,8 +275,8 @@ router.delete('/:id', async (req, res) => {
 
       } else if (action_type === 'return') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, defect_stock=CASE WHEN defect_stock>=? THEN defect_stock-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?'
-        ).run(net, net, dq, dq, dq, dq, lq, lq, part_id)
+          'UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?'
+        ).run(net, dq, dq, lq, part_id)
         if (stage_id) {
           await tx.prepare(
             'UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
