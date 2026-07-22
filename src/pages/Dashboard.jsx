@@ -1435,21 +1435,25 @@ function InventoryView({ parts }) {
               {isOpen && bd?.loading && (
                 <div style={{ padding: '10px 16px', fontSize: 11, color: 'var(--text-4)', background: 'var(--bg-2)' }}>載入中…</div>
               )}
-              {isOpen && bd && !bd.loading && bd.reliable && (
+              {isOpen && bd && !bd.loading && !bd.loadError && (
                 <div style={{ background: 'var(--bg-2)', padding: '8px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {skus.map(s => (
-                    <div key={s.id || s.color_name} style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      background: 'var(--bg-1)', border: '0.5px solid var(--line-1)', borderRadius: 999,
-                    }}>
-                      <SkuDot name={s.color_name} hex={s.color_hex} size={9} />
-                      <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{s.color_name}</span>
-                      <span className="num" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-1)' }}>{(bd.breakdown[s.color_name] || 0).toLocaleString()}</span>
-                    </div>
-                  ))}
+                  {skus.map(s => {
+                    const qty = bd.breakdown[s.color_name] || 0
+                    const isNegative = qty < 0
+                    return (
+                      <div key={s.id || s.color_name} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                        background: 'var(--bg-1)', border: isNegative ? '0.5px solid #E8877A' : '0.5px solid var(--line-1)', borderRadius: 999,
+                      }}>
+                        <SkuDot name={s.color_name} hex={s.color_hex} size={9} />
+                        <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{s.color_name}</span>
+                        <span className="num" style={{ fontSize: 12, fontWeight: 500, color: isNegative ? '#B54A1F' : 'var(--text-1)' }}>{qty.toLocaleString()}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
-              {isOpen && bd && !bd.loading && !bd.reliable && bd.loadError && (
+              {isOpen && bd && !bd.loading && bd.loadError && (
                 <div style={{ padding: '8px 16px', fontSize: 11, color: '#B54A1F', background: '#FEF6F4', borderTop: '1px solid #FCD6CC', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon.Warn />
                   載入分色資料失敗，可能是伺服器還沒更新到最新版本，請稍後再試
@@ -1465,7 +1469,7 @@ function InventoryView({ parts }) {
                   }}
                 >
                   <Icon.Warn />
-                  顏色分布資料不完整，暫時只顯示總庫存
+                  {bd.negativeColors?.length > 0 ? '上方顏色分布可能不準確（有顏色庫存為負）' : '上方顏色分布可能不準確（分色加總跟總庫存對不起來）'}
                   <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
                 </button>
               )}
