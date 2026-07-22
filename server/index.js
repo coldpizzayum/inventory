@@ -16,15 +16,13 @@ import partRoutes from './routes/parts.js'
 import receiveLogRoutes from './routes/receiveLogs.js'
 import alertRoutes from './routes/alerts.js'
 import exportRoutes from './routes/export.js'
-import designerTokenRoutes from './routes/designerTokens.js'
-import brandRoutes from './routes/brand.js'
-import brandsRoutes from './routes/brands.js'
 import packingItemRoutes from './routes/packingItems.js'
 import workersRoutes from './routes/workers.js'
 import defectLogsRoutes from './routes/defectLogs.js'
 import stockAdjustmentsRoutes from './routes/stockAdjustments.js'
 import factoriesRoutes from './routes/factories.js'
 import qcRoutes from './routes/qc.js'
+import subAssemblyRoutes from './routes/subAssemblies.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -38,15 +36,13 @@ app.use('/api/parts', partRoutes)
 app.use('/api/receive-logs', receiveLogRoutes)
 app.use('/api/alerts', alertRoutes)
 app.use('/api/export', exportRoutes)
-app.use('/api/designer-tokens', designerTokenRoutes)
-app.use('/api/brand', brandRoutes)
-app.use('/api/brands', brandsRoutes)
 app.use('/api/packing-items', packingItemRoutes)
 app.use('/api/workers', workersRoutes)
 app.use('/api/defect-logs', defectLogsRoutes)
 app.use('/api/stock-adjustments', stockAdjustmentsRoutes)
 app.use('/api/factories', factoriesRoutes)
 app.use('/api/qc', qcRoutes)
+app.use('/api/sub-assemblies', subAssemblyRoutes)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 

@@ -189,6 +189,15 @@ const SQLITE_SCHEMA = `
     logged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (qc_pending_id) REFERENCES qc_pending(id)
   );
+  CREATE TABLE IF NOT EXISTS product_variant_stock (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id TEXT NOT NULL,
+    variant_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    UNIQUE(product_id, variant_name)
+  );
 `
 
 const PG_SCHEMA = `
@@ -350,6 +359,15 @@ const PG_SCHEMA = `
     logged_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (qc_pending_id) REFERENCES qc_pending(id)
   );
+  CREATE TABLE IF NOT EXISTS product_variant_stock (
+    id SERIAL PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    variant_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    UNIQUE(product_id, variant_name)
+  );
 `
 
 // ─── 廠商目錄 backfill ──────────────────────────────────────────────────────
@@ -419,6 +437,15 @@ function createSqliteAdapter() {
   try { raw.exec('ALTER TABLE parts ADD COLUMN total_lost INTEGER DEFAULT 0') } catch (_) {}
   // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
   try { raw.exec(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`) } catch (_) {}
+  // One-time backfill: existing aggregate warehouse_stock predates per-variant
+  // tracking, so it goes into a single "未分類" bucket rather than being invented
+  try {
+    raw.exec(`
+      INSERT INTO product_variant_stock (product_id, variant_name, quantity)
+      SELECT id, '未分類', COALESCE(warehouse_stock, 0) FROM products
+      WHERE id NOT IN (SELECT product_id FROM product_variant_stock)
+    `)
+  } catch (_) {}
   raw.exec(`
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -512,6 +539,14 @@ async function createPgAdapter() {
   await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_lost INTEGER DEFAULT 0')
   // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
   await pool.query(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`)
+  // One-time backfill: existing aggregate warehouse_stock predates per-variant
+  // tracking, so it goes into a single "未分類" bucket rather than being invented
+  await pool.query(`
+    INSERT INTO product_variant_stock (product_id, variant_name, quantity)
+    SELECT id, '未分類', COALESCE(warehouse_stock, 0) FROM products
+    WHERE id NOT IN (SELECT product_id FROM product_variant_stock)
+    ON CONFLICT (product_id, variant_name) DO NOTHING
+  `)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,

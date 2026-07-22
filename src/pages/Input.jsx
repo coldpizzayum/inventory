@@ -81,6 +81,18 @@ const IcoCheck = () => (
     <path d="M3 7l3 3 5-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 )
+const IcoAssembly = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l8 4.5v9l-8 4.5l-8-4.5v-9z"/>
+    <path d="M12 3v18M4 7.5l8 4.5l8-4.5"/>
+  </svg>
+)
+const IcoProduce = () => (
+  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l8 4.5v9l-8 4.5l-8-4.5v-9z"/>
+    <path d="M9 12l2 2l4-4"/>
+  </svg>
+)
 
 // ─── ProductCard ──────────────────────────────────────────────
 function ProductCard({ product, active, color, onClick }) {
@@ -238,6 +250,8 @@ function StepAction({ onPick }) {
         { dir:'in',  label:'進貨', sub:'東西進到倉庫', color:'#2E7D32', icon:<IcoIn /> },
         { dir:'out', label:'出貨', sub:'東西離開倉庫', color:'#E64A19', icon:<IcoOut /> },
         { dir:'qc',  label:'品檢登記', sub:'從加工廠回來，先暫存品檢', color:'#185FA5', icon:<IcoClipboardCheck /> },
+        { dir:'assembly', label:'半成品組裝', sub:'登記組裝入庫，扣配方庫存', color:'#6B3FA0', icon:<IcoAssembly /> },
+        { dir:'produce',  label:'成品完工', sub:'登記完工數量，自動扣庫存', color:'#00838F', icon:<IcoProduce /> },
       ].map(d => (
         <button key={d.dir} onClick={() => onPick(d.dir)} style={{
           padding:0, background:'#fff', border:'1px solid #EBEBEB', borderRadius:14,
@@ -690,6 +704,268 @@ function StepDone({ direction, picks, qtyData, onSame, onNew }) {
   )
 }
 
+// ─── Step: 半成品組裝 ───────────────────────────────────────────
+function StepSubAssembly({ products, onBack }) {
+  const color = '#6B3FA0'
+  const [pid, setPid] = useState(products[0]?.id ?? null)
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [selectedId, setSelectedId] = useState(null)
+  const [qty, setQty] = useState('')
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(null)
+
+  function reload(pidToUse) {
+    const target = pidToUse ?? pid
+    if (!target) return
+    setLoading(true)
+    fetch(`/api/sub-assemblies?product_id=${target}`)
+      .then(async r => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `HTTP ${r.status}`) }
+        return r.json()
+      })
+      .then(data => {
+        setItems(data)
+        setSelectedId(prev => (data.some(d => d.id === prev) ? prev : (data[0]?.id ?? null)))
+        setLoading(false)
+      })
+      .catch(() => { setItems([]); setLoading(false) })
+  }
+
+  useEffect(() => { reload(pid) }, [pid])
+
+  const canSubmit = !!(selectedId && qty && parseInt(qty) > 0) && !submitting
+
+  async function submit() {
+    if (!canSubmit) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/sub-assemblies/${selectedId}/assemble`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: parseInt(qty), note: note || '' }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
+      const item = items.find(i => i.id === selectedId)
+      setDone({ name: item?.name ?? '', qty: parseInt(qty) })
+      setQty(''); setNote('')
+      reload()
+    } catch (e) { alert('送出失敗：' + e.message) }
+    finally { setSubmitting(false) }
+  }
+
+  if (done) {
+    return (
+      <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:18 }}>
+        <div style={{ textAlign:'center', padding:'24px 0 8px' }}>
+          <div style={{ width:64, height:64, borderRadius:32, background:color, display:'grid', placeItems:'center', margin:'0 auto 14px' }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12l5 5 9-10" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div style={{ fontSize:20, fontWeight:700 }}>組裝入庫成功</div>
+        </div>
+        <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{done.name}</div>
+          <div style={{ fontSize:13, color:'#555' }}>組裝入庫 {done.qty.toLocaleString()} 件</div>
+        </div>
+        <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
+          <button onClick={() => setDone(null)} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>繼續組裝</button>
+          <button onClick={onBack} style={{
+            flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
+            background:color, border:`1.5px solid ${color}`, color:'#fff',
+            borderRadius:8, cursor:'pointer', fontFamily:'inherit',
+          }}>回首頁</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:22 }}>
+      <div>
+        <SHead>選擇產品</SHead>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:8 }}>
+          {products.map(p => <ProductCard key={p.id} product={p} color={color} active={pid===p.id} onClick={() => setPid(p.id)} />)}
+        </div>
+      </div>
+
+      <div>
+        <SHead>半成品庫存總覽</SHead>
+        {loading ? (
+          <div style={{ fontSize:13, color:'#A8A6A0' }}>載入中…</div>
+        ) : items.length === 0 ? (
+          <div style={{ fontSize:13, color:'#A8A6A0' }}>此產品尚未設定半成品資料</div>
+        ) : (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:8 }}>
+            {items.map(it => (
+              <div key={it.id} style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:11, color:'#A8A6A0', fontWeight:500 }}>{it.code}</div>
+                <div style={{ fontSize:14, fontWeight:600, margin:'2px 0 6px' }}>{it.name}</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:22, fontWeight:700, color }}>{(it.stock_qty ?? 0).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {items.length > 0 && (
+        <>
+          <div>
+            <SHead>選擇要組裝的半成品</SHead>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              {items.map(it => <Pill key={it.id} big color={color} active={selectedId===it.id} onClick={() => setSelectedId(it.id)}>{it.name}</Pill>)}
+            </div>
+          </div>
+
+          <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:'16px 20px' }}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4, fontWeight:500 }}>組裝數量</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:8, height:60, marginBottom:12 }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:54, fontWeight:700, letterSpacing:'-0.03em', lineHeight:1, color:qty?'#1A1A1A':'#C9C7C0' }}>
+                {qty||'0'}
+              </div>
+              <span style={{ fontSize:16, color:'#888' }}>件</span>
+            </div>
+            <Keypad value={qty} onChange={setQty} accent={color} />
+          </div>
+
+          <div>
+            <SHead>備註（選填）</SHead>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="備註" style={{
+              width:'100%', boxSizing:'border-box', padding:'12px 14px', fontSize:14, fontFamily:'inherit',
+              border:'0.5px solid #EBEBEB', borderRadius:10, background:'#fff',
+            }} />
+          </div>
+        </>
+      )}
+
+      <BottomBar onBack={onBack} onNext={submit} nextLabel={submitting ? '送出中...' : '送出組裝'} nextColor={color} disabled={!canSubmit} />
+    </div>
+  )
+}
+
+// ─── Step: 成品完工登記 ─────────────────────────────────────────
+function StepProduce({ products, onBack }) {
+  const color = '#00838F'
+  const [pid, setPid] = useState(products[0]?.id ?? null)
+  const [variants, setVariants] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [variant, setVariant] = useState(null)
+  const [qty, setQty] = useState('')
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(null)
+
+  useEffect(() => {
+    if (!pid) return
+    setLoading(true)
+    fetch(`/api/products/${pid}/variants`)
+      .then(async r => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `HTTP ${r.status}`) }
+        return r.json()
+      })
+      .then(data => {
+        setVariants(data)
+        setVariant(data[0] ?? null)
+        setLoading(false)
+      })
+      .catch(() => { setVariants([]); setLoading(false) })
+  }, [pid])
+
+  const canSubmit = !!(variant && qty && parseInt(qty) > 0) && !submitting
+
+  async function submit() {
+    if (!canSubmit) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/products/${pid}/produce`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_name: variant, quantity: parseInt(qty), note: note || '' }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
+      setDone({ variant, qty: parseInt(qty) })
+      setQty(''); setNote('')
+    } catch (e) { alert('送出失敗：' + e.message) }
+    finally { setSubmitting(false) }
+  }
+
+  if (done) {
+    return (
+      <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:18 }}>
+        <div style={{ textAlign:'center', padding:'24px 0 8px' }}>
+          <div style={{ width:64, height:64, borderRadius:32, background:color, display:'grid', placeItems:'center', margin:'0 auto 14px' }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12l5 5 9-10" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div style={{ fontSize:20, fontWeight:700 }}>完工登記成功</div>
+        </div>
+        <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:16 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{done.variant}</div>
+          <div style={{ fontSize:13, color:'#555' }}>完工 {done.qty.toLocaleString()} 件</div>
+        </div>
+        <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
+          <button onClick={() => setDone(null)} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>繼續登記</button>
+          <button onClick={onBack} style={{
+            flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
+            background:color, border:`1.5px solid ${color}`, color:'#fff',
+            borderRadius:8, cursor:'pointer', fontFamily:'inherit',
+          }}>回首頁</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding:20, paddingBottom:100, display:'flex', flexDirection:'column', gap:22 }}>
+      <div>
+        <SHead>選擇產品</SHead>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:8 }}>
+          {products.map(p => <ProductCard key={p.id} product={p} color={color} active={pid===p.id} onClick={() => setPid(p.id)} />)}
+        </div>
+      </div>
+
+      <div>
+        <SHead>選擇款式</SHead>
+        {loading ? (
+          <div style={{ fontSize:13, color:'#A8A6A0' }}>載入中…</div>
+        ) : variants.length === 0 ? (
+          <div style={{ fontSize:13, color:'#A8A6A0' }}>此產品尚未設定成品配方</div>
+        ) : (
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {variants.map(v => <Pill key={v} big color={color} active={variant===v} onClick={() => setVariant(v)}>{v}</Pill>)}
+          </div>
+        )}
+      </div>
+
+      {variants.length > 0 && (
+        <>
+          <div style={{ background:'#fff', border:'0.5px solid #EBEBEB', borderRadius:12, padding:'16px 20px' }}>
+            <div style={{ fontSize:12, color:'#888', marginBottom:4, fontWeight:500 }}>完工數量</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:8, height:60, marginBottom:12 }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:54, fontWeight:700, letterSpacing:'-0.03em', lineHeight:1, color:qty?'#1A1A1A':'#C9C7C0' }}>
+                {qty||'0'}
+              </div>
+              <span style={{ fontSize:16, color:'#888' }}>件</span>
+            </div>
+            <Keypad value={qty} onChange={setQty} accent={color} />
+          </div>
+
+          <div>
+            <SHead>備註（選填）</SHead>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="備註" style={{
+              width:'100%', boxSizing:'border-box', padding:'12px 14px', fontSize:14, fontFamily:'inherit',
+              border:'0.5px solid #EBEBEB', borderRadius:10, background:'#fff',
+            }} />
+          </div>
+        </>
+      )}
+
+      <BottomBar onBack={onBack} onNext={submit} nextLabel={submitting ? '送出中...' : '送出完工登記'} nextColor={color} disabled={!canSubmit} />
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────
 export default function Input() {
   const [step, setStep] = useState('action')
@@ -753,9 +1029,17 @@ export default function Input() {
         <img src="/dicas-logo.svg" alt="DiCAS" style={{ height:26, width:'auto' }} />
         <span style={{ fontSize:14, fontWeight:700, marginLeft:10 }}>進出貨登記</span>
       </div>
-      {step !== 'done' && <StepBar step={step} />}
+      {step !== 'done' && step !== 'sub-assembly' && step !== 'produce' && <StepBar step={step} />}
       <div style={{ flex:1, overflow:'auto' }}>
-        {step === 'action' && <StepAction onPick={dir => { setDirection(dir); setStep('picks') }} />}
+        {step === 'action' && (
+          <StepAction onPick={dir => {
+            if (dir === 'assembly') { setStep('sub-assembly'); return }
+            if (dir === 'produce') { setStep('produce'); return }
+            setDirection(dir); setStep('picks')
+          }} />
+        )}
+        {step === 'sub-assembly' && <StepSubAssembly products={products} onBack={() => setStep('action')} />}
+        {step === 'produce' && <StepProduce products={products} onBack={() => setStep('action')} />}
         {step === 'picks' && direction && (
           <StepPicks direction={direction} products={products}
             onBack={() => setStep('action')}

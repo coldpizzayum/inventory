@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { IconPackages } from '@tabler/icons-react'
 import { ACTION_LABEL, resolveActionType, resolveStageId } from './Input.jsx'
+import ProductCard from '../components/ProductCard/index.js'
 
 // ─── Icons ───────────────────────────────────────────────────
 const S = { viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"1.6", strokeLinecap:"round", strokeLinejoin:"round" }
@@ -32,37 +34,33 @@ const Icon = {
   Photo: () => (<svg {...S} width="16" height="16"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
   // ti-clipboard-list
   Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
-  // ti-palette
-  Brand: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/><path d="M8.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M12.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M16.5 10.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg>),
-  // ti-settings (gear)
-  Gear: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>),
   // ti-logout
   Logout: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>),
   // ti-building-factory
   Factory: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 21l18 0"/><path d="M5 21v-10l4 -2v3l4 -2v3l4 -2v10"/><path d="M5 14l1 0"/><path d="M9 14l1 0"/><path d="M13 14l1 0"/><path d="M17 21l0 -4"/></svg>),
+  // ti-packages
+  Stock: () => (<IconPackages width="16" height="16" stroke={1.6} />),
 }
 
 const NAV = [
   { id: 'overview',  label: '生產看板',     icon: Icon.Dashboard },
   { id: 'process',   label: '加工流程',     icon: Icon.Flow },
+  { id: 'stock',     label: '庫存管理',     icon: Icon.Stock },
   { id: 'log',       label: '進出貨登記',   icon: Icon.Log },
-  null,
-  { id: 'orders',    label: '訂單管理',     icon: Icon.Order },
   null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
   { id: 'factories', label: '加工廠商',     icon: Icon.Factory },
-  { id: 'brands',    label: '設計品牌管理', icon: Icon.Brand },
 ]
 
 const PAGE_TITLES = {
   overview:  '生產看板',
   process:   '加工流程看板',
+  stock:     '庫存管理',
   sku:       '零件管理',
   log:       '進出貨登記',
   settings:  '產品管理',
   orders:    '訂單管理',
   factories: '加工廠商',
-  brands:    '設計品牌管理',
 }
 
 const SKU_COLORS = {
@@ -220,7 +218,6 @@ export default function Dashboard() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [partsData, setPartsData] = useState([])
   const [logs, setLogs] = useState([])
-  const [tokens, setTokens] = useState([])
   const [orders, setOrders] = useState(() => {
     const saved = localStorage.getItem('dicas:orders')
     if (saved) { try { return JSON.parse(saved) } catch {} }
@@ -260,11 +257,6 @@ export default function Dashboard() {
     const res = await apiFetch('/api/receive-logs?limit=500')
     setLogs(await res.json())
   }
-  async function loadTokens() {
-    const res = await apiFetch('/api/designer-tokens')
-    setTokens(await res.json())
-  }
-
   function logout() {
     localStorage.removeItem('token')
     navigate('/login')
@@ -325,7 +317,7 @@ export default function Dashboard() {
             <button
               key={n.id}
               className={`nav-item ${page === n.id ? 'active' : ''}`}
-              onClick={() => { setPage(n.id); if (n.id === 'brands') loadTokens(); if (n.id === 'process') setProcessReloadKey(k => k + 1) }}
+              onClick={() => { setPage(n.id); if (n.id === 'process') setProcessReloadKey(k => k + 1) }}
               title={collapsed ? n.label : undefined}
               style={collapsed ? { justifyContent: 'center', marginBottom: 2 } : undefined}
             >
@@ -348,9 +340,6 @@ export default function Dashboard() {
               <div style={{ fontSize: 11, color: '#888' }}>管理後台</div>
             </div>
           )}
-          <UserIconBtn onClick={() => setPage('settings')} title="產品管理">
-            <Icon.Gear />
-          </UserIconBtn>
           <UserIconBtn onClick={logout} title="登出" hoverColor="#E8461A">
             <Icon.Logout />
           </UserIconBtn>
@@ -367,14 +356,7 @@ export default function Dashboard() {
         }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {page === 'overview' || page === 'process' ? (
-              <>
-                <button className="btn" style={{ fontSize: 13 }}>
-                  <Icon.Export />匯出報表
-                </button>
-                {page === 'process' && headerActions}
-              </>
-            ) : page === 'orders' ? (
+            {page === 'orders' ? (
               <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewOrder(true)}>
                 <Icon.Plus />新增訂單
               </button>
@@ -384,7 +366,7 @@ export default function Dashboard() {
 
         {/* Page content */}
         <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
-          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'brands' && page !== 'factories' ? (
+          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'factories' && page !== 'stock' ? (
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
@@ -392,18 +374,17 @@ export default function Dashboard() {
                 onGoToProcess={p => { if (p) { setSelectedProduct(p); loadParts(p.id) } setPage('process') }}
                 onGoToParts={p => { if (p) setSelectedProduct(p); setPage('process') }}
                 onGoToLog={() => setPage('log')}
-                onGoToBrands={() => { loadTokens(); setPage('brands') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
+              {page === 'stock'     && <StockManagementPage products={products} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={loadLogs} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
-              {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
+              {page === 'settings'  && <SettingsPage products={products} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'orders'    && <OrdersPage orders={orders} saveOrders={saveOrders} products={products} showNew={showNewOrder} setShowNew={setShowNewOrder} filterProductId={ordersFilter} setFilterProductId={setOrdersFilter} />}
               {page === 'factories' && <FactoriesPage />}
-              {page === 'brands'    && <BrandsPage products={products} />}
             </>
           )}
         </div>
@@ -437,98 +418,6 @@ function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink, link2L
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {link2Label && onLink2 && linkBtn(link2Label, onLink2)}
         {linkLabel && onLink && linkBtn(linkLabel, onLink)}
-      </div>
-    </div>
-  )
-}
-
-function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
-  const [imgSrc, setImgSrc] = useState(null)
-  useEffect(() => {
-    const stored = localStorage.getItem(`prod-img-${product.id}`)
-    if (stored) setImgSrc(stored)
-  }, [product.id])
-
-  const orderCount = orders.length
-  const warehouseTotal = product.warehouse_total || 0
-  const inTransitTotal = product.in_transit_total || 0
-
-  const totalQty = orders.reduce((s, o) => s + (o.qty || 0), 0)
-  const totalAlloc = orders.reduce((s, o) => s + (o.alloc || 0), 0)
-  const pct = totalQty > 0 ? Math.round((totalAlloc / totalQty) * 100) : 0
-
-  const statusBadge =
-    pct >= 100        ? { label: '完成',    bg: '#E6F4EC', color: '#1A7A3C' }
-    : pct >= 80       ? { label: '包裝中',  bg: '#FEF3CD', color: '#B07D00' }
-    : inTransitTotal > 0 ? { label: '加工中', bg: '#FEE9E4', color: '#E8461A' }
-    : { label: '送加工廠', bg: '#E6F0FB', color: '#1A5FAD' }
-
-  return (
-    <div style={{
-      background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
-      borderRadius: 'var(--r-lg)', overflow: 'hidden',
-      cursor: 'pointer', transition: 'border-color .15s',
-    }}
-      onClick={onGoToProcess}
-      onMouseEnter={e => e.currentTarget.style.borderColor = '#E8461A'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-1)'}>
-
-      {/* Image area */}
-      <div style={{ height: 80, background: 'var(--bg-2)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
-        {imgSrc
-          ? <img src={imgSrc} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          : <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--line-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/>
-            </svg>
-        }
-        <div style={{
-          position: 'absolute', top: 6, right: 6,
-          background: statusBadge.bg, color: statusBadge.color,
-          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, lineHeight: 1.5,
-        }}>{statusBadge.label}</div>
-      </div>
-
-      {/* Content */}
-      <div style={{ padding: '10px 12px' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 16 }}>
-          {product.description || ''}
-        </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div>
-            <div className="num" style={{ fontSize: 14, fontWeight: 500 }}>{warehouseTotal}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>倉庫庫存</div>
-          </div>
-          <div>
-            <div className="num" style={{ fontSize: 14, fontWeight: 500, color: '#185FA5' }}>{inTransitTotal}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>加工中</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom link row */}
-      <div style={{
-        padding: '7px 12px', borderTop: '0.5px solid var(--line-1)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {[
-            { label: '加工流程', icon: Icon.Flow, action: onGoToProcess },
-            { label: '訂單',     icon: Icon.Order, action: onGoToOrders },
-          ].map(({ label, icon: Ic, action }) => (
-            <button key={label} onClick={e => { e.stopPropagation(); action() }}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}
-              onMouseEnter={e => e.currentTarget.style.color = '#E8461A'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-              <Ic />{label}
-            </button>
-          ))}
-        </div>
-        {orderCount > 0 && (
-          <span style={{ background: '#FEE9E4', color: '#E8461A', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, lineHeight: 1.5 }}>
-            訂單 {orderCount}
-          </span>
-        )}
       </div>
     </div>
   )
@@ -597,63 +486,8 @@ function OrderRow({ order, product, clientName, onGoToOrders }) {
   )
 }
 
-function BrandRow({ brand, products }) {
-  const assignedNames = (brand.products || []).map(p => p.name).join('、') || '—'
-  const initials = brand.name?.slice(0, 1) || '?'
-  const [copied, setCopied] = useState(false)
-
-  function copyLink(e) {
-    e.stopPropagation()
-    const url = `${window.location.origin}/brand/${brand.token}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1800)
-    })
-  }
-
-  return (
-    <div style={{ background: '#F8F8F6', borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 10, alignItems: 'center', transition: 'background 0.1s' }}
-      onMouseEnter={e => e.currentTarget.style.background = '#F0EFE8'}
-      onMouseLeave={e => e.currentTarget.style.background = '#F8F8F6'}>
-      <div style={{ width: 28, height: 28, borderRadius: 999, background: '#E8461A', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-        {initials}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 500 }}>{brand.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignedNames}</div>
-      </div>
-      <button onClick={copyLink} title="複製設計師連結" style={{
-        flexShrink: 0, border: copied ? '1px solid #1A7A3C' : '1px solid var(--line-2)',
-        background: copied ? '#E6F4EC' : '#fff', borderRadius: 6,
-        padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-        fontSize: 11, fontWeight: 500, color: copied ? '#1A7A3C' : 'var(--text-2)',
-        transition: 'all 0.15s',
-      }}>
-        {copied
-          ? <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          : <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        }
-        {copied ? '已複製' : '分享連結'}
-      </button>
-    </div>
-  )
-}
-
 // ─── Page: Overview ───────────────────────────────────────────
-function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToBrands, onGoToOrders }) {
-  const [brands, setBrands] = useState([])
-  const [brandsLoading, setBrandsLoading] = useState(true)
-  const [tokenMap, setTokenMap] = useState({}) // product_id → label
-
-  useEffect(() => {
-    apiFetch('/api/brands').then(r => r.json()).then(d => setBrands(d)).catch(() => {}).finally(() => setBrandsLoading(false))
-    apiFetch('/api/designer-tokens').then(r => r.json()).then(tokens => {
-      const map = {}
-      tokens.forEach(t => { if (t.label && !map[t.product_id]) map[t.product_id] = t.label })
-      setTokenMap(map)
-    }).catch(() => {})
-  }, [])
-
+function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGoToLog, onGoToOrders }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
       {/* Sub-header */}
@@ -671,66 +505,18 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
             <span style={{ fontWeight: 600, fontSize: 15 }}>產品總覽</span>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{products.length} 項</span>
           </div>
-          <div style={{ display: 'flex', gap: 20 }}>
-            {[['加工流程', () => onGoToProcess(null)], ['零件管理', () => onGoToParts(null)]].map(([label, fn]) => (
-              <button key={label} onClick={fn} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)', padding: 0, fontFamily: 'inherit' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
-                {label} →
-              </button>
-            ))}
-          </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
           {products.map(p => (
-            <ProductOverviewCard key={p.id} product={p} orders={orders.filter(o => o.productId === p.id)}
+            <ProductCard key={p.id} mode="dashboard" product={p}
               onGoToProcess={() => onGoToProcess(p)}
+              onGoToParts={() => onGoToParts(p)}
               onGoToOrders={() => onGoToOrders(p.id)}
             />
           ))}
           {products.length === 0 && (
             <div style={{ gridColumn: '1 / -1', padding: '40px 0', color: 'var(--text-4)', fontSize: 13, textAlign: 'center' }}>尚無產品</div>
           )}
-        </div>
-      </div>
-
-      {/* Section 2 + 3 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
-        {/* Orders */}
-        <div>
-          <OvSectionHead icon={Icon.Order} title="訂單總覽" count={`${orders.length} 筆`} link2Label="訂單管理" onLink2={() => onGoToOrders(null)} linkLabel="進出貨登記" onLink={onGoToLog} />
-          {orders.length === 0
-            ? <div style={{ padding: '24px 16px', background: 'var(--bg-2)', borderRadius: 8, textAlign: 'center' }}>
-                <div style={{ fontSize: 13, color: 'var(--text-4)', marginBottom: 10 }}>尚無訂單</div>
-                <button onClick={() => onGoToOrders(null)} className="btn primary" style={{ fontSize: 12, padding: '6px 14px' }}>＋ 新增訂單</button>
-              </div>
-            : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {orders.map(o => (
-                  <OrderRow key={o.id} order={o}
-                    product={products.find(p => p.id === o.productId)}
-                    clientName={tokenMap[o.productId]}
-                    onGoToOrders={onGoToOrders}
-                  />
-                ))}
-                <div style={{ fontSize: 12, textAlign: 'center', padding: '6px 0', color: 'var(--text-3)' }}>
-                  其他產品尚無訂單 ·{' '}
-                  <span onClick={() => onGoToOrders(null)} style={{ color: '#E8461A', cursor: 'pointer' }}>新增訂單</span>
-                </div>
-              </div>
-          }
-        </div>
-
-        {/* Brands */}
-        <div>
-          <OvSectionHead icon={Icon.Brand} title="品牌總覽" count={`${brands.length} 個`} linkLabel="設計師管理" onLink={onGoToBrands} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {brandsLoading
-              ? [1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F0EFE8' }} />)
-              : brands.length === 0
-                ? <div style={{ padding: '20px', color: 'var(--text-4)', fontSize: 13, textAlign: 'center', background: '#F8F8F6', borderRadius: 8 }}>尚無品牌</div>
-                : brands.map(b => <BrandRow key={b.id} brand={b} products={products} />)
-            }
-          </div>
         </div>
       </div>
     </div>
@@ -1698,6 +1484,44 @@ function InventoryView({ parts }) {
   )
 }
 
+function SubAssemblyInventoryView({ items, loading }) {
+  if (loading) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>載入中…</div>
+  }
+  if (!items.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>此產品尚未設定半成品資料</div>
+  }
+
+  const sorted = [...items].sort((a, b) => (a.tier || 0) - (b.tier || 0) || (a.code || '').localeCompare(b.code || ''))
+  const totalStock = items.reduce((s, it) => s + (it.stock_qty || 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個半成品・總庫存 {totalStock.toLocaleString()} 件</span>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {sorted.map((it, i) => (
+          <div key={it.id} style={{
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            borderBottom: i < sorted.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: 'var(--text-3)', fontFamily: 'var(--font-mono)',
+              padding: '2px 7px', borderRadius: 4, background: 'var(--bg-2)', flexShrink: 0,
+            }}>{it.code}</span>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{it.name}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+              <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(it.stock_qty || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const WAREHOUSE_FIX_NONE = '__NONE__'
 
 function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onClose, onFixed }) {
@@ -2535,7 +2359,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   const [allParts, setAllParts] = useState([])
   const [tabBProd, setTabBProd] = useState(null)
   const [tabBParts, setTabBParts] = useState([])
-  const [tabDProd, setTabDProd] = useState(null)
   const [tabCParts, setTabCParts] = useState([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [skuEditMode, setSkuEditMode] = useState(false)
@@ -2547,7 +2370,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
   useEffect(() => {
     if (!products.length) return
-    if (tab === 'factory' || tab === 'inventory') _loadAllParts()
+    if (tab === 'factory') _loadAllParts()
     else if (tab === 'part') {
       if (!tabBProd && products[0]) setTabBProd(products[0])
       else if (tabBProd) _loadTabB(tabBProd.id)
@@ -2592,7 +2415,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   function handleTabChange(newTab) {
     if (newTab !== 'product') setSkuEditMode(false)
     if (newTab === 'part' && !tabBProd && products.length) setTabBProd(products[0])
-    if (newTab === 'inventory' && !tabDProd && products.length) setTabDProd(products[0])
     setTab(newTab)
   }
 
@@ -2660,7 +2482,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
             { key: 'factory', label: '追廠商' },
             { key: 'part',    label: '追零件' },
             { key: 'product', label: '追產品' },
-            { key: 'inventory', label: '庫存' },
           ].map(({ key, label }) => {
             const active = tab === key
             return (
@@ -2759,19 +2580,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
         </>
       )}
 
-      {/* Tab D: 庫存 */}
-      {tab === 'inventory' && (
-        <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={tabDProd?.id === p.id} onClick={() => setTabDProd(p)} />)}
-          </div>
-          {tabDProd
-            ? <InventoryView parts={allParts.filter(p => p.product_id === tabDProd.id)} />
-            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
-          }
-        </>
-      )}
-
       {editPicker && (
         <EditProductPicker products={products} action={editPicker} onSelect={handleEditPickerSelect} onClose={() => setEditPicker(null)} />
       )}
@@ -2779,6 +2587,143 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
       {stageModal && (
         <StageOrderModal parts={stageModal.parts} mode={stageModal.mode} onClose={() => setStageModal(null)} onReload={stageModal.onReload} />
       )}
+    </>
+  )
+}
+
+// ─── Page: 庫存管理 ─────────────────────────────────────────────
+// 零件庫存(Tab D)、半成品庫存(Tab E)整個從加工流程頁搬過來，資料邏輯不變；
+// 成品庫存為新增 tab，直接沿用 Dashboard 既有的 products（已含 warehouse_total）。
+function FinishedGoodsInventoryView({ products }) {
+  if (!products.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無產品資料</div>
+  }
+  const sorted = [...products].sort((a, b) => (b.warehouse_total || 0) - (a.warehouse_total || 0))
+  const totalStock = products.reduce((s, p) => s + (p.warehouse_total || 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個成品・總庫存 {totalStock.toLocaleString()} 件</span>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {sorted.map((p, i) => (
+          <div key={p.id} style={{
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            borderBottom: i < sorted.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+          }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{p.name}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+              <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(p.warehouse_total || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StockManagementPage({ products }) {
+  const [tab, setTab] = useState('parts')
+  const [allParts, setAllParts] = useState([])
+  const [partsProd, setPartsProd] = useState(null)
+  const [subProd, setSubProd] = useState(null)
+  const [subItems, setSubItems] = useState([])
+  const [subLoading, setSubLoading] = useState(false)
+
+  useEffect(() => {
+    if (!products.length) return
+    _loadAllParts()
+  }, [products.length])
+
+  useEffect(() => {
+    if (!products.length) return
+    if (tab === 'parts' && !partsProd) setPartsProd(products[0])
+    if (tab === 'subassembly' && !subProd) setSubProd(products[0])
+  }, [tab, products.length])
+
+  useEffect(() => {
+    if (tab !== 'subassembly' || !subProd) return
+    setSubLoading(true)
+    apiFetch(`/api/sub-assemblies?product_id=${subProd.id}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      setSubItems(data)
+      setSubLoading(false)
+    }).catch(() => { setSubItems([]); setSubLoading(false) })
+  }, [tab, subProd?.id])
+
+  async function _loadAllParts() {
+    const results = await Promise.all(
+      products.map(p => apiFetch(`/api/products/${p.id}/parts`).then(r => r.json()).then(data => data.map(part => ({ ...part, product_name: p.name }))).catch(() => []))
+    )
+    setAllParts(results.flat())
+  }
+
+  const ProdPill = ({ p, active, onClick }) => (
+    <button onClick={onClick} style={{
+      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      background: active ? 'var(--text-1)' : 'var(--bg-1)',
+      color: active ? 'var(--bg-1)' : 'var(--text-3)',
+      border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+      font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+      transition: 'background .12s, color .12s',
+    }}>{p.name}</button>
+  )
+
+  return (
+    <>
+      {/* Tab pills */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { key: 'parts',       label: '零件庫存' },
+          { key: 'subassembly', label: '半成品庫存' },
+          { key: 'finished',    label: '成品庫存' },
+        ].map(({ key, label }) => {
+          const active = tab === key
+          return (
+            <button key={key} onClick={() => setTab(key)} style={{
+              padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+              background: active ? 'var(--text-1)' : 'var(--bg-1)',
+              color: active ? 'var(--bg-1)' : 'var(--text-3)',
+              border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+              font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+              transition: 'background .12s, color .12s',
+            }}>{label}</button>
+          )
+        })}
+      </div>
+
+      {/* Tab: 零件庫存 */}
+      {tab === 'parts' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
+          </div>
+          {partsProd
+            ? <InventoryView parts={allParts.filter(p => p.product_id === partsProd.id)} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
+          }
+        </>
+      )}
+
+      {/* Tab: 半成品庫存 */}
+      {tab === 'subassembly' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
+          </div>
+          {subProd
+            ? <SubAssemblyInventoryView items={subItems} loading={subLoading} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看半成品庫存</div>
+          }
+        </>
+      )}
+
+      {/* Tab: 成品庫存 */}
+      {tab === 'finished' && <FinishedGoodsInventoryView products={products} />}
     </>
   )
 }
@@ -5532,14 +5477,12 @@ function ManagePartsModal({ product, onClose, onChanged }) {
 }
 
 // ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
+function SettingsPage({ products, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
   const [managePartsTarget, setManagePartsTarget] = useState(null) // product | null
   const [adjustModal, setAdjustModal] = useState(null) // product | null
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const [historyData, setHistoryData] = useState({}) // productId → rows
-  const [editingProductId, setEditingProductId] = useState(null)
-  const [editingProductName, setEditingProductName] = useState('')
 
   async function loadHistory(productId) {
     const res = await apiFetch(`/api/stock-adjustments?product_id=${productId}&limit=5`)
@@ -5555,7 +5498,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
 
   async function renameProduct(p, newName) {
     const name = newName.trim()
-    setEditingProductId(null)
     if (!name || name === p.name) return
     await apiFetch(`/api/products/${p.id}`, {
       method: 'PUT',
@@ -5574,15 +5516,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     } catch (e) { alert('刪除失敗：' + e.message) }
   }
 
-  // ti-adjustments-horizontal icon
-  const AdjustIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="14" cy="6" r="2"/><path d="M4 6h8m4 0h4"/>
-      <circle cx="8" cy="12" r="2"/><path d="M4 12h2m4 0h10"/>
-      <circle cx="17" cy="18" r="2"/><path d="M4 18h11m4 0h1"/>
-    </svg>
-  )
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
       {/* Header row */}
@@ -5595,120 +5528,17 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
       {/* Product cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
         {products.map(p => {
-          const orderCount = orders.filter(o => o.productId === p.id).length
           const adjCount = p.adjustment_count || 0
           const historyRows = historyData[p.id] || []
           return (
-            <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Top: image + info */}
-              <div style={{ display: 'flex', gap: 14 }}>
-                <ProductImageUpload
-                  productId={p.id}
-                  brandColor={p.brand_color || '#E8461A'}
-                  initials={p.initials || p.name?.slice(0, 2)}
-                  width={80} height={80} borderRadius={8}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    {editingProductId === p.id
-                      ? <input
-                          autoFocus
-                          className="input"
-                          value={editingProductName}
-                          onChange={e => setEditingProductName(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') renameProduct(p, editingProductName)
-                            if (e.key === 'Escape') setEditingProductId(null)
-                          }}
-                          onBlur={() => renameProduct(p, editingProductName)}
-                          style={{ fontSize: 15, fontWeight: 600, padding: '2px 6px', flex: 1 }}
-                        />
-                      : <div
-                          onClick={() => { setEditingProductId(p.id); setEditingProductName(p.name) }}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            cursor: 'text', flex: 1,
-                            padding: '2px 6px', borderRadius: 'var(--r-sm)', marginLeft: -6,
-                            border: '1px dashed transparent',
-                            transition: 'border-color .15s, background .15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--line-2)'; e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.querySelector('.edit-hint').style.opacity = '1' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; e.currentTarget.querySelector('.edit-hint').style.opacity = '0' }}
-                        >
-                          <span style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</span>
-                          <span className="edit-hint" style={{ opacity: 0, transition: 'opacity .15s', color: 'var(--text-4)', display: 'flex' }}>
-                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                          </span>
-                        </div>
-                    }
-                    <button onClick={() => deleteProduct(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 2, flexShrink: 0 }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
-                      <Icon.X />
-                    </button>
-                  </div>
-                  {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
-                </div>
-              </div>
-
-              {/* Stock summary row */}
-              <div style={{ padding: '10px 0', borderTop: '1px solid var(--line-1)' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 20 }}>
-                    <div>
-                      <div className="num" style={{ fontSize: 16, fontWeight: 500 }}>{p.warehouse_total || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>倉庫庫存</div>
-                    </div>
-                    <div>
-                      <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#185FA5' }}>{p.in_transit_total || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>加工中數量</div>
-                    </div>
-                    {(p.defect_total || 0) > 0 && (
-                      <div>
-                        <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#E8461A' }}>{p.defect_total}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>待處理不良</div>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={() => setAdjustModal(p)}
-                    title="手動修正倉庫庫存"
-                    style={{
-                      appearance: 'none', border: '1px solid var(--line-2)', background: 'var(--bg-1)',
-                      borderRadius: 'var(--r-sm)', padding: '4px 9px', cursor: 'pointer', font: 'inherit',
-                      fontSize: 11, color: 'var(--text-3)',
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      transition: 'color .1s, border-color .1s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.borderColor = 'var(--line-3)' }}
-                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}
-                  >
-                    <AdjustIcon />手動修正
-                  </button>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
-                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
-                  <Icon.Flow />加工流程
-                </button>
-                <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setManagePartsTarget(p)}>
-                  管理零件
-                </button>
-                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToOrders(p.id)}>
-                  <Icon.Order />訂單
-                  {orderCount > 0 && (
-                    <span style={{ marginLeft: 4, background: 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 10, padding: '1px 6px', fontWeight: 600 }}>
-                      {orderCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* Adjustment history */}
+            <ProductCard key={p.id} mode="management" product={p}
+              onGoToProcess={() => onGoToProcess(p)}
+              onGoToParts={() => setManagePartsTarget(p)}
+              onGoToOrders={() => onGoToOrders(p.id)}
+              onEdit={newName => renameProduct(p, newName)}
+              onDelete={() => deleteProduct(p)}
+              onManualCorrect={() => setAdjustModal(p)}
+            >
               {adjCount > 0 && (
                 <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 8 }}>
                   <button className="btn ghost" style={{ fontSize: 11, color: 'var(--text-3)', padding: '2px 6px', gap: 4 }}
@@ -5739,7 +5569,7 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                   )}
                 </div>
               )}
-            </div>
+            </ProductCard>
           )
         })}
       </div>
@@ -6122,136 +5952,6 @@ function FactoryModal({ mode, factory, onClose, onSaved }) {
         </div>
       </div>
     </ModalOverlay>
-  )
-}
-
-function BrandsPage({ products }) {
-  const [brands, setBrands] = useState([])
-  const [newName, setNewName] = useState('')
-  const [assignSelects, setAssignSelects] = useState({}) // brandId → selected product_id
-
-  useEffect(() => { loadBrands() }, [])
-
-  async function loadBrands() {
-    try {
-      const res = await apiFetch('/api/brands')
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setBrands(await res.json())
-    } catch (e) { alert('載入品牌失敗：' + e.message) }
-  }
-  async function createBrand() {
-    if (!newName.trim()) return alert('請填寫品牌名稱')
-    try {
-      const res = await apiFetch('/api/brands', { method: 'POST', body: JSON.stringify({ name: newName.trim() }) })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setNewName(''); loadBrands()
-    } catch (e) { alert('新增品牌失敗：' + e.message) }
-  }
-  async function deleteBrand(id) {
-    if (!confirm('確認刪除此品牌？')) return
-    try {
-      const res = await apiFetch(`/api/brands/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      loadBrands()
-    } catch (e) { alert('刪除品牌失敗：' + e.message) }
-  }
-  async function assignProduct(brandId) {
-    const productId = assignSelects[brandId]
-    if (!productId) return alert('請先選擇產品')
-    try {
-      const res = await apiFetch(`/api/brands/${brandId}/products`, { method: 'POST', body: JSON.stringify({ product_id: productId }) })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`) }
-      setAssignSelects(s => ({ ...s, [brandId]: '' })); loadBrands()
-    } catch (e) { alert('指派失敗：' + e.message) }
-  }
-  async function removeProduct(brandId, productId) {
-    try {
-      const res = await apiFetch(`/api/brands/${brandId}/products/${productId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      loadBrands()
-    } catch (e) { alert('移除失敗：' + e.message) }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
-      {/* Create brand */}
-      <SettingsSection title="新增品牌">
-        <div style={{ display: 'flex', gap: 10 }}>
-          <input className="input" style={{ flex: 1 }} placeholder="品牌名稱（如：Cumei）" value={newName} onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && createBrand()} />
-          <button className="btn primary" onClick={createBrand}><Icon.Plus />新增</button>
-        </div>
-      </SettingsSection>
-
-      {/* Brand list */}
-      {brands.length === 0 && <p style={{ fontSize: 13, color: 'var(--text-3)' }}>尚無品牌，請先新增。</p>}
-      {brands.map(brand => {
-        const link = `${window.location.origin}/brand/${brand.token}`
-        const assignedIds = new Set(brand.products.map(p => p.id))
-        const unassigned = products.filter(p => !assignedIds.has(p.id))
-        return (
-          <div key={brand.id} className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Brand header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{brand.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={() => { navigator.clipboard.writeText(link); alert('連結已複製！') }}
-                  style={{ background: 'none', border: '1px solid var(--line-2)', borderRadius: 6, cursor: 'pointer', color: 'var(--info)', fontSize: 12, padding: '4px 10px' }}>
-                  複製連結
-                </button>
-                <button onClick={() => deleteBrand(brand.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--bad)', fontSize: 12 }}>
-                  刪除品牌
-                </button>
-              </div>
-            </div>
-
-            {/* Assigned products */}
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
-                已指派產品 ({brand.products.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {brand.products.map(p => (
-                  <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 20, padding: '4px 10px 4px 12px', fontSize: 13 }}>
-                    {p.name}
-                    <button onClick={() => removeProduct(brand.id, p.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-3)', display: 'grid', placeItems: 'center', lineHeight: 1 }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-                      <Icon.X />
-                    </button>
-                  </span>
-                ))}
-                {brand.products.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-4)' }}>尚未指派任何產品</span>}
-              </div>
-            </div>
-
-            {/* Assign product */}
-            {unassigned.length > 0 && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select className="select" style={{ flex: 1 }}
-                  value={assignSelects[brand.id] || ''}
-                  onChange={e => setAssignSelects(s => ({ ...s, [brand.id]: e.target.value }))}>
-                  <option value="">選擇要指派的產品…</option>
-                  {unassigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <button className="btn primary" onClick={() => assignProduct(brand.id)}><Icon.Plus />指派</button>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function SettingsSection({ title, children }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, fontFamily: 'var(--font-mono)' }}>{title}</div>
-      <div className="card" style={{ padding: 20 }}>{children}</div>
-    </div>
   )
 }
 
