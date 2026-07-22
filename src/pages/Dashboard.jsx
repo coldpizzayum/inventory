@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { IconPackages } from '@tabler/icons-react'
 import { ACTION_LABEL, resolveActionType, resolveStageId } from './Input.jsx'
 import ProductCard from '../components/ProductCard/index.js'
 
@@ -37,11 +38,14 @@ const Icon = {
   Logout: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>),
   // ti-building-factory
   Factory: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 21l18 0"/><path d="M5 21v-10l4 -2v3l4 -2v3l4 -2v10"/><path d="M5 14l1 0"/><path d="M9 14l1 0"/><path d="M13 14l1 0"/><path d="M17 21l0 -4"/></svg>),
+  // ti-packages
+  Stock: () => (<IconPackages width="16" height="16" stroke={1.6} />),
 }
 
 const NAV = [
   { id: 'overview',  label: '生產看板',     icon: Icon.Dashboard },
   { id: 'process',   label: '加工流程',     icon: Icon.Flow },
+  { id: 'stock',     label: '庫存管理',     icon: Icon.Stock },
   { id: 'log',       label: '進出貨登記',   icon: Icon.Log },
   null,
   { id: 'settings',  label: '產品管理',     icon: Icon.Setting },
@@ -51,6 +55,7 @@ const NAV = [
 const PAGE_TITLES = {
   overview:  '生產看板',
   process:   '加工流程看板',
+  stock:     '庫存管理',
   sku:       '零件管理',
   log:       '進出貨登記',
   settings:  '產品管理',
@@ -361,7 +366,7 @@ export default function Dashboard() {
 
         {/* Page content */}
         <div style={{ padding: '24px 32px 60px', flex: 1, overflow: 'auto' }}>
-          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'factories' ? (
+          {!selectedProduct && page !== 'settings' && page !== 'orders' && page !== 'factories' && page !== 'stock' ? (
             <EmptyState onAdd={() => setPage('settings')} />
           ) : (
             <>
@@ -372,6 +377,7 @@ export default function Dashboard() {
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
               {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
+              {page === 'stock'     && <StockManagementPage products={products} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={loadLogs} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
               {page === 'settings'  && <SettingsPage products={products} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); setPage('process') }}
@@ -2353,10 +2359,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   const [allParts, setAllParts] = useState([])
   const [tabBProd, setTabBProd] = useState(null)
   const [tabBParts, setTabBParts] = useState([])
-  const [tabDProd, setTabDProd] = useState(null)
-  const [tabEProd, setTabEProd] = useState(null)
-  const [tabESubAssemblies, setTabESubAssemblies] = useState([])
-  const [tabELoading, setTabELoading] = useState(false)
   const [tabCParts, setTabCParts] = useState([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [skuEditMode, setSkuEditMode] = useState(false)
@@ -2368,7 +2370,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
   useEffect(() => {
     if (!products.length) return
-    if (tab === 'factory' || tab === 'inventory') _loadAllParts()
+    if (tab === 'factory') _loadAllParts()
     else if (tab === 'part') {
       if (!tabBProd && products[0]) setTabBProd(products[0])
       else if (tabBProd) _loadTabB(tabBProd.id)
@@ -2382,18 +2384,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   useEffect(() => {
     if (tabBProd) _loadTabB(tabBProd.id)
   }, [tabBProd?.id])
-
-  useEffect(() => {
-    if (tab !== 'subassembly' || !tabEProd) return
-    setTabELoading(true)
-    apiFetch(`/api/sub-assemblies?product_id=${tabEProd.id}`).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      return r.json()
-    }).then(data => {
-      setTabESubAssemblies(data)
-      setTabELoading(false)
-    }).catch(() => { setTabESubAssemblies([]); setTabELoading(false) })
-  }, [tab, tabEProd?.id])
 
   useEffect(() => {
     if (headerActionsSlot) headerActionsSlot.set(null)
@@ -2425,8 +2415,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   function handleTabChange(newTab) {
     if (newTab !== 'product') setSkuEditMode(false)
     if (newTab === 'part' && !tabBProd && products.length) setTabBProd(products[0])
-    if (newTab === 'inventory' && !tabDProd && products.length) setTabDProd(products[0])
-    if (newTab === 'subassembly' && !tabEProd && products.length) setTabEProd(products[0])
     setTab(newTab)
   }
 
@@ -2494,8 +2482,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
             { key: 'factory', label: '追廠商' },
             { key: 'part',    label: '追零件' },
             { key: 'product', label: '追產品' },
-            { key: 'inventory', label: '庫存' },
-            { key: 'subassembly', label: '半成品' },
           ].map(({ key, label }) => {
             const active = tab === key
             return (
@@ -2594,32 +2580,6 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
         </>
       )}
 
-      {/* Tab D: 庫存 */}
-      {tab === 'inventory' && (
-        <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={tabDProd?.id === p.id} onClick={() => setTabDProd(p)} />)}
-          </div>
-          {tabDProd
-            ? <InventoryView parts={allParts.filter(p => p.product_id === tabDProd.id)} />
-            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
-          }
-        </>
-      )}
-
-      {/* Tab E: 半成品 */}
-      {tab === 'subassembly' && (
-        <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={tabEProd?.id === p.id} onClick={() => setTabEProd(p)} />)}
-          </div>
-          {tabEProd
-            ? <SubAssemblyInventoryView items={tabESubAssemblies} loading={tabELoading} />
-            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看半成品庫存</div>
-          }
-        </>
-      )}
-
       {editPicker && (
         <EditProductPicker products={products} action={editPicker} onSelect={handleEditPickerSelect} onClose={() => setEditPicker(null)} />
       )}
@@ -2627,6 +2587,143 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
       {stageModal && (
         <StageOrderModal parts={stageModal.parts} mode={stageModal.mode} onClose={() => setStageModal(null)} onReload={stageModal.onReload} />
       )}
+    </>
+  )
+}
+
+// ─── Page: 庫存管理 ─────────────────────────────────────────────
+// 零件庫存(Tab D)、半成品庫存(Tab E)整個從加工流程頁搬過來，資料邏輯不變；
+// 成品庫存為新增 tab，直接沿用 Dashboard 既有的 products（已含 warehouse_total）。
+function FinishedGoodsInventoryView({ products }) {
+  if (!products.length) {
+    return <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>尚無產品資料</div>
+  }
+  const sorted = [...products].sort((a, b) => (b.warehouse_total || 0) - (a.warehouse_total || 0))
+  const totalStock = products.reduce((s, p) => s + (p.warehouse_total || 0), 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個成品・總庫存 {totalStock.toLocaleString()} 件</span>
+      </div>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {sorted.map((p, i) => (
+          <div key={p.id} style={{
+            padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            borderBottom: i < sorted.length - 1 ? '0.5px solid var(--line-1)' : 'none',
+          }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>{p.name}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0 }}>
+              <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(p.warehouse_total || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StockManagementPage({ products }) {
+  const [tab, setTab] = useState('parts')
+  const [allParts, setAllParts] = useState([])
+  const [partsProd, setPartsProd] = useState(null)
+  const [subProd, setSubProd] = useState(null)
+  const [subItems, setSubItems] = useState([])
+  const [subLoading, setSubLoading] = useState(false)
+
+  useEffect(() => {
+    if (!products.length) return
+    _loadAllParts()
+  }, [products.length])
+
+  useEffect(() => {
+    if (!products.length) return
+    if (tab === 'parts' && !partsProd) setPartsProd(products[0])
+    if (tab === 'subassembly' && !subProd) setSubProd(products[0])
+  }, [tab, products.length])
+
+  useEffect(() => {
+    if (tab !== 'subassembly' || !subProd) return
+    setSubLoading(true)
+    apiFetch(`/api/sub-assemblies?product_id=${subProd.id}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    }).then(data => {
+      setSubItems(data)
+      setSubLoading(false)
+    }).catch(() => { setSubItems([]); setSubLoading(false) })
+  }, [tab, subProd?.id])
+
+  async function _loadAllParts() {
+    const results = await Promise.all(
+      products.map(p => apiFetch(`/api/products/${p.id}/parts`).then(r => r.json()).then(data => data.map(part => ({ ...part, product_name: p.name }))).catch(() => []))
+    )
+    setAllParts(results.flat())
+  }
+
+  const ProdPill = ({ p, active, onClick }) => (
+    <button onClick={onClick} style={{
+      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      background: active ? 'var(--text-1)' : 'var(--bg-1)',
+      color: active ? 'var(--bg-1)' : 'var(--text-3)',
+      border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+      font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+      transition: 'background .12s, color .12s',
+    }}>{p.name}</button>
+  )
+
+  return (
+    <>
+      {/* Tab pills */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { key: 'parts',       label: '零件庫存' },
+          { key: 'subassembly', label: '半成品庫存' },
+          { key: 'finished',    label: '成品庫存' },
+        ].map(({ key, label }) => {
+          const active = tab === key
+          return (
+            <button key={key} onClick={() => setTab(key)} style={{
+              padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+              background: active ? 'var(--text-1)' : 'var(--bg-1)',
+              color: active ? 'var(--bg-1)' : 'var(--text-3)',
+              border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
+              font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
+              transition: 'background .12s, color .12s',
+            }}>{label}</button>
+          )
+        })}
+      </div>
+
+      {/* Tab: 零件庫存 */}
+      {tab === 'parts' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
+          </div>
+          {partsProd
+            ? <InventoryView parts={allParts.filter(p => p.product_id === partsProd.id)} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看零件庫存</div>
+          }
+        </>
+      )}
+
+      {/* Tab: 半成品庫存 */}
+      {tab === 'subassembly' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {products.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
+          </div>
+          {subProd
+            ? <SubAssemblyInventoryView items={subItems} loading={subLoading} />
+            : <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-4)', fontSize: 13 }}>選擇一個產品，查看半成品庫存</div>
+          }
+        </>
+      )}
+
+      {/* Tab: 成品庫存 */}
+      {tab === 'finished' && <FinishedGoodsInventoryView products={products} />}
     </>
   )
 }
