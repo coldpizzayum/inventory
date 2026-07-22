@@ -18,6 +18,16 @@ router.get('/', async (req, res) => {
       FROM products p
       ORDER BY p.created_at DESC
     `).all()
+
+    const variantRows = await db.prepare(
+      `SELECT product_id, variant_name, quantity FROM product_variant_stock WHERE quantity > 0`
+    ).all()
+    const variantsByProduct = {}
+    for (const row of variantRows) {
+      (variantsByProduct[row.product_id] ??= []).push({ variant_name: row.variant_name, quantity: row.quantity })
+    }
+    for (const p of products) p.variant_stock = variantsByProduct[p.id] || []
+
     res.json(products)
   } catch (e) { res.status(500).json({ error: e.message }) }
 })

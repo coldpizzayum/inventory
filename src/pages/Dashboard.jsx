@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ACTION_LABEL, resolveActionType, resolveStageId } from './Input.jsx'
+import ProductCard from '../components/ProductCard/index.js'
 
 // ─── Icons ───────────────────────────────────────────────────
 const S = { viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"1.6", strokeLinecap:"round", strokeLinejoin:"round" }
@@ -32,8 +33,6 @@ const Icon = {
   Photo: () => (<svg {...S} width="16" height="16"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/></svg>),
   // ti-clipboard-list
   Order: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 12h.01"/><path d="M13 12h2"/><path d="M9 16h.01"/><path d="M13 16h2"/></svg>),
-  // ti-settings (gear)
-  Gear: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>),
   // ti-logout
   Logout: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/><path d="M9 12h12l-3 -3"/><path d="M18 15l3 -3"/></svg>),
   // ti-building-factory
@@ -336,9 +335,6 @@ export default function Dashboard() {
               <div style={{ fontSize: 11, color: '#888' }}>管理後台</div>
             </div>
           )}
-          <UserIconBtn onClick={() => setPage('settings')} title="產品管理">
-            <Icon.Gear />
-          </UserIconBtn>
           <UserIconBtn onClick={logout} title="登出" hoverColor="#E8461A">
             <Icon.Logout />
           </UserIconBtn>
@@ -355,14 +351,7 @@ export default function Dashboard() {
         }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {page === 'overview' || page === 'process' ? (
-              <>
-                <button className="btn" style={{ fontSize: 13 }}>
-                  <Icon.Export />匯出報表
-                </button>
-                {page === 'process' && headerActions}
-              </>
-            ) : page === 'orders' ? (
+            {page === 'orders' ? (
               <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewOrder(true)}>
                 <Icon.Plus />新增訂單
               </button>
@@ -384,7 +373,7 @@ export default function Dashboard() {
               />}
               {page === 'process'   && <ProcessPage products={products} selectedProduct={selectedProduct} onSelectProduct={p => setSelectedProduct(p)} headerActionsSlot={headerActionsSlot} reloadKey={processReloadKey} />}
               {page === 'log'       && <LogPage products={products} selectedProduct={selectedProduct} logs={logs} reload={loadLogs} onLogSubmit={() => setProcessReloadKey(k => k + 1)} />}
-              {page === 'settings'  && <SettingsPage products={products} orders={orders} reload={loadProducts}
+              {page === 'settings'  && <SettingsPage products={products} reload={loadProducts}
                 onGoToProcess={p => { setSelectedProduct(p); setPage('process') }}
                 onGoToOrders={pid => { setOrdersFilter(pid); setPage('orders') }}
               />}
@@ -423,92 +412,6 @@ function OvSectionHead({ icon: IconComp, title, count, linkLabel, onLink, link2L
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {link2Label && onLink2 && linkBtn(link2Label, onLink2)}
         {linkLabel && onLink && linkBtn(linkLabel, onLink)}
-      </div>
-    </div>
-  )
-}
-
-function ProductOverviewCard({ product, orders, onGoToProcess, onGoToOrders }) {
-  const [imgSrc, setImgSrc] = useState(null)
-  useEffect(() => {
-    const stored = localStorage.getItem(`prod-img-${product.id}`)
-    if (stored) setImgSrc(stored)
-  }, [product.id])
-
-  const orderCount = orders.length
-  const warehouseTotal = product.warehouse_total || 0
-  const inTransitTotal = product.in_transit_total || 0
-
-  const totalQty = orders.reduce((s, o) => s + (o.qty || 0), 0)
-  const totalAlloc = orders.reduce((s, o) => s + (o.alloc || 0), 0)
-  const pct = totalQty > 0 ? Math.round((totalAlloc / totalQty) * 100) : 0
-
-  const statusBadge =
-    pct >= 100        ? { label: '完成',    bg: '#E6F4EC', color: '#1A7A3C' }
-    : pct >= 80       ? { label: '包裝中',  bg: '#FEF3CD', color: '#B07D00' }
-    : inTransitTotal > 0 ? { label: '加工中', bg: '#FEE9E4', color: '#E8461A' }
-    : { label: '送加工廠', bg: '#E6F0FB', color: '#1A5FAD' }
-
-  return (
-    <div style={{
-      background: 'var(--bg-1)', border: '0.5px solid var(--line-1)',
-      borderRadius: 'var(--r-lg)', overflow: 'hidden',
-      cursor: 'pointer', transition: 'border-color .15s',
-    }}
-      onClick={onGoToProcess}
-      onMouseEnter={e => e.currentTarget.style.borderColor = '#E8461A'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-1)'}>
-
-      {/* Image area */}
-      <div style={{ height: 80, background: 'var(--bg-2)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
-        {imgSrc
-          ? <img src={imgSrc} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          : <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--line-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-9 9"/>
-            </svg>
-        }
-        <div style={{
-          position: 'absolute', top: 6, right: 6,
-          background: statusBadge.bg, color: statusBadge.color,
-          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, lineHeight: 1.5,
-        }}>{statusBadge.label}</div>
-      </div>
-
-      {/* Content */}
-      <div style={{ padding: '10px 12px' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{product.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 16 }}>
-          {product.description || ''}
-        </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div>
-            <div className="num" style={{ fontSize: 14, fontWeight: 500 }}>{warehouseTotal}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>倉庫庫存</div>
-          </div>
-          <div>
-            <div className="num" style={{ fontSize: 14, fontWeight: 500, color: '#185FA5' }}>{inTransitTotal}</div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>加工中</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom link row */}
-      <div style={{
-        padding: '7px 12px', borderTop: '0.5px solid var(--line-1)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {[
-            { label: '加工流程', icon: Icon.Flow, action: onGoToProcess },
-          ].map(({ label, icon: Ic, action }) => (
-            <button key={label} onClick={e => { e.stopPropagation(); action() }}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 3, fontFamily: 'inherit' }}
-              onMouseEnter={e => e.currentTarget.style.color = '#E8461A'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-              <Ic />{label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   )
@@ -596,20 +499,12 @@ function OverviewPage({ products, logs, orders, onGoToProcess, onGoToParts, onGo
             <span style={{ fontWeight: 600, fontSize: 15 }}>產品總覽</span>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{products.length} 項</span>
           </div>
-          <div style={{ display: 'flex', gap: 20 }}>
-            {[['加工流程', () => onGoToProcess(null)], ['零件管理', () => onGoToParts(null)]].map(([label, fn]) => (
-              <button key={label} onClick={fn} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-3)', padding: 0, fontFamily: 'inherit' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#E8461A'; e.currentTarget.style.textDecoration = 'underline' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.textDecoration = 'none' }}>
-                {label} →
-              </button>
-            ))}
-          </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
           {products.map(p => (
-            <ProductOverviewCard key={p.id} product={p} orders={orders.filter(o => o.productId === p.id)}
+            <ProductCard key={p.id} mode="dashboard" product={p}
               onGoToProcess={() => onGoToProcess(p)}
+              onGoToParts={() => onGoToParts(p)}
               onGoToOrders={() => onGoToOrders(p.id)}
             />
           ))}
@@ -5485,14 +5380,12 @@ function ManagePartsModal({ product, onClose, onChanged }) {
 }
 
 // ─── Page: Settings ───────────────────────────────────────────
-function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders }) {
+function SettingsPage({ products, reload, onGoToProcess, onGoToOrders }) {
   const [showNewProduct, setShowNewProduct] = useState(false)
   const [managePartsTarget, setManagePartsTarget] = useState(null) // product | null
   const [adjustModal, setAdjustModal] = useState(null) // product | null
   const [expandedHistoryId, setExpandedHistoryId] = useState(null)
   const [historyData, setHistoryData] = useState({}) // productId → rows
-  const [editingProductId, setEditingProductId] = useState(null)
-  const [editingProductName, setEditingProductName] = useState('')
 
   async function loadHistory(productId) {
     const res = await apiFetch(`/api/stock-adjustments?product_id=${productId}&limit=5`)
@@ -5508,7 +5401,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
 
   async function renameProduct(p, newName) {
     const name = newName.trim()
-    setEditingProductId(null)
     if (!name || name === p.name) return
     await apiFetch(`/api/products/${p.id}`, {
       method: 'PUT',
@@ -5527,15 +5419,6 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
     } catch (e) { alert('刪除失敗：' + e.message) }
   }
 
-  // ti-adjustments-horizontal icon
-  const AdjustIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="14" cy="6" r="2"/><path d="M4 6h8m4 0h4"/>
-      <circle cx="8" cy="12" r="2"/><path d="M4 12h2m4 0h10"/>
-      <circle cx="17" cy="18" r="2"/><path d="M4 18h11m4 0h1"/>
-    </svg>
-  )
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
       {/* Header row */}
@@ -5548,112 +5431,17 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
       {/* Product cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
         {products.map(p => {
-          const orderCount = orders.filter(o => o.productId === p.id).length
           const adjCount = p.adjustment_count || 0
           const historyRows = historyData[p.id] || []
           return (
-            <div key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Top: image + info */}
-              <div style={{ display: 'flex', gap: 14 }}>
-                <ProductImageUpload
-                  productId={p.id}
-                  brandColor={p.brand_color || '#E8461A'}
-                  initials={p.initials || p.name?.slice(0, 2)}
-                  width={80} height={80} borderRadius={8}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    {editingProductId === p.id
-                      ? <input
-                          autoFocus
-                          className="input"
-                          value={editingProductName}
-                          onChange={e => setEditingProductName(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') renameProduct(p, editingProductName)
-                            if (e.key === 'Escape') setEditingProductId(null)
-                          }}
-                          onBlur={() => renameProduct(p, editingProductName)}
-                          style={{ fontSize: 15, fontWeight: 600, padding: '2px 6px', flex: 1 }}
-                        />
-                      : <div
-                          onClick={() => { setEditingProductId(p.id); setEditingProductName(p.name) }}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            cursor: 'text', flex: 1,
-                            padding: '2px 6px', borderRadius: 'var(--r-sm)', marginLeft: -6,
-                            border: '1px dashed transparent',
-                            transition: 'border-color .15s, background .15s',
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--line-2)'; e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.querySelector('.edit-hint').style.opacity = '1' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; e.currentTarget.querySelector('.edit-hint').style.opacity = '0' }}
-                        >
-                          <span style={{ fontSize: 15, fontWeight: 600 }}>{p.name}</span>
-                          <span className="edit-hint" style={{ opacity: 0, transition: 'opacity .15s', color: 'var(--text-4)', display: 'flex' }}>
-                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                          </span>
-                        </div>
-                    }
-                    <button onClick={() => deleteProduct(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: 2, flexShrink: 0 }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--bad)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}>
-                      <Icon.X />
-                    </button>
-                  </div>
-                  {p.description && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{p.description}</div>}
-                </div>
-              </div>
-
-              {/* Stock summary row */}
-              <div style={{ padding: '10px 0', borderTop: '1px solid var(--line-1)' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 20 }}>
-                    <div>
-                      <div className="num" style={{ fontSize: 16, fontWeight: 500 }}>{p.warehouse_total || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>倉庫庫存</div>
-                    </div>
-                    <div>
-                      <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#185FA5' }}>{p.in_transit_total || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>加工中數量</div>
-                    </div>
-                    {(p.defect_total || 0) > 0 && (
-                      <div>
-                        <div className="num" style={{ fontSize: 16, fontWeight: 500, color: '#E8461A' }}>{p.defect_total}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>待處理不良</div>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={() => setAdjustModal(p)}
-                    title="手動修正倉庫庫存"
-                    style={{
-                      appearance: 'none', border: '1px solid var(--line-2)', background: 'var(--bg-1)',
-                      borderRadius: 'var(--r-sm)', padding: '4px 9px', cursor: 'pointer', font: 'inherit',
-                      fontSize: 11, color: 'var(--text-3)',
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      transition: 'color .1s, border-color .1s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.borderColor = 'var(--line-3)' }}
-                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--line-2)' }}
-                  >
-                    <AdjustIcon />手動修正
-                  </button>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-1)', paddingTop: 10 }}>
-                <button className="btn" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }} onClick={() => onGoToProcess(p)}>
-                  <Icon.Flow />加工流程
-                </button>
-                <button className="btn" style={{ fontSize: 12, justifyContent: 'center', whiteSpace: 'nowrap' }} onClick={() => setManagePartsTarget(p)}>
-                  管理零件
-                </button>
-              </div>
-
-              {/* Adjustment history */}
+            <ProductCard key={p.id} mode="management" product={p}
+              onGoToProcess={() => onGoToProcess(p)}
+              onGoToParts={() => setManagePartsTarget(p)}
+              onGoToOrders={() => onGoToOrders(p.id)}
+              onEdit={newName => renameProduct(p, newName)}
+              onDelete={() => deleteProduct(p)}
+              onManualCorrect={() => setAdjustModal(p)}
+            >
               {adjCount > 0 && (
                 <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 8 }}>
                   <button className="btn ghost" style={{ fontSize: 11, color: 'var(--text-3)', padding: '2px 6px', gap: 4 }}
@@ -5684,7 +5472,7 @@ function SettingsPage({ products, orders, reload, onGoToProcess, onGoToOrders })
                   )}
                 </div>
               )}
-            </div>
+            </ProductCard>
           )
         })}
       </div>
