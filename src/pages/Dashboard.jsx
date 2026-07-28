@@ -1560,7 +1560,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [colorEdits, setColorEdits] = useState({})
-  const [negFixTargets, setNegFixTargets] = useState({})
+  const [negFix, setNegFix] = useState({}) // { [colorName]: { type: 'lost'|'defect', qty: string } }
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -1576,11 +1576,11 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
 
   const skus = part.skus || []
   const unknownEditCount = Object.values(colorEdits).filter(Boolean).length
-  const negFixCount = Object.values(negFixTargets).filter(v => v !== '' && v !== undefined && !Number.isNaN(Number(v))).length
+  const negFixCount = Object.values(negFix).filter(f => f?.type && f.qty !== '' && f.qty !== undefined && Number(f.qty) > 0).length
   const editCount = unknownEditCount + negFixCount
 
   async function applyFixes() {
-    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄，或填入負庫存顏色的正確數量')
+    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄，或針對負庫存顏色選擇遺失/不良品並填入數量')
     if (!confirm(`確認套用 ${editCount} 筆修正？這會重新計算倉庫庫存數字，此動作無法還原。`)) return
     setSaving(true)
     let failed = 0
@@ -1601,19 +1601,19 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
         if (!res.ok) failed++
       } catch { failed++ }
     }
-    for (const [colorName, rawTarget] of Object.entries(negFixTargets)) {
-      if (rawTarget === '' || rawTarget === undefined || Number.isNaN(Number(rawTarget))) continue
-      const nc = negativeColors.find(n => n.name === colorName)
-      if (!nc) continue
-      const diff = Number(rawTarget) - nc.qty
-      if (diff === 0) continue
+    for (const [colorName, fix] of Object.entries(negFix)) {
+      if (!fix?.type || fix.qty === '' || fix.qty === undefined || !(Number(fix.qty) > 0)) continue
+      const amount = Number(fix.qty)
+      const isLost = fix.type === 'lost'
       try {
         const res = await apiFetch('/api/receive-logs', {
           method: 'POST',
           body: JSON.stringify({
             product_id: part.product_id, part_id: part.id, sku_color: colorName,
-            action_type: diff > 0 ? 'receive' : 'send', qty: Math.abs(diff),
-            note: '零件顏色負庫存人工調整',
+            action_type: 'return', qty: amount,
+            lost_qty: isLost ? amount : 0,
+            defect_qty: isLost ? 0 : amount,
+            note: isLost ? `零件顏色負庫存修正：遺失${amount}件` : `零件顏色負庫存修正：不良品${amount}件`,
           }),
         })
         if (!res.ok) failed++
@@ -1673,34 +1673,61 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#B54A1F' }}>負庫存的顏色（{negativeColors.length} 個）</div>
                 <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
-                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。如果已經確認實際庫存數字，可以直接在下面填入正確數量，系統會自動補一筆調整紀錄讓帳面對上；如果是想找出是哪一筆登記打錯，需要人工回頭核對原始紀錄。
+                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。請選擇這批差額屬於「遺失」還是「不良品」，系統會補一筆對應的回廠紀錄：遺失會直接沖銷、讓這個顏色的庫存差異歸零；不良品會進到既有的品檢待處理清單，等後續決定重工或報廢（庫存差異不會歸零，因為不良品本來就不算良品庫存）。如果是單純登記數字打錯，需要人工回頭核對原始紀錄。
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-2)' }}>
-                        {['顏色', '目前帳面', '正確庫存'].map((h, i) => (
+                        {['顏色', '目前帳面', '處理方式', '數量'].map((h, i) => (
                           <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {negativeColors.map(nc => (
-                        <tr key={nc.name} style={{ borderBottom: '1px solid var(--line-1)' }}>
-                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={nc.name} size={9} />{nc.name}</span>
-                          </td>
-                          <td className="num" style={{ padding: '6px 8px', color: '#E8461A', fontWeight: 600 }}>{nc.qty.toLocaleString()}</td>
-                          <td style={{ padding: '6px 8px' }}>
-                            <input
-                              type="number" className="input" style={{ width: 110, fontSize: 12, padding: '4px 8px' }}
-                              placeholder="輸入正確數量"
-                              value={negFixTargets[nc.name] ?? ''}
-                              onChange={e => setNegFixTargets(t => ({ ...t, [nc.name]: e.target.value }))}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      {negativeColors.map(nc => {
+                        const deficit = Math.abs(nc.qty)
+                        const fix = negFix[nc.name] || { type: null, qty: '' }
+                        function pick(type) {
+                          setNegFix(f => ({
+                            ...f,
+                            [nc.name]: { type, qty: f[nc.name]?.qty || String(deficit) },
+                          }))
+                        }
+                        return (
+                          <tr key={nc.name} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={nc.name} size={9} />{nc.name}</span>
+                            </td>
+                            <td className="num" style={{ padding: '6px 8px', color: '#E8461A', fontWeight: 600 }}>{nc.qty.toLocaleString()}</td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" onClick={() => pick('lost')} style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                                  border: `1px solid ${fix.type === 'lost' ? 'var(--accent)' : 'var(--line-2)'}`,
+                                  background: fix.type === 'lost' ? 'var(--accent-tint)' : 'var(--bg-1)',
+                                  color: fix.type === 'lost' ? 'var(--accent)' : 'var(--text-3)', fontWeight: fix.type === 'lost' ? 600 : 400,
+                                }}>遺失</button>
+                                <button type="button" onClick={() => pick('defect')} style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                                  border: `1px solid ${fix.type === 'defect' ? '#B07D00' : 'var(--line-2)'}`,
+                                  background: fix.type === 'defect' ? '#FAEEDA' : 'var(--bg-1)',
+                                  color: fix.type === 'defect' ? '#8A6000' : 'var(--text-3)', fontWeight: fix.type === 'defect' ? 600 : 400,
+                                }}>不良品</button>
+                              </div>
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="number" className="input" style={{ width: 90, fontSize: 12, padding: '4px 8px' }}
+                                disabled={!fix.type}
+                                placeholder="數量"
+                                value={fix.qty ?? ''}
+                                onChange={e => setNegFix(f => ({ ...f, [nc.name]: { type: f[nc.name]?.type || null, qty: e.target.value } }))}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
