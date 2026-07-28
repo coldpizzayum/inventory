@@ -1390,8 +1390,6 @@ function InventoryView({ parts }) {
     if (aHas !== bHas) return aHas ? -1 : 1
     return (b.warehouse_stock || 0) - (a.warehouse_stock || 0)
   })
-  const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
-
   const expandable = sorted.filter(p => (p.skus || []).length > 0)
   const allOpen = expandable.length > 0 && expandable.every(p => expanded[p.id])
 
@@ -1416,7 +1414,7 @@ function InventoryView({ parts }) {
               {allOpen ? '全部收合' : '全部展開'}
             </button>
           )}
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件</span>
         </div>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -1444,10 +1442,6 @@ function InventoryView({ parts }) {
                     {skus.slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={8} />)}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0, minWidth: 90, justifyContent: 'flex-end' }}>
-                  <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(part.warehouse_stock || 0).toLocaleString()}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
-                </div>
                 {skus.length > 0 && (
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                     style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0 }}>
