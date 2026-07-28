@@ -40,6 +40,7 @@ const Icon = {
   Factory: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 21l18 0"/><path d="M5 21v-10l4 -2v3l4 -2v3l4 -2v10"/><path d="M5 14l1 0"/><path d="M9 14l1 0"/><path d="M13 14l1 0"/><path d="M17 21l0 -4"/></svg>),
   // ti-packages
   Stock: () => (<IconPackages width="16" height="16" stroke={1.6} />),
+  Star: ({ size = 14, filled = false } = {}) => (<svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>),
 }
 
 const NAV = [
@@ -1390,11 +1391,32 @@ function InventoryView({ parts }) {
   const sorted = [...filtered].sort((a, b) => (b.warehouse_stock || 0) - (a.warehouse_stock || 0))
   const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
 
+  const expandable = sorted.filter(p => (p.skus || []).length > 0)
+  const allOpen = expandable.length > 0 && expandable.every(p => expanded[p.id])
+
+  function toggleAll() {
+    if (allOpen) { setExpanded({}); return }
+    const next = { ...expanded }
+    expandable.forEach(p => {
+      next[p.id] = true
+      if (!breakdowns[p.id]) fetchBreakdown(p)
+    })
+    setExpanded(next)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件名稱..." value={search} onChange={e => setSearch(e.target.value)} />
-        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {expandable.length > 0 && (
+            <button className="btn ghost" onClick={toggleAll} style={{ fontSize: 12, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+              {allOpen ? <Icon.ChevronUp size={13} /> : <Icon.ChevronDown size={13} />}
+              {allOpen ? '全部收合' : '全部展開'}
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+        </div>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {sorted.length === 0 && <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>沒有符合的零件</div>}
@@ -2628,6 +2650,34 @@ function FinishedGoodsInventoryView({ products }) {
   )
 }
 
+const PINNED_PRODUCTS_KEY = 'dicas:pinnedProducts'
+
+function usePinnedProducts() {
+  const [pinned, setPinned] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PINNED_PRODUCTS_KEY) || '[]') } catch { return [] }
+  })
+
+  function togglePin(id) {
+    setPinned(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      localStorage.setItem(PINNED_PRODUCTS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  function sortWithPinned(products) {
+    return [...products].sort((a, b) => {
+      const pa = pinned.includes(a.id), pb = pinned.includes(b.id)
+      if (pa && !pb) return -1
+      if (!pa && pb) return 1
+      if (pa && pb) return pinned.indexOf(a.id) - pinned.indexOf(b.id)
+      return 0
+    })
+  }
+
+  return { pinned, togglePin, sortWithPinned }
+}
+
 function StockManagementPage({ products }) {
   const [tab, setTab] = useState('parts')
   const [allParts, setAllParts] = useState([])
@@ -2635,6 +2685,8 @@ function StockManagementPage({ products }) {
   const [subProd, setSubProd] = useState(null)
   const [subItems, setSubItems] = useState([])
   const [subLoading, setSubLoading] = useState(false)
+  const { pinned, togglePin, sortWithPinned } = usePinnedProducts()
+  const orderedProducts = sortWithPinned(products)
 
   useEffect(() => {
     if (!products.length) return
@@ -2643,8 +2695,8 @@ function StockManagementPage({ products }) {
 
   useEffect(() => {
     if (!products.length) return
-    if (tab === 'parts' && !partsProd) setPartsProd(products[0])
-    if (tab === 'subassembly' && !subProd) setSubProd(products[0])
+    if (tab === 'parts' && !partsProd) setPartsProd(orderedProducts[0])
+    if (tab === 'subassembly' && !subProd) setSubProd(orderedProducts[0])
   }, [tab, products.length])
 
   useEffect(() => {
@@ -2668,13 +2720,23 @@ function StockManagementPage({ products }) {
 
   const ProdPill = ({ p, active, onClick }) => (
     <button onClick={onClick} style={{
-      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      padding: '5px 10px 5px 16px', borderRadius: 999, cursor: 'pointer',
       background: active ? 'var(--text-1)' : 'var(--bg-1)',
       color: active ? 'var(--bg-1)' : 'var(--text-3)',
       border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
       font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
       transition: 'background .12s, color .12s',
-    }}>{p.name}</button>
+      display: 'flex', alignItems: 'center', gap: 6,
+    }}>
+      {p.name}
+      <span
+        onClick={e => { e.stopPropagation(); togglePin(p.id) }}
+        title={pinned.includes(p.id) ? '取消釘選' : '釘選常用產品'}
+        style={{ display: 'flex', opacity: pinned.includes(p.id) ? 1 : 0.35, color: pinned.includes(p.id) ? '#E0A030' : 'inherit' }}
+      >
+        <Icon.Star size={12} filled={pinned.includes(p.id)} />
+      </span>
+    </button>
   )
 
   return (
@@ -2704,7 +2766,7 @@ function StockManagementPage({ products }) {
       {tab === 'parts' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
           </div>
           {partsProd
             ? <InventoryView parts={allParts.filter(p => p.product_id === partsProd.id)} />
@@ -2717,7 +2779,7 @@ function StockManagementPage({ products }) {
       {tab === 'subassembly' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
           </div>
           {subProd
             ? <SubAssemblyInventoryView items={subItems} loading={subLoading} />
