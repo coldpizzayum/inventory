@@ -1388,7 +1388,12 @@ function InventoryView({ parts }) {
 
   const q = search.trim()
   const filtered = !q ? parts : parts.filter(p => p.name?.includes(q))
-  const sorted = [...filtered].sort((a, b) => (b.warehouse_stock || 0) - (a.warehouse_stock || 0))
+  const hasBlackBody = p => (p.skus || []).some(s => s.color_name === '黑身')
+  const sorted = [...filtered].sort((a, b) => {
+    const aHas = hasBlackBody(a), bHas = hasBlackBody(b)
+    if (aHas !== bHas) return aHas ? -1 : 1
+    return (b.warehouse_stock || 0) - (a.warehouse_stock || 0)
+  })
   const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
 
   const expandable = sorted.filter(p => (p.skus || []).length > 0)
