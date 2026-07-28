@@ -1560,6 +1560,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [colorEdits, setColorEdits] = useState({})
+  const [negFixTargets, setNegFixTargets] = useState({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -1574,10 +1575,12 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
   }, [part.id])
 
   const skus = part.skus || []
-  const editCount = Object.values(colorEdits).filter(Boolean).length
+  const unknownEditCount = Object.values(colorEdits).filter(Boolean).length
+  const negFixCount = Object.values(negFixTargets).filter(v => v !== '' && v !== undefined && !Number.isNaN(Number(v))).length
+  const editCount = unknownEditCount + negFixCount
 
   async function applyFixes() {
-    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄')
+    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄，或填入負庫存顏色的正確數量')
     if (!confirm(`確認套用 ${editCount} 筆修正？這會重新計算倉庫庫存數字，此動作無法還原。`)) return
     setSaving(true)
     let failed = 0
@@ -1593,6 +1596,24 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
             sku_color: color === WAREHOUSE_FIX_NONE ? '' : color, qty: log.qty, defect_qty: log.defect_qty || 0,
             lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
             logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    for (const [colorName, rawTarget] of Object.entries(negFixTargets)) {
+      if (rawTarget === '' || rawTarget === undefined || Number.isNaN(Number(rawTarget))) continue
+      const nc = negativeColors.find(n => n.name === colorName)
+      if (!nc) continue
+      const diff = Number(rawTarget) - nc.qty
+      if (diff === 0) continue
+      try {
+        const res = await apiFetch('/api/receive-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            product_id: part.product_id, part_id: part.id, sku_color: colorName,
+            action_type: diff > 0 ? 'receive' : 'send', qty: Math.abs(diff),
+            note: '零件顏色負庫存人工調整',
           }),
         })
         if (!res.ok) failed++
@@ -1652,19 +1673,36 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#B54A1F' }}>負庫存的顏色（{negativeColors.length} 個）</div>
                 <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
-                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。建議先確認實際狀況，用「進出貨登記」補登對應的不良品/遺失數量；如果單純是登記數字打錯，需要回頭找到是哪一筆修正——這兩種情況都無法自動判斷，需要人工核對。
+                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。如果已經確認實際庫存數字，可以直接在下面填入正確數量，系統會自動補一筆調整紀錄讓帳面對上；如果是想找出是哪一筆登記打錯，需要人工回頭核對原始紀錄。
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {negativeColors.map(nc => (
-                    <div key={nc.name} style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 999,
-                    }}>
-                      <SkuDot name={nc.name} size={9} />
-                      <span style={{ fontSize: 12 }}>{nc.name}</span>
-                      <span className="num" style={{ fontSize: 12, fontWeight: 600, color: '#E8461A' }}>{nc.qty.toLocaleString()}</span>
-                    </div>
-                  ))}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-2)' }}>
+                        {['顏色', '目前帳面', '正確庫存'].map((h, i) => (
+                          <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {negativeColors.map(nc => (
+                        <tr key={nc.name} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                          <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={nc.name} size={9} />{nc.name}</span>
+                          </td>
+                          <td className="num" style={{ padding: '6px 8px', color: '#E8461A', fontWeight: 600 }}>{nc.qty.toLocaleString()}</td>
+                          <td style={{ padding: '6px 8px' }}>
+                            <input
+                              type="number" className="input" style={{ width: 110, fontSize: 12, padding: '4px 8px' }}
+                              placeholder="輸入正確數量"
+                              value={negFixTargets[nc.name] ?? ''}
+                              onChange={e => setNegFixTargets(t => ({ ...t, [nc.name]: e.target.value }))}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -1715,7 +1753,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
           <button className="btn" onClick={onClose}>關閉</button>
-          {!loading && !loadError && issues.unknownColor.length > 0 && (
+          {!loading && !loadError && (issues.unknownColor.length > 0 || negativeColors.length > 0) && (
             <button className="btn primary" disabled={saving || editCount === 0} onClick={applyFixes}>
               {saving ? '套用中…' : `套用修正（${editCount}）`}
             </button>
