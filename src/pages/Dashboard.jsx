@@ -40,6 +40,7 @@ const Icon = {
   Factory: () => (<svg {...S} width="16" height="16"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 21l18 0"/><path d="M5 21v-10l4 -2v3l4 -2v3l4 -2v10"/><path d="M5 14l1 0"/><path d="M9 14l1 0"/><path d="M13 14l1 0"/><path d="M17 21l0 -4"/></svg>),
   // ti-packages
   Stock: () => (<IconPackages width="16" height="16" stroke={1.6} />),
+  Star: ({ size = 14, filled = false } = {}) => (<svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>),
 }
 
 const NAV = [
@@ -1387,14 +1388,40 @@ function InventoryView({ parts }) {
 
   const q = search.trim()
   const filtered = !q ? parts : parts.filter(p => p.name?.includes(q))
-  const sorted = [...filtered].sort((a, b) => (b.warehouse_stock || 0) - (a.warehouse_stock || 0))
+  const hasBlackBody = p => (p.skus || []).some(s => s.color_name === '黑身')
+  const sorted = [...filtered].sort((a, b) => {
+    const aHas = hasBlackBody(a), bHas = hasBlackBody(b)
+    if (aHas !== bHas) return aHas ? -1 : 1
+    return (b.warehouse_stock || 0) - (a.warehouse_stock || 0)
+  })
   const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
+
+  const expandable = sorted.filter(p => (p.skus || []).length > 0)
+  const allOpen = expandable.length > 0 && expandable.every(p => expanded[p.id])
+
+  function toggleAll() {
+    if (allOpen) { setExpanded({}); return }
+    const next = { ...expanded }
+    expandable.forEach(p => {
+      next[p.id] = true
+      if (!breakdowns[p.id]) fetchBreakdown(p)
+    })
+    setExpanded(next)
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件名稱..." value={search} onChange={e => setSearch(e.target.value)} />
-        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {expandable.length > 0 && (
+            <button className="btn ghost" onClick={toggleAll} style={{ fontSize: 12, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+              {allOpen ? <Icon.ChevronUp size={13} /> : <Icon.ChevronDown size={13} />}
+              {allOpen ? '全部收合' : '全部展開'}
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+        </div>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {sorted.length === 0 && <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>沒有符合的零件</div>}
@@ -1533,6 +1560,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [colorEdits, setColorEdits] = useState({})
+  const [negFix, setNegFix] = useState({}) // { [colorName]: { type: 'lost'|'defect', qty: string } }
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -1547,10 +1575,12 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
   }, [part.id])
 
   const skus = part.skus || []
-  const editCount = Object.values(colorEdits).filter(Boolean).length
+  const unknownEditCount = Object.values(colorEdits).filter(Boolean).length
+  const negFixCount = Object.values(negFix).filter(f => f?.type && f.qty !== '' && f.qty !== undefined && Number(f.qty) > 0).length
+  const editCount = unknownEditCount + negFixCount
 
   async function applyFixes() {
-    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄')
+    if (editCount === 0) return alert('請至少選擇一筆要修正的紀錄，或針對負庫存顏色選擇遺失/不良品並填入數量')
     if (!confirm(`確認套用 ${editCount} 筆修正？這會重新計算倉庫庫存數字，此動作無法還原。`)) return
     setSaving(true)
     let failed = 0
@@ -1566,6 +1596,24 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
             sku_color: color === WAREHOUSE_FIX_NONE ? '' : color, qty: log.qty, defect_qty: log.defect_qty || 0,
             lost_qty: log.lost_qty || 0, note: log.note || '', worker_id: log.worker_id || null,
             logged_at: log.logged_at,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    for (const [colorName, fix] of Object.entries(negFix)) {
+      if (!fix?.type || fix.qty === '' || fix.qty === undefined || !(Number(fix.qty) > 0)) continue
+      const amount = Number(fix.qty)
+      const isLost = fix.type === 'lost'
+      try {
+        const res = await apiFetch('/api/receive-logs', {
+          method: 'POST',
+          body: JSON.stringify({
+            product_id: part.product_id, part_id: part.id, sku_color: colorName,
+            action_type: 'return', qty: amount,
+            lost_qty: isLost ? amount : 0,
+            defect_qty: isLost ? 0 : amount,
+            note: isLost ? `零件顏色負庫存修正：遺失${amount}件` : `零件顏色負庫存修正：不良品${amount}件`,
           }),
         })
         if (!res.ok) failed++
@@ -1625,19 +1673,63 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#B54A1F' }}>負庫存的顏色（{negativeColors.length} 個）</div>
                 <div style={{ fontSize: 11, color: 'var(--text-4)', marginBottom: 6, lineHeight: 1.5 }}>
-                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。建議先確認實際狀況，用「進出貨登記」補登對應的不良品/遺失數量；如果單純是登記數字打錯，需要回頭找到是哪一筆修正——這兩種情況都無法自動判斷，需要人工核對。
+                  負庫存代表這個顏色「送出加工」比「回廠/進貨」還多，通常是加工過程中有損耗或報廢、但沒有另外登記不良品或遺失數量。請選擇這批差額屬於「遺失」還是「不良品」，系統會補一筆對應的回廠紀錄：遺失會直接沖銷、讓這個顏色的庫存差異歸零；不良品會進到既有的品檢待處理清單，等後續決定重工或報廢（庫存差異不會歸零，因為不良品本來就不算良品庫存）。如果是單純登記數字打錯，需要人工回頭核對原始紀錄。
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {negativeColors.map(nc => (
-                    <div key={nc.name} style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
-                      background: '#FEF6F4', border: '1px solid #FCD6CC', borderRadius: 999,
-                    }}>
-                      <SkuDot name={nc.name} size={9} />
-                      <span style={{ fontSize: 12 }}>{nc.name}</span>
-                      <span className="num" style={{ fontSize: 12, fontWeight: 600, color: '#E8461A' }}>{nc.qty.toLocaleString()}</span>
-                    </div>
-                  ))}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-2)' }}>
+                        {['顏色', '目前帳面', '處理方式', '數量'].map((h, i) => (
+                          <th key={i} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {negativeColors.map(nc => {
+                        const deficit = Math.abs(nc.qty)
+                        const fix = negFix[nc.name] || { type: null, qty: '' }
+                        function pick(type) {
+                          setNegFix(f => ({
+                            ...f,
+                            [nc.name]: { type, qty: f[nc.name]?.qty || String(deficit) },
+                          }))
+                        }
+                        return (
+                          <tr key={nc.name} style={{ borderBottom: '1px solid var(--line-1)' }}>
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={nc.name} size={9} />{nc.name}</span>
+                            </td>
+                            <td className="num" style={{ padding: '6px 8px', color: '#E8461A', fontWeight: 600 }}>{nc.qty.toLocaleString()}</td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" onClick={() => pick('lost')} style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                                  border: `1px solid ${fix.type === 'lost' ? 'var(--accent)' : 'var(--line-2)'}`,
+                                  background: fix.type === 'lost' ? 'var(--accent-tint)' : 'var(--bg-1)',
+                                  color: fix.type === 'lost' ? 'var(--accent)' : 'var(--text-3)', fontWeight: fix.type === 'lost' ? 600 : 400,
+                                }}>遺失</button>
+                                <button type="button" onClick={() => pick('defect')} style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                                  border: `1px solid ${fix.type === 'defect' ? '#B07D00' : 'var(--line-2)'}`,
+                                  background: fix.type === 'defect' ? '#FAEEDA' : 'var(--bg-1)',
+                                  color: fix.type === 'defect' ? '#8A6000' : 'var(--text-3)', fontWeight: fix.type === 'defect' ? 600 : 400,
+                                }}>不良品</button>
+                              </div>
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="number" className="input" style={{ width: 90, fontSize: 12, padding: '4px 8px' }}
+                                disabled={!fix.type}
+                                placeholder="數量"
+                                value={fix.qty ?? ''}
+                                onChange={e => setNegFix(f => ({ ...f, [nc.name]: { type: f[nc.name]?.type || null, qty: e.target.value } }))}
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -1688,7 +1780,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
           <button className="btn" onClick={onClose}>關閉</button>
-          {!loading && !loadError && issues.unknownColor.length > 0 && (
+          {!loading && !loadError && (issues.unknownColor.length > 0 || negativeColors.length > 0) && (
             <button className="btn primary" disabled={saving || editCount === 0} onClick={applyFixes}>
               {saving ? '套用中…' : `套用修正（${editCount}）`}
             </button>
@@ -2628,6 +2720,34 @@ function FinishedGoodsInventoryView({ products }) {
   )
 }
 
+const PINNED_PRODUCTS_KEY = 'dicas:pinnedProducts'
+
+function usePinnedProducts() {
+  const [pinned, setPinned] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PINNED_PRODUCTS_KEY) || '[]') } catch { return [] }
+  })
+
+  function togglePin(id) {
+    setPinned(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      localStorage.setItem(PINNED_PRODUCTS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  function sortWithPinned(products) {
+    return [...products].sort((a, b) => {
+      const pa = pinned.includes(a.id), pb = pinned.includes(b.id)
+      if (pa && !pb) return -1
+      if (!pa && pb) return 1
+      if (pa && pb) return pinned.indexOf(a.id) - pinned.indexOf(b.id)
+      return 0
+    })
+  }
+
+  return { pinned, togglePin, sortWithPinned }
+}
+
 function StockManagementPage({ products }) {
   const [tab, setTab] = useState('parts')
   const [allParts, setAllParts] = useState([])
@@ -2635,6 +2755,8 @@ function StockManagementPage({ products }) {
   const [subProd, setSubProd] = useState(null)
   const [subItems, setSubItems] = useState([])
   const [subLoading, setSubLoading] = useState(false)
+  const { pinned, togglePin, sortWithPinned } = usePinnedProducts()
+  const orderedProducts = sortWithPinned(products)
 
   useEffect(() => {
     if (!products.length) return
@@ -2643,8 +2765,8 @@ function StockManagementPage({ products }) {
 
   useEffect(() => {
     if (!products.length) return
-    if (tab === 'parts' && !partsProd) setPartsProd(products[0])
-    if (tab === 'subassembly' && !subProd) setSubProd(products[0])
+    if (tab === 'parts' && !partsProd) setPartsProd(orderedProducts[0])
+    if (tab === 'subassembly' && !subProd) setSubProd(orderedProducts[0])
   }, [tab, products.length])
 
   useEffect(() => {
@@ -2668,13 +2790,23 @@ function StockManagementPage({ products }) {
 
   const ProdPill = ({ p, active, onClick }) => (
     <button onClick={onClick} style={{
-      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      padding: '5px 10px 5px 16px', borderRadius: 999, cursor: 'pointer',
       background: active ? 'var(--text-1)' : 'var(--bg-1)',
       color: active ? 'var(--bg-1)' : 'var(--text-3)',
       border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
       font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
       transition: 'background .12s, color .12s',
-    }}>{p.name}</button>
+      display: 'flex', alignItems: 'center', gap: 6,
+    }}>
+      {p.name}
+      <span
+        onClick={e => { e.stopPropagation(); togglePin(p.id) }}
+        title={pinned.includes(p.id) ? '取消釘選' : '釘選常用產品'}
+        style={{ display: 'flex', opacity: pinned.includes(p.id) ? 1 : 0.35, color: pinned.includes(p.id) ? '#E0A030' : 'inherit' }}
+      >
+        <Icon.Star size={12} filled={pinned.includes(p.id)} />
+      </span>
+    </button>
   )
 
   return (
@@ -2704,7 +2836,7 @@ function StockManagementPage({ products }) {
       {tab === 'parts' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={partsProd?.id === p.id} onClick={() => setPartsProd(p)} />)}
           </div>
           {partsProd
             ? <InventoryView parts={allParts.filter(p => p.product_id === partsProd.id)} />
@@ -2717,7 +2849,7 @@ function StockManagementPage({ products }) {
       {tab === 'subassembly' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={subProd?.id === p.id} onClick={() => setSubProd(p)} />)}
           </div>
           {subProd
             ? <SubAssemblyInventoryView items={subItems} loading={subLoading} />
