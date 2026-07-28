@@ -97,7 +97,8 @@ router.post('/pending/:id/process', async (req, res) => {
       }
 
       if (action === 'stock') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(qty, pending.part_id)
+        // 零件庫存已改為即時從 receive_logs/qc_logs 現算，這裡不用再更新 warehouse_stock，
+        // 上面已經寫入的 qc_logs（action='stock'）本身就是計算來源
       } else if (action === 'rework') {
         await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?')
           .run(qty, qty, rework_stage_id)

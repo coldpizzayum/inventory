@@ -51,7 +51,6 @@ router.post('/', async (req, res) => {
 
     const dq = Math.max(0, defect_qty || 0)
     const lq = Math.max(0, lost_qty || 0)
-    const net = qty - dq
 
     const id = await db.transaction(async (tx) => {
       const result = logged_at
@@ -66,8 +65,8 @@ router.post('/', async (req, res) => {
 
       if (action_type === 'receive') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?'
-        ).run(net, dq, dq, part_id)
+          'UPDATE parts SET defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?'
+        ).run(dq, dq, part_id)
 
         if (dq > 0) {
           await tx.prepare(
@@ -77,8 +76,8 @@ router.post('/', async (req, res) => {
 
       } else if (action_type === 'send') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, total_lost=total_lost+? WHERE id=?'
-        ).run(qty, qty, lq, part_id)
+          'UPDATE parts SET total_lost=total_lost+? WHERE id=?'
+        ).run(lq, part_id)
 
         if (stage_id) {
           // in_transit only counts items that actually arrived; lost items don't enter transit
@@ -88,10 +87,7 @@ router.post('/', async (req, res) => {
         }
 
       } else if (action_type === 'ship') {
-        // Finished goods out to customer — deduct from warehouse
-        await tx.prepare(
-          'UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?'
-        ).run(qty, qty, part_id)
+        // 零件庫存已改為即時從 receive_logs/qc_logs 現算，出貨不再需要更新任何欄位
 
       } else if (action_type === 'return') {
         if (stage_id) {
@@ -102,8 +98,8 @@ router.post('/', async (req, res) => {
         }
 
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?'
-        ).run(net, dq, dq, lq, part_id)
+          'UPDATE parts SET defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?'
+        ).run(dq, dq, lq, part_id)
 
         if (dq > 0) {
           await tx.prepare(
@@ -166,7 +162,6 @@ router.patch('/:id', async (req, res) => {
     const { action_type, part_id, stage_id, sku_color, qty, defect_qty, lost_qty, note, worker_id, logged_at } = req.body
     const newDq = Math.max(0, defect_qty || 0)
     const newLq = Math.max(0, lost_qty || 0)
-    const newNet = qty - newDq
 
     const orig = await db.prepare('SELECT * FROM receive_logs WHERE id=?').get(req.params.id)
     if (!orig) return res.status(404).json({ error: '找不到紀錄' })
@@ -175,26 +170,22 @@ router.patch('/:id', async (req, res) => {
       const { action_type: oa, part_id: op, stage_id: os, qty: oq, defect_qty: odq, lost_qty: olq_, id: oid } = orig
       const odq_ = odq || 0
       const olq = olq_ || 0
-      const onet = oq - odq_
 
       // Reverse original stock effects.
-      // These undo an add we know actually happened, so the subtraction must be
-      // exact — never floor-guarded. Flooring here was silently truncating the
-      // reversal whenever intervening send/ship activity had already brought the
-      // counter below the amount being undone, permanently desyncing
-      // warehouse_stock from the receive_logs ledger.
+      // 零件庫存已改為即時從 receive_logs/qc_logs 現算，這裡不用再反向沖銷 warehouse_stock，
+      // 只需要處理 defect_stock/total_defect/total_lost 這些仍然是累加維護的欄位。
       if (oa === 'receive') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?')
-          .run(onet, odq_, odq_, op)
+        await tx.prepare('UPDATE parts SET defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?')
+          .run(odq_, odq_, op)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
       } else if (oa === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(oq, olq, olq, op)
+        await tx.prepare('UPDATE parts SET total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(olq, olq, op)
         if (os) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?').run(oq - olq, oq - olq, oq, oq, os)
       } else if (oa === 'ship') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(oq, op)
+        // 零件庫存已改為即時現算，出貨不再需要更新任何欄位
       } else if (oa === 'return') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?')
-          .run(onet, odq_, odq_, olq, op)
+        await tx.prepare('UPDATE parts SET defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?')
+          .run(odq_, odq_, olq, op)
         if (os) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?')
           .run(oq + olq, oq, oq, odq_, odq_, os)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=? AND status=?').run(oid, 'pending')
@@ -207,20 +198,20 @@ router.patch('/:id', async (req, res) => {
 
       // Apply new stock effects
       if (action_type === 'receive') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?')
-          .run(newNet, newDq, newDq, part_id)
+        await tx.prepare('UPDATE parts SET defect_stock=defect_stock+?, total_defect=total_defect+? WHERE id=?')
+          .run(newDq, newDq, part_id)
         if (newDq > 0) {
           await tx.prepare('INSERT INTO defect_logs (product_id, part_id, stage_id, sku_color, qty, status, source, receive_log_id) VALUES (?, ?, NULL, ?, ?, \'pending\', \'incoming\', ?)')
             .run(orig.product_id, part_id, sku_color || '', newDq, oid)
         }
       } else if (action_type === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END, total_lost=total_lost+? WHERE id=?').run(qty, qty, newLq, part_id)
+        await tx.prepare('UPDATE parts SET total_lost=total_lost+? WHERE id=?').run(newLq, part_id)
         if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=in_transit+?, total_sent=total_sent+? WHERE id=?').run(qty - newLq, qty, stage_id)
       } else if (action_type === 'ship') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=CASE WHEN warehouse_stock>=? THEN warehouse_stock-? ELSE 0 END WHERE id=?').run(qty, qty, part_id)
+        // 零件庫存已改為即時現算，出貨不再需要更新任何欄位
       } else if (action_type === 'return') {
         if (stage_id) await tx.prepare('UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_returned=total_returned+?, total_defect=total_defect+? WHERE id=?').run(qty + newLq, qty + newLq, qty, newDq, stage_id)
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?').run(newNet, newDq, newDq, newLq, part_id)
+        await tx.prepare('UPDATE parts SET defect_stock=defect_stock+?, total_defect=total_defect+?, total_lost=total_lost+? WHERE id=?').run(newDq, newDq, newLq, part_id)
         if (newDq > 0) {
           await tx.prepare('INSERT INTO defect_logs (product_id, part_id, stage_id, sku_color, qty, status, source, receive_log_id) VALUES (?, ?, ?, ?, ?, \'pending\', \'return\', ?)')
             .run(orig.product_id, part_id, stage_id || null, sku_color || '', newDq, oid)
@@ -251,19 +242,17 @@ router.delete('/:id', async (req, res) => {
       const { action_type, part_id, stage_id, qty, defect_qty, lost_qty: lq_, id } = log
       const dq = defect_qty || 0
       const lq = lq_ || 0
-      const net = qty - dq
 
-      // Undoing a receive/return means reversing an add we know actually happened,
-      // so the subtraction must be exact — never floor-guarded (see PATCH handler
-      // above for why flooring here silently corrupts warehouse_stock).
+      // 零件庫存已改為即時從 receive_logs/qc_logs 現算，刪除紀錄不用再反向沖銷
+      // warehouse_stock，只需要處理 defect_stock/total_defect/total_lost。
       if (action_type === 'receive') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?'
-        ).run(net, dq, dq, part_id)
+          'UPDATE parts SET defect_stock=defect_stock-?, total_defect=total_defect-? WHERE id=?'
+        ).run(dq, dq, part_id)
         await tx.prepare('DELETE FROM defect_logs WHERE receive_log_id=?').run(id)
 
       } else if (action_type === 'send') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+?, total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(qty, lq, lq, part_id)
+        await tx.prepare('UPDATE parts SET total_lost=CASE WHEN total_lost>=? THEN total_lost-? ELSE 0 END WHERE id=?').run(lq, lq, part_id)
         if (stage_id) {
           await tx.prepare(
             'UPDATE process_stages SET in_transit=CASE WHEN in_transit>=? THEN in_transit-? ELSE 0 END, total_sent=CASE WHEN total_sent>=? THEN total_sent-? ELSE 0 END WHERE id=?'
@@ -271,12 +260,12 @@ router.delete('/:id', async (req, res) => {
         }
 
       } else if (action_type === 'ship') {
-        await tx.prepare('UPDATE parts SET warehouse_stock=warehouse_stock+? WHERE id=?').run(qty, part_id)
+        // 零件庫存已改為即時現算，出貨不再需要更新任何欄位
 
       } else if (action_type === 'return') {
         await tx.prepare(
-          'UPDATE parts SET warehouse_stock=warehouse_stock-?, defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?'
-        ).run(net, dq, dq, lq, part_id)
+          'UPDATE parts SET defect_stock=defect_stock-?, total_defect=total_defect-?, total_lost=total_lost-? WHERE id=?'
+        ).run(dq, dq, lq, part_id)
         if (stage_id) {
           await tx.prepare(
             'UPDATE process_stages SET in_transit=in_transit+?, total_returned=CASE WHEN total_returned>=? THEN total_returned-? ELSE 0 END, total_defect=CASE WHEN total_defect>=? THEN total_defect-? ELSE 0 END WHERE id=?'
