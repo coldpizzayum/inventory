@@ -84,9 +84,9 @@ router.get('/:id/sku-breakdown', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// 依顏色拆解倉庫庫存（parts.warehouse_stock 只有總數，沒有分色）。
-// 邏輯跟 warehouse_stock 本身的計算方式一致：receive/return 進倉、send/ship 出倉。
-// 另外品檢點貨批次入庫（qc_logs, action='stock'）也會直接加進 warehouse_stock，
+// 依顏色拆解倉庫庫存。零件庫存不再另外存一個總數欄位，這裡算出來的分色
+// 加總就是唯一的庫存來源：receive/return 進倉、send/ship 出倉。
+// 另外品檢點貨批次入庫（qc_logs, action='stock'）也算庫存，
 // 但寫在 qc_logs 而不是 receive_logs，這裡要一起算，不然分色加總會少算。
 router.get('/:id/warehouse-breakdown', async (req, res) => {
   try {

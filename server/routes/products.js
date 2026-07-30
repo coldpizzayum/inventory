@@ -103,17 +103,33 @@ router.get('/:id/parts', async (req, res) => {
     const parts = await db.prepare('SELECT * FROM parts WHERE product_id=? ORDER BY sort_order').all(req.params.id)
     const partIds = parts.map(p => p.id)
 
-    const [skus, stages, qcPending, qcStocked] = partIds.length
+    const [skus, stages, qcPending, qcStocked, stockMoves] = partIds.length
       ? await Promise.all([
           db.prepare(`SELECT * FROM part_skus WHERE part_id IN (${partIds.map(() => '?').join(',')}) ORDER BY id`).all(...partIds),
           db.prepare(`SELECT * FROM process_stages WHERE part_id IN (${partIds.map(() => '?').join(',')}) ORDER BY sort_order`).all(...partIds),
           db.prepare(`SELECT part_id, SUM(qty) as qty FROM qc_pending WHERE part_id IN (${partIds.map(() => '?').join(',')}) AND qty > 0 GROUP BY part_id`).all(...partIds),
           db.prepare(`SELECT part_id, SUM(qty) as qty FROM qc_logs WHERE part_id IN (${partIds.map(() => '?').join(',')}) AND action='stock' GROUP BY part_id`).all(...partIds),
+          db.prepare(`SELECT part_id, action_type, qty, defect_qty FROM receive_logs WHERE part_id IN (${partIds.map(() => '?').join(',')}) AND action_type IN ('receive','send','ship','return')`).all(...partIds),
         ])
-      : [[], [], [], []]
+      : [[], [], [], [], []]
+
+    // 零件庫存不再是一個單獨存、跟著每筆進出貨同步累加/累減的欄位（那個做法容易讓帳面
+    // 跟顏色分色紀錄兜不起來），改成每次都直接從 receive_logs + qc_logs 現算加總，
+    // 邏輯要跟 /api/parts/:id/warehouse-breakdown 的分色算法完全一致。
+    const stockTotals = {}
+    for (const { part_id, action_type, qty, defect_qty } of stockMoves) {
+      if (stockTotals[part_id] === undefined) stockTotals[part_id] = 0
+      const net = qty - (defect_qty || 0)
+      if (action_type === 'receive' || action_type === 'return') stockTotals[part_id] += net
+      if (action_type === 'send' || action_type === 'ship') stockTotals[part_id] -= qty
+    }
+    for (const { part_id, qty } of qcStocked) {
+      stockTotals[part_id] = (stockTotals[part_id] || 0) + Number(qty)
+    }
 
     const result = parts.map(part => ({
       ...part,
+      warehouse_stock: stockTotals[part.id] || 0,
       skus:   skus.filter(s => s.part_id === part.id),
       stages: stages.filter(s => s.part_id === part.id),
       qc_pending_qty:    Number(qcPending.find(q => q.part_id === part.id)?.qty || 0),

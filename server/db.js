@@ -45,7 +45,6 @@ const SQLITE_SCHEMA = `
     product_id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
-    warehouse_stock INTEGER DEFAULT 0,
     defect_stock INTEGER DEFAULT 0,
     total_defect INTEGER DEFAULT 0,
     total_scrapped INTEGER DEFAULT 0,
@@ -215,7 +214,6 @@ const PG_SCHEMA = `
     product_id TEXT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
-    warehouse_stock INTEGER DEFAULT 0,
     defect_stock INTEGER DEFAULT 0,
     total_defect INTEGER DEFAULT 0,
     total_scrapped INTEGER DEFAULT 0,
@@ -422,7 +420,6 @@ function createSqliteAdapter() {
   try { raw.exec('ALTER TABLE receive_logs ADD COLUMN operator TEXT') } catch (_) {}
   try { raw.exec('ALTER TABLE receive_logs ADD COLUMN stage_id INTEGER') } catch (_) {}
   try { raw.exec('ALTER TABLE receive_logs ADD COLUMN worker_id INTEGER') } catch (_) {}
-  try { raw.exec('ALTER TABLE parts ADD COLUMN warehouse_stock INTEGER DEFAULT 0') } catch (_) {}
   try { raw.exec('ALTER TABLE parts ADD COLUMN defect_stock INTEGER DEFAULT 0') } catch (_) {}
   try { raw.exec('ALTER TABLE parts ADD COLUMN total_defect INTEGER DEFAULT 0') } catch (_) {}
   try { raw.exec('ALTER TABLE parts ADD COLUMN total_scrapped INTEGER DEFAULT 0') } catch (_) {}
@@ -435,8 +432,6 @@ function createSqliteAdapter() {
   try { raw.exec('ALTER TABLE products ADD COLUMN warehouse_stock INTEGER DEFAULT 0') } catch (_) {}
   try { raw.exec('ALTER TABLE receive_logs ADD COLUMN lost_qty INTEGER DEFAULT 0') } catch (_) {}
   try { raw.exec('ALTER TABLE parts ADD COLUMN total_lost INTEGER DEFAULT 0') } catch (_) {}
-  // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
-  try { raw.exec(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`) } catch (_) {}
   // One-time backfill: existing aggregate warehouse_stock predates per-variant
   // tracking, so it goes into a single "未分類" bucket rather than being invented
   try {
@@ -524,7 +519,6 @@ async function createPgAdapter() {
   await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS operator TEXT')
   await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS stage_id INTEGER')
   await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS worker_id INTEGER')
-  await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS warehouse_stock INTEGER DEFAULT 0')
   await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS defect_stock INTEGER DEFAULT 0')
   await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_defect INTEGER DEFAULT 0')
   await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_scrapped INTEGER DEFAULT 0')
@@ -537,8 +531,6 @@ async function createPgAdapter() {
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS warehouse_stock INTEGER DEFAULT 0')
   await pool.query('ALTER TABLE receive_logs ADD COLUMN IF NOT EXISTS lost_qty INTEGER DEFAULT 0')
   await pool.query('ALTER TABLE parts ADD COLUMN IF NOT EXISTS total_lost INTEGER DEFAULT 0')
-  // Migrate existing data: sum parts.warehouse_stock into products.warehouse_stock
-  await pool.query(`UPDATE products SET warehouse_stock = COALESCE((SELECT SUM(warehouse_stock) FROM parts WHERE product_id = products.id), 0) WHERE warehouse_stock = 0`)
   // One-time backfill: existing aggregate warehouse_stock predates per-variant
   // tracking, so it goes into a single "未分類" bucket rather than being invented
   await pool.query(`

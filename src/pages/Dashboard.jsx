@@ -1345,9 +1345,9 @@ function calcFactoryGroups(parts) {
 }
 
 // 庫存 tab —— 跨產品攤平列出每個零件的倉庫總庫存，展開可看依 SKU 顏色拆分的數字。
-// warehouse_stock 本身只有總數（跟 process_stages.in_transit 一樣），分色數字是
-// 從 receive_logs 現算現拆，同樣可能因為歷史紀錄缺顏色/加工站對不起來，此時只
-// 顯示總庫存並提示資料不完整。
+// 零件庫存不再另外存一個總數欄位，展開時看到的分色數字就是唯一的庫存來源，
+// 從 receive_logs/qc_logs 現算現拆。個別顏色仍然可能因為歷史紀錄缺顏色/加工站
+// 對不起來變成負庫存，此時提示資料不完整。
 function InventoryView({ parts }) {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState({})
@@ -1362,14 +1362,10 @@ function InventoryView({ parts }) {
     }).then(data => {
       if (!data || typeof data.breakdown !== 'object') throw new Error('bad response')
       const breakdown = data.breakdown || {}
-      const skuNames = [...(part.skus || []).map(s => s.color_name), '未分類']
-      const sum = skuNames.reduce((s, name) => s + (breakdown[name] || 0), 0)
-      const expected = part.warehouse_stock || 0
       const negativeColors = Object.entries(breakdown).filter(([, qty]) => qty < 0).map(([name, qty]) => ({ name, qty }))
-      // 就算加總對得起來，只要有任何顏色是負庫存就不算可靠——負庫存代表送出比回廠
-      // 多，兩個顏色的誤差剛好互相抵銷才讓總數看起來一致，個別數字仍然是錯的。
-      const reliable = sum === expected && negativeColors.length === 0
-      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable, sum, expected, negativeColors } }))
+      // 負庫存代表送出比回廠/進貨多，個別顏色數字不正確，需要人工核對。
+      const reliable = negativeColors.length === 0
+      setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown, reliable, negativeColors } }))
     }).catch(() => {
       setBreakdowns(b => ({ ...b, [part.id]: { loading: false, breakdown: {}, reliable: false, loadError: true } }))
     })
@@ -1394,8 +1390,6 @@ function InventoryView({ parts }) {
     if (aHas !== bHas) return aHas ? -1 : 1
     return (b.warehouse_stock || 0) - (a.warehouse_stock || 0)
   })
-  const totalStock = parts.reduce((s, p) => s + (p.warehouse_stock || 0), 0)
-
   const expandable = sorted.filter(p => (p.skus || []).length > 0)
   const allOpen = expandable.length > 0 && expandable.every(p => expanded[p.id])
 
@@ -1420,7 +1414,7 @@ function InventoryView({ parts }) {
               {allOpen ? '全部收合' : '全部展開'}
             </button>
           )}
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件・倉庫總庫存 {totalStock.toLocaleString()} 件</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件</span>
         </div>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -1448,10 +1442,6 @@ function InventoryView({ parts }) {
                     {skus.slice(0, 5).map(s => <SkuDot key={s.id || s.color_name} name={s.color_name} hex={s.color_hex} size={8} />)}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexShrink: 0, minWidth: 90, justifyContent: 'flex-end' }}>
-                  <span className="num" style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)' }}>{(part.warehouse_stock || 0).toLocaleString()}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-3)' }}>件</span>
-                </div>
                 {skus.length > 0 && (
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                     style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.15s', flexShrink: 0 }}>
@@ -1488,7 +1478,7 @@ function InventoryView({ parts }) {
               )}
               {isOpen && bd && !bd.loading && !bd.reliable && !bd.loadError && (
                 <button
-                  onClick={() => setMismatchModal({ part, sum: bd.sum, expected: bd.expected, negativeColors: bd.negativeColors || [] })}
+                  onClick={() => setMismatchModal({ part, negativeColors: bd.negativeColors || [] })}
                   style={{
                     width: '100%', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6,
                     background: '#FEF6F4', borderTop: '1px solid #FCD6CC', border: 'none', borderTopStyle: 'solid',
@@ -1496,7 +1486,7 @@ function InventoryView({ parts }) {
                   }}
                 >
                   <Icon.Warn />
-                  {bd.negativeColors?.length > 0 ? '上方顏色分布可能不準確（有顏色庫存為負）' : '上方顏色分布可能不準確（分色加總跟總庫存對不起來）'}
+                  上方顏色分布可能不準確（有顏色庫存為負）
                   <span style={{ marginLeft: 'auto', textDecoration: 'underline', flexShrink: 0 }}>查看詳情</span>
                 </button>
               )}
@@ -1506,7 +1496,7 @@ function InventoryView({ parts }) {
       </div>
       {mismatchModal && (
         <WarehouseMismatchModal
-          part={mismatchModal.part} sum={mismatchModal.sum} expected={mismatchModal.expected} negativeColors={mismatchModal.negativeColors}
+          part={mismatchModal.part} negativeColors={mismatchModal.negativeColors}
           onClose={() => setMismatchModal(null)}
           onFixed={() => { fetchBreakdown(mismatchModal.part); setMismatchModal(null) }}
         />
@@ -1555,7 +1545,7 @@ function SubAssemblyInventoryView({ items, loading }) {
 
 const WAREHOUSE_FIX_NONE = '__NONE__'
 
-function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onClose, onFixed }) {
+function WarehouseMismatchModal({ part, negativeColors = [], onClose, onFixed }) {
   const [issues, setIssues] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -1624,10 +1614,6 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
     onFixed()
   }
 
-  const diff = sum - expected
-  const hasDiff = diff !== 0
-  const hasNegative = negativeColors.length > 0
-
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{ width: 640, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1636,29 +1622,7 @@ function WarehouseMismatchModal({ part, sum, expected, negativeColors = [], onCl
           <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          {hasDiff && hasNegative
-            ? '這個零件的分色庫存加總跟倉庫實際總庫存對不起來，而且有顏色出現負庫存：'
-            : hasDiff
-              ? '這個零件的分色庫存加總，跟倉庫實際總庫存對不起來：'
-              : '這個零件的分色加總雖然跟倉庫總庫存一致，但其中有顏色出現負庫存，個別數字仍然不正確：'}
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-2)' }}>
-                {['分色加總', '實際總庫存', '差異'].map((h, i) => (
-                  <th key={i} style={{ padding: '6px 10px', textAlign: i === 0 ? 'left' : 'right', fontWeight: 400, color: 'var(--text-3)', borderBottom: '1px solid var(--line-1)', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="num" style={{ padding: '6px 10px' }}>{sum.toLocaleString()}</td>
-                <td className="num" style={{ padding: '6px 10px', textAlign: 'right' }}>{expected.toLocaleString()}</td>
-                <td className="num" style={{ padding: '6px 10px', textAlign: 'right', color: '#E8461A', fontWeight: 500 }}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
+          這個零件有顏色的庫存出現負數，個別數字不正確：
         </div>
 
         {loading ? (
