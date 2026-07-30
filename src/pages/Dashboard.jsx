@@ -2425,6 +2425,8 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
   const [stageModal, setStageModal] = useState(null) // { mode, parts, onReload }
   const [editPicker, setEditPicker] = useState(null) // action string
   const menuRef = useRef(null)
+  const { pinned, togglePin, sortWithPinned } = usePinnedProducts()
+  const orderedProducts = sortWithPinned(products)
 
   const curProd = selectedProduct || products[0]
 
@@ -2524,13 +2526,23 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
 
   const ProdPill = ({ p, active, onClick }) => (
     <button onClick={onClick} style={{
-      padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+      padding: '5px 10px 5px 16px', borderRadius: 999, cursor: 'pointer',
       background: active ? 'var(--text-1)' : 'var(--bg-1)',
       color: active ? 'var(--bg-1)' : 'var(--text-3)',
       border: `1px solid ${active ? 'var(--text-1)' : 'var(--line-2)'}`,
       font: 'inherit', fontSize: 13, fontWeight: active ? 600 : 400,
       transition: 'background .12s, color .12s',
-    }}>{p.name}</button>
+      display: 'flex', alignItems: 'center', gap: 6,
+    }}>
+      {p.name}
+      <span
+        onClick={e => { e.stopPropagation(); togglePin(p.id) }}
+        title={pinned.includes(p.id) ? '取消釘選' : '釘選常用產品'}
+        style={{ display: 'flex', opacity: pinned.includes(p.id) ? 1 : 0.35, color: pinned.includes(p.id) ? '#E0A030' : 'inherit' }}
+      >
+        <Icon.Star size={12} filled={pinned.includes(p.id)} />
+      </span>
+    </button>
   )
 
   return (
@@ -2621,7 +2633,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
       {tab === 'part' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={tabBProd?.id === p.id} onClick={() => setTabBProd(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={tabBProd?.id === p.id} onClick={() => setTabBProd(p)} />)}
           </div>
           {tabBProd
             ? <PartViewExpandable parts={sortedTabBParts} />
@@ -2634,7 +2646,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
       {tab === 'product' && (
         <>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-            {products.map(p => <ProdPill key={p.id} p={p} active={curProd?.id === p.id} onClick={() => onSelectProduct(p)} />)}
+            {orderedProducts.map(p => <ProdPill key={p.id} p={p} active={curProd?.id === p.id} onClick={() => onSelectProduct(p)} />)}
           </div>
           <PartView parts={tabCParts} skuEditMode={skuEditMode} onReload={() => _loadTabC(curProd?.id)} />
         </>
