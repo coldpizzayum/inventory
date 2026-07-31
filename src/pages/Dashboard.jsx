@@ -3781,6 +3781,7 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [selected, setSelected] = useState(() => new Set())
   const [logPage, setLogPage] = useState(0)
   const [backfillOpen, setBackfillOpen] = useState(false)
+  const [showForm, setShowForm] = useState(false)
   const showTools = new URLSearchParams(window.location.search).get('tools') === '1'
   const untaggedCount = logs.filter(l => !l.sku_color && l.part_id).length
   const [batchNoteMode, setBatchNoteMode] = useState(false)
@@ -4331,11 +4332,20 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn primary" onClick={() => setShowForm(true)} style={{ padding: '9px 18px', fontSize: 13.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon.Plus />新增登記
+        </button>
+      </div>
 
+      {showForm && (
+      <ModalOverlay onClose={() => setShowForm(false)}>
         {/* Form */}
-        <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>新增登記</h3>
+        <div className="card" style={{ width: 440, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>新增登記</h3>
+            <button className="btn ghost" onClick={() => setShowForm(false)} style={{ padding: 6 }}><Icon.X /></button>
+          </div>
 
           {/* Direction */}
           <div className="field">
@@ -4539,6 +4549,10 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             {submitting ? '送出中...' : '確認送出'}
           </button>
         </div>
+      </ModalOverlay>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {showTools && untaggedCount > 0 && (
           <div className="card" style={{
