@@ -4609,36 +4609,37 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
 
           {!someVisible && (
             <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-1)', background: 'var(--bg-2)', overflowX: 'auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', width: 'max-content', minWidth: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
                 <input
                   className="input" value={logSearch} onChange={e => setLogSearch(e.target.value)}
-                  placeholder="搜尋登記人・產品・零件・顏色・備註…"
-                  style={{ width: 220, flexShrink: 0, fontSize: 12.5, padding: '6px 10px' }}
+                  placeholder="搜尋…"
+                  title="搜尋登記人・產品・零件・顏色・備註"
+                  style={{ width: 150, flex: '0 1 150px', minWidth: 90, fontSize: 12.5, padding: '6px 8px' }}
                 />
-                <select className="select" value={logWorkerFilter} onChange={e => setLogWorkerFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                <select className="select" value={logWorkerFilter} onChange={e => setLogWorkerFilter(e.target.value)} style={{ width: 96, flexShrink: 0, fontSize: 12.5, padding: '6px 6px' }}>
                   <option value="">登記人：全部</option>
                   {logWorkerOptions.map(w => <option key={w} value={w}>{w}</option>)}
                 </select>
-                <select className="select" value={logActionFilter} onChange={e => setLogActionFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                <select className="select" value={logActionFilter} onChange={e => setLogActionFilter(e.target.value)} style={{ width: 100, flexShrink: 0, fontSize: 12.5, padding: '6px 6px' }}>
                   <option value="">動作：全部</option>
                   {Object.entries(ACTION_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <select className="select" value={logProductFilter} onChange={e => setLogProductFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                <select className="select" value={logProductFilter} onChange={e => setLogProductFilter(e.target.value)} style={{ width: 100, flexShrink: 0, fontSize: 12.5, padding: '6px 6px' }}>
                   <option value="">產品：全部</option>
                   {logProductOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </select>
                 <select className="select" value={logPartFilter} onChange={e => setLogPartFilter(e.target.value)} disabled={!logProductFilter}
-                  style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0, color: logProductFilter ? 'inherit' : 'var(--text-4)' }}>
+                  style={{ width: 100, flexShrink: 0, fontSize: 12.5, padding: '6px 6px', color: logProductFilter ? 'inherit' : 'var(--text-4)' }}>
                   <option value="">{logProductFilter ? '零件：全部' : '零件：先選產品'}</option>
                   {logPartOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                 </select>
-                <select className="select" value={logStageFilter} onChange={e => setLogStageFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                <select className="select" value={logStageFilter} onChange={e => setLogStageFilter(e.target.value)} style={{ width: 100, flexShrink: 0, fontSize: 12.5, padding: '6px 6px' }}>
                   <option value="">加工站：全部</option>
                   {logStageOptions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 {logFilterActive && (
-                  <button onClick={clearLogFilters} style={{ padding: '6px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12.5, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    清除篩選 ✕
+                  <button onClick={clearLogFilters} style={{ padding: '6px 6px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12.5, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    清除 ✕
                   </button>
                 )}
               </div>
