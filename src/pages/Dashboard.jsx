@@ -3793,6 +3793,45 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   const [qcExpandId, setQcExpandId] = useState(null)
   const [qcForm, setQcForm] = useState(null) // { qty, action, reworkStageId }
 
+  // ─── 最近紀錄篩選 ───────────────────────────────────────────
+  const [logSearch, setLogSearch] = useState('')
+  const [logWorkerFilter, setLogWorkerFilter] = useState('')
+  const [logActionFilter, setLogActionFilter] = useState('')
+  const [logProductFilter, setLogProductFilter] = useState('')
+  const [logPartFilter, setLogPartFilter] = useState('')
+  const [logStageFilter, setLogStageFilter] = useState('')
+
+  useEffect(() => { setLogPartFilter('') }, [logProductFilter])
+
+  const logWorkerOptions = [...new Set(logs.map(l => l.worker_name).filter(Boolean))].sort()
+  const logStageOptions = [...new Set(logs.map(l => l.stage_name).filter(Boolean))].sort()
+  const logProductOptions = [...new Map(logs.filter(l => l.product_id).map(l => [l.product_id, l.product_name])).entries()]
+    .sort((a, b) => (a[1] || '').localeCompare(b[1] || ''))
+  const logPartOptions = logProductFilter
+    ? [...new Map(logs.filter(l => l.product_id === logProductFilter && l.part_id).map(l => [l.part_id, l.part_name])).entries()]
+        .sort((a, b) => (a[1] || '').localeCompare(b[1] || ''))
+    : []
+
+  const logFilterActive = !!(logSearch.trim() || logWorkerFilter || logActionFilter || logProductFilter || logPartFilter || logStageFilter)
+
+  const filteredLogs = logs.filter(l => {
+    if (logWorkerFilter && l.worker_name !== logWorkerFilter) return false
+    if (logActionFilter && l.action_type !== logActionFilter) return false
+    if (logProductFilter && l.product_id !== logProductFilter) return false
+    if (logPartFilter && l.part_id !== logPartFilter) return false
+    if (logStageFilter && l.stage_name !== logStageFilter) return false
+    const q = logSearch.trim().toLowerCase()
+    if (q) {
+      const hay = [l.worker_name, l.product_name, l.part_name, l.sku_color, l.note, l.stage_name].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+
+  function clearLogFilters() {
+    setLogSearch(''); setLogWorkerFilter(''); setLogActionFilter(''); setLogProductFilter(''); setLogStageFilter('')
+  }
+
   const dq = Math.max(0, parseInt(defectQty, 10) || 0)
   const actionType = source ? resolveActionType(direction, source) : null
   const stageId = (actionType && stages.length) ? resolveStageId(stages, source, actionType) : null
@@ -3913,9 +3952,9 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
   }
 
   const LOG_PAGE_SIZE = 50
-  const totalLogPages = Math.max(1, Math.ceil(logs.length / LOG_PAGE_SIZE))
-  useEffect(() => { setLogPage(0) }, [logs])
-  const visibleLogs = logs.slice(logPage * LOG_PAGE_SIZE, (logPage + 1) * LOG_PAGE_SIZE)
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / LOG_PAGE_SIZE))
+  useEffect(() => { setLogPage(0) }, [logs, logSearch, logWorkerFilter, logActionFilter, logProductFilter, logPartFilter, logStageFilter])
+  const visibleLogs = filteredLogs.slice(logPage * LOG_PAGE_SIZE, (logPage + 1) * LOG_PAGE_SIZE)
   const allVisible = visibleLogs.length > 0 && visibleLogs.every(l => selected.has(l.id))
   const someVisible = visibleLogs.some(l => selected.has(l.id))
 
@@ -4547,10 +4586,49 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             ) : (
               <>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500, flex: 1 }}>最近紀錄</h3>
-                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{logs.length} 筆</span>
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                  {logFilterActive ? `符合 ${filteredLogs.length} / ${logs.length} 筆` : `${logs.length} 筆`}
+                </span>
               </>
             )}
           </div>
+
+          {!someVisible && (
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg-2)' }}>
+              <input
+                className="input" value={logSearch} onChange={e => setLogSearch(e.target.value)}
+                placeholder="搜尋登記人・產品・零件・顏色・備註…"
+                style={{ flex: '1 1 220px', minWidth: 180, fontSize: 12.5, padding: '6px 10px' }}
+              />
+              <select className="select" value={logWorkerFilter} onChange={e => setLogWorkerFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
+                <option value="">登記人：全部</option>
+                {logWorkerOptions.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+              <select className="select" value={logActionFilter} onChange={e => setLogActionFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
+                <option value="">動作：全部</option>
+                {Object.entries(ACTION_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select className="select" value={logProductFilter} onChange={e => setLogProductFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
+                <option value="">產品：全部</option>
+                {logProductOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+              <select className="select" value={logPartFilter} onChange={e => setLogPartFilter(e.target.value)} disabled={!logProductFilter}
+                style={{ fontSize: 12.5, padding: '6px 8px', color: logProductFilter ? 'inherit' : 'var(--text-4)' }}>
+                <option value="">{logProductFilter ? '零件：全部' : '零件：先選產品'}</option>
+                {logPartOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+              <select className="select" value={logStageFilter} onChange={e => setLogStageFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
+                <option value="">加工站：全部</option>
+                {logStageOptions.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {logFilterActive && (
+                <button onClick={clearLogFilters} style={{ padding: '6px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12.5 }}>
+                  清除篩選 ✕
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 860 }}>
               <thead>
@@ -4565,7 +4643,11 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                 </tr>
               </thead>
               <tbody>
-                {logs.length === 0 && <tr><td colSpan={13} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>尚無紀錄</td></tr>}
+                {filteredLogs.length === 0 && (
+                  <tr><td colSpan={13} style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>
+                    {logs.length === 0 ? '尚無紀錄' : '沒有符合篩選條件的紀錄'}
+                  </td></tr>
+                )}
                 {visibleLogs.map(log => {
                   const isEditing = editRow?.id === log.id
                   const isSel = selected.has(log.id)
