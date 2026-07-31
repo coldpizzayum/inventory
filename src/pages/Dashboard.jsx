@@ -4784,15 +4784,15 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
                           style={{ cursor: 'pointer', accentColor: 'var(--accent)', width: 14, height: 14 }} />
                       </td>
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{formatLogTime(log.logged_at)}</td>
-                      <td style={{ padding: '12px 14px' }}><ActionTag type={log.action_type} /></td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.worker_name || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12 }}>{log.product_name || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-2)' }}>{log.part_name || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12 }}>{getSourceDisplay(log)}</td>
-                      <td style={{ padding: '12px 14px' }}>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}><ActionTag type={log.action_type} /></td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12, whiteSpace: 'nowrap' }}>{log.worker_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', fontSize: 12, whiteSpace: 'nowrap' }}>{log.product_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{log.part_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{getSourceDisplay(log)}</td>
+                      <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
                         {log.sku_color
                           ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><SkuDot name={log.sku_color} />{log.sku_color}</span>
-                          : <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: '#FEE9E4', color: '#E8461A' }}>未選顏色</span>}
+                          : <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 999, background: '#FEE9E4', color: '#E8461A', whiteSpace: 'nowrap' }}>未選顏色</span>}
                       </td>
                       <td className="num" style={{ padding: '12px 14px', fontWeight: 500 }}>{log.qty}</td>
                       <td className="num" style={{ padding: '12px 14px', color: 'var(--bad)' }}>{log.defect_qty || '—'}</td>
