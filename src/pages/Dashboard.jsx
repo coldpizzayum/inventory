@@ -121,7 +121,7 @@ function ActionTag({ type }) {
   return (
     <span style={{
       fontSize: 12, padding: '2px 8px', borderRadius: 4,
-      background: a.tint, color: a.color, fontWeight: 500,
+      background: a.tint, color: a.color, fontWeight: 500, whiteSpace: 'nowrap', display: 'inline-block',
     }}>{a.label}</span>
   )
 }
@@ -4608,38 +4608,40 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
           </div>
 
           {!someVisible && (
-            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg-2)' }}>
-              <input
-                className="input" value={logSearch} onChange={e => setLogSearch(e.target.value)}
-                placeholder="搜尋登記人・產品・零件・顏色・備註…"
-                style={{ flex: '1 1 220px', minWidth: 180, fontSize: 12.5, padding: '6px 10px' }}
-              />
-              <select className="select" value={logWorkerFilter} onChange={e => setLogWorkerFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
-                <option value="">登記人：全部</option>
-                {logWorkerOptions.map(w => <option key={w} value={w}>{w}</option>)}
-              </select>
-              <select className="select" value={logActionFilter} onChange={e => setLogActionFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
-                <option value="">動作：全部</option>
-                {Object.entries(ACTION_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <select className="select" value={logProductFilter} onChange={e => setLogProductFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
-                <option value="">產品：全部</option>
-                {logProductOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-              <select className="select" value={logPartFilter} onChange={e => setLogPartFilter(e.target.value)} disabled={!logProductFilter}
-                style={{ fontSize: 12.5, padding: '6px 8px', color: logProductFilter ? 'inherit' : 'var(--text-4)' }}>
-                <option value="">{logProductFilter ? '零件：全部' : '零件：先選產品'}</option>
-                {logPartOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-              <select className="select" value={logStageFilter} onChange={e => setLogStageFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px' }}>
-                <option value="">加工站：全部</option>
-                {logStageOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              {logFilterActive && (
-                <button onClick={clearLogFilters} style={{ padding: '6px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12.5 }}>
-                  清除篩選 ✕
-                </button>
-              )}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-1)', background: 'var(--bg-2)', overflowX: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', width: 'max-content', minWidth: '100%' }}>
+                <input
+                  className="input" value={logSearch} onChange={e => setLogSearch(e.target.value)}
+                  placeholder="搜尋登記人・產品・零件・顏色・備註…"
+                  style={{ width: 220, flexShrink: 0, fontSize: 12.5, padding: '6px 10px' }}
+                />
+                <select className="select" value={logWorkerFilter} onChange={e => setLogWorkerFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                  <option value="">登記人：全部</option>
+                  {logWorkerOptions.map(w => <option key={w} value={w}>{w}</option>)}
+                </select>
+                <select className="select" value={logActionFilter} onChange={e => setLogActionFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                  <option value="">動作：全部</option>
+                  {Object.entries(ACTION_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <select className="select" value={logProductFilter} onChange={e => setLogProductFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                  <option value="">產品：全部</option>
+                  {logProductOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </select>
+                <select className="select" value={logPartFilter} onChange={e => setLogPartFilter(e.target.value)} disabled={!logProductFilter}
+                  style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0, color: logProductFilter ? 'inherit' : 'var(--text-4)' }}>
+                  <option value="">{logProductFilter ? '零件：全部' : '零件：先選產品'}</option>
+                  {logPartOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </select>
+                <select className="select" value={logStageFilter} onChange={e => setLogStageFilter(e.target.value)} style={{ fontSize: 12.5, padding: '6px 8px', flexShrink: 0 }}>
+                  <option value="">加工站：全部</option>
+                  {logStageOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {logFilterActive && (
+                  <button onClick={clearLogFilters} style={{ padding: '6px 8px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12.5, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    清除篩選 ✕
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
