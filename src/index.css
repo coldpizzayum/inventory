@@ -50,6 +50,34 @@
   --shadow-2: 0 1px 4px rgba(0,0,0,0.08);
   --shadow-3: 0 4px 16px rgba(0,0,0,0.08);
   --shadow-pop: 0 12px 40px rgba(0,0,0,0.12);
+
+  /* ─── shadcn/ui tokens ───────────────────────────────────────
+     Mapped onto the design tokens above so shadcn components match
+     the existing look. --primary reuses --accent's *value* (not the
+     variable itself) so bare `var(--accent)` usage elsewhere is
+     untouched. shadcn's own "accent" concept (neutral hover surface,
+     unrelated to our brand --accent) lives under --accent-surface-*
+     to avoid a same-name/different-meaning collision. */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10%;
+  --primary: 13 82% 51%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 48 14% 93%;
+  --secondary-foreground: 0 0% 10%;
+  --muted: 60 20% 97%;
+  --muted-foreground: 0 0% 42%;
+  --accent-surface: 48 14% 93%;
+  --accent-surface-foreground: 0 0% 10%;
+  --destructive: 13 83% 42%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 92%;
+  --input: 0 0% 87%;
+  --ring: 13 82% 51%;
+  --radius: 0.5rem;
 }
 
 * { box-sizing: border-box; }

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { IconPackages } from '@tabler/icons-react'
 import { ACTION_LABEL, resolveActionType, resolveStageId } from './Input.jsx'
 import ProductCard from '../components/ProductCard/index.js'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 // ─── Icons ───────────────────────────────────────────────────
 const S = { viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"1.6", strokeLinecap:"round", strokeLinejoin:"round" }
@@ -4333,19 +4335,16 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn primary" onClick={() => setShowForm(true)} style={{ padding: '9px 18px', fontSize: 13.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <Button onClick={() => setShowForm(true)}>
           <Icon.Plus />新增登記
-        </button>
+        </Button>
       </div>
 
-      {showForm && (
-      <ModalOverlay onClose={() => setShowForm(false)}>
-        {/* Form */}
-        <div className="card" style={{ width: 440, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 500 }}>新增登記</h3>
-            <button className="btn ghost" onClick={() => setShowForm(false)} style={{ padding: 6 }}><Icon.X /></button>
-          </div>
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-[440px] max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>新增登記</DialogTitle>
+          </DialogHeader>
 
           {/* Direction */}
           <div className="field">
@@ -4543,14 +4542,13 @@ function LogPage({ products, selectedProduct, logs, reload, onLogSubmit }) {
             <input className="input" placeholder="（選填）" value={note} onChange={e => setNote(e.target.value)} />
           </div>
 
-          <button className="btn primary" onClick={submit} disabled={submitting || skuMissing}
+          <Button onClick={submit} disabled={submitting || skuMissing}
             title={skuMissing ? '請選擇 SKU 顏色' : undefined}
-            style={{ width: '100%', padding: 14, justifyContent: 'center', fontSize: 15 }}>
+            className="w-full justify-center" size="lg">
             {submitting ? '送出中...' : '確認送出'}
-          </button>
-        </div>
-      </ModalOverlay>
-      )}
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
