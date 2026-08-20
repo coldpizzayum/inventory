@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
 
 // ─── Shared logic (mirrored in Dashboard) ─────────────────────
 export const ACTION_LABEL = {
@@ -228,7 +229,7 @@ function Divider({ label }) {
 function BottomBar({ onBack, onNext, nextLabel='下一步 →', nextColor, disabled }) {
   return (
     <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
-      {onBack && <button onClick={onBack} className="btn" style={{ padding:'14px 20px', fontSize:15, flexShrink:0 }}>← 上一步</button>}
+      {onBack && <Button variant="outline" onClick={onBack} className="h-auto shrink-0 px-5 py-3.5 text-[15px]">← 上一步</Button>}
       <button onClick={onNext} disabled={disabled} style={{
         flex:1, padding:'14px 20px', fontSize:15, fontWeight:600, borderRadius:8,
         border:`1.5px solid ${disabled?'#EBEBEB':nextColor||'#E64A19'}`,
@@ -693,7 +694,7 @@ function StepDone({ direction, picks, qtyData, onSame, onNew }) {
       </div>
 
       <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
-        <button onClick={onSame} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>相同零件繼續</button>
+        <Button variant="outline" onClick={onSame} className="h-auto flex-1 py-3.5 justify-center text-sm">相同零件繼續</Button>
         <button onClick={onNew} style={{
           flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
           background:color, border:`1.5px solid ${color}`, color:'#fff',
@@ -770,7 +771,7 @@ function StepSubAssembly({ products, onBack }) {
           <div style={{ fontSize:13, color:'#555' }}>組裝入庫 {done.qty.toLocaleString()} 件</div>
         </div>
         <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
-          <button onClick={() => setDone(null)} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>繼續組裝</button>
+          <Button variant="outline" onClick={() => setDone(null)} className="h-auto flex-1 py-3.5 justify-center text-sm">繼續組裝</Button>
           <button onClick={onBack} style={{
             flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
             background:color, border:`1.5px solid ${color}`, color:'#fff',
@@ -905,7 +906,7 @@ function StepProduce({ products, onBack }) {
           <div style={{ fontSize:13, color:'#555' }}>完工 {done.qty.toLocaleString()} 件</div>
         </div>
         <div style={{ position:'fixed', left:0, right:0, bottom:0, padding:16, background:'var(--bg-0)', borderTop:'1px solid var(--line-1)', display:'flex', gap:10 }}>
-          <button onClick={() => setDone(null)} className="btn" style={{ flex:1, padding:'14px 18px', fontSize:14, justifyContent:'center' }}>繼續登記</button>
+          <Button variant="outline" onClick={() => setDone(null)} className="h-auto flex-1 py-3.5 justify-center text-sm">繼續登記</Button>
           <button onClick={onBack} style={{
             flex:1, padding:'14px 18px', fontSize:14, fontWeight:600,
             background:color, border:`1.5px solid ${color}`, color:'#fff',

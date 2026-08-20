@@ -360,9 +360,9 @@ export default function Dashboard() {
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {page === 'orders' ? (
-              <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewOrder(true)}>
+              <Button onClick={() => setShowNewOrder(true)}>
                 <Icon.Plus />新增訂單
-              </button>
+              </Button>
             ) : headerActions}
           </div>
         </header>
@@ -603,7 +603,7 @@ function OrderCard({ order, product, onAllocate, onDelete }) {
             <div style={{ fontSize: 15, fontWeight: 600 }}>移除訂單</div>
             <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>確定要移除 <b>{product.name} × {order.customer}</b> 的訂單嗎？</div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn" onClick={() => setShowDel(false)}>取消</button>
+              <Button variant="outline" onClick={() => setShowDel(false)}>取消</Button>
               <button onClick={() => { onDelete(); setShowDel(false) }} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#E8461A', color: '#fff', fontSize: 13, fontWeight: 500 }}>移除</button>
             </div>
           </div>
@@ -622,8 +622,8 @@ function AllocateInput({ initialValue, max, onConfirm, onCancel }) {
         <input className="input num" autoFocus type="number" value={val} onChange={e => setVal(e.target.value)} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button className="btn" onClick={onCancel}>取消</button>
-        <button className="btn primary" onClick={() => onConfirm(Math.max(0, Math.min(max, Number(val) || 0)))}>確認</button>
+        <Button variant="outline" onClick={onCancel}>取消</Button>
+        <Button onClick={() => onConfirm(Math.max(0, Math.min(max, Number(val) || 0)))}>確認</Button>
       </div>
     </div>
   )
@@ -644,7 +644,7 @@ function NewOrderDrawer({ products, onClose, onCreate }) {
       }}>
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 17, fontWeight: 600 }}>新增訂單</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
         <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, flex: 1, overflow: 'auto' }}>
           <div className="field">
@@ -667,13 +667,13 @@ function NewOrderDrawer({ products, onClose, onCreate }) {
           </div>
         </div>
         <div style={{ padding: 20, borderTop: '1px solid var(--line-1)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={() => onCreate({
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button onClick={() => onCreate({
             productId, customer: customer.trim() || '未命名客戶',
             qty: Number(qty) || 0,
             due: due.replace(/^\d{4}-/, '').replace('-', '/') || '—',
             alloc: 0,
-          })}>建立訂單</button>
+          })}>建立訂單</Button>
         </div>
       </div>
     </>
@@ -1001,8 +1001,8 @@ function SkuAddPopover({ rect, onAdd, onClose }) {
           }} />
         ))}
       </div>
-      <button className="btn primary" style={{ fontSize: 12, padding: '5px 0', width: '100%' }}
-        onClick={() => submit(input)}>新增</button>
+      <Button size="sm" className="w-full"
+        onClick={() => submit(input)}>新增</Button>
     </div>
   )
 }
@@ -1086,7 +1086,7 @@ function StageOrderModal({ parts, mode, onClose, onReload }) {
         {/* header */}
         <div style={{ padding: '14px 20px', borderBottom: '0.5px solid var(--line-1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: 600, fontSize: 15 }}>{title}</span>
-          <button className="btn ghost" style={{ padding: '4px 8px' }} onClick={onClose}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         {/* part picker */}
@@ -1116,14 +1116,14 @@ function StageOrderModal({ parts, mode, onClose, onReload }) {
               {confirmDeleteId === stage.id ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 11, color: 'var(--bad)', whiteSpace: 'nowrap' }}>確定刪除?</span>
-                  <button className="btn danger" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => deleteStage(stage.id)} disabled={saving}>刪除</button>
-                  <button className="btn ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setConfirmDeleteId(null)}>取消</button>
+                  <Button variant="destructive" size="sm" onClick={() => deleteStage(stage.id)} disabled={saving}>刪除</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>取消</Button>
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                  <button className="btn ghost" style={{ padding: '3px 7px', fontSize: 13, lineHeight: 1 }} onClick={() => moveUp(i)} disabled={i === 0}>↑</button>
-                  <button className="btn ghost" style={{ padding: '3px 7px', fontSize: 13, lineHeight: 1 }} onClick={() => moveDown(i)} disabled={i >= localStages.length - 1}>↓</button>
-                  <button className="btn ghost" style={{ padding: '3px 6px', color: 'var(--text-4)' }} onClick={() => setConfirmDeleteId(stage.id)}><Icon.X /></button>
+                  <Button variant="ghost" size="sm" style={{ lineHeight: 1 }} onClick={() => moveUp(i)} disabled={i === 0}>↑</Button>
+                  <Button variant="ghost" size="sm" style={{ lineHeight: 1 }} onClick={() => moveDown(i)} disabled={i >= localStages.length - 1}>↓</Button>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setConfirmDeleteId(stage.id)}><Icon.X /></Button>
                 </div>
               )}
             </div>
@@ -1141,10 +1141,10 @@ function StageOrderModal({ parts, mode, onClose, onReload }) {
                 onChange={e => setNewAction(e.target.value)} style={{ fontSize: 13, flex: 1 }}
                 onKeyDown={e => { if (e.key === 'Enter') addStage() }} />
             </div>
-            <button className="btn primary" style={{ fontSize: 13 }} onClick={addStage}
+            <Button onClick={addStage}
               disabled={saving || !newFactory.trim() || !newAction.trim()}>
               {saving ? '儲存中…' : '新增'}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -1152,11 +1152,11 @@ function StageOrderModal({ parts, mode, onClose, onReload }) {
         <div style={{ padding: '12px 20px', borderTop: '0.5px solid var(--line-1)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           {mode === 'reorder' ? (
             <>
-              <button className="btn" onClick={onClose}>取消</button>
-              <button className="btn primary" onClick={saveOrder} disabled={saving}>{saving ? '儲存中…' : '儲存順序'}</button>
+              <Button variant="outline" onClick={onClose}>取消</Button>
+              <Button onClick={saveOrder} disabled={saving}>{saving ? '儲存中…' : '儲存順序'}</Button>
             </>
           ) : (
-            <button className="btn" onClick={onClose}>關閉</button>
+            <Button variant="outline" onClick={onClose}>關閉</Button>
           )}
         </div>
       </div>
@@ -1232,19 +1232,19 @@ function PartView({ parts, skuEditMode, onReload }) {
                       onChange={e => setEditNameVal(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') saveName(part.id); if (e.key === 'Escape') setEditingNameId(null) }}
                     />
-                    <button className="btn primary" style={{ padding: '4px 10px', fontSize: 12 }}
-                      onClick={() => saveName(part.id)} disabled={saving}>儲存</button>
-                    <button className="btn ghost" style={{ padding: '4px 8px', fontSize: 12 }}
-                      onClick={() => setEditingNameId(null)}>取消</button>
+                    <Button size="sm"
+                      onClick={() => saveName(part.id)} disabled={saving}>儲存</Button>
+                    <Button variant="ghost" size="sm"
+                      onClick={() => setEditingNameId(null)}>取消</Button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: skuEditMode ? 6 : 0 }}>
                     <span style={{ fontSize: 13, fontWeight: 500 }}>{part.name}</span>
                     {skuEditMode && (
-                      <button className="btn ghost" style={{ padding: '2px 5px' }}
+                      <Button variant="ghost" size="icon" className="h-6 w-6"
                         onClick={() => { setEditingNameId(part.id); setEditNameVal(part.name) }}>
                         <Icon.Edit />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
@@ -1262,13 +1262,13 @@ function PartView({ parts, skuEditMode, onReload }) {
                     </div>
                   ))}
                   {skuEditMode && (
-                    <button className="btn ghost" style={{ padding: '1px 7px', fontSize: 11, gap: 3, display: 'inline-flex', alignItems: 'center' }}
+                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
                       onClick={e => {
                         const rect = e.currentTarget.getBoundingClientRect()
                         setSkuPopover(skuPopover?.partId === part.id ? null : { partId: part.id, rect })
                       }}>
                       <Icon.Plus />SKU
-                    </button>
+                    </Button>
                   )}
                   {skuPopover?.partId === part.id && (
                     <SkuAddPopover rect={skuPopover.rect} onAdd={(c) => addSku(part.id, c)} onClose={() => setSkuPopover(null)} />
@@ -1411,10 +1411,10 @@ function InventoryView({ parts }) {
         <input className="input" style={{ maxWidth: 320 }} placeholder="搜尋零件名稱..." value={search} onChange={e => setSearch(e.target.value)} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {expandable.length > 0 && (
-            <button className="btn ghost" onClick={toggleAll} style={{ fontSize: 12, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Button variant="ghost" size="sm" onClick={toggleAll}>
               {allOpen ? <Icon.ChevronUp size={13} /> : <Icon.ChevronDown size={13} />}
               {allOpen ? '全部收合' : '全部展開'}
-            </button>
+            </Button>
           )}
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{sorted.length} 個零件</span>
         </div>
@@ -1621,7 +1621,7 @@ function WarehouseMismatchModal({ part, negativeColors = [], onClose, onFixed })
       <div style={{ width: 640, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>「{part.name}」顏色分布資料不完整</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
           這個零件有顏色的庫存出現負數，個別數字不正確：
@@ -1745,11 +1745,11 @@ function WarehouseMismatchModal({ part, negativeColors = [], onClose, onFixed })
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
-          <button className="btn" onClick={onClose}>關閉</button>
+          <Button variant="outline" onClick={onClose}>關閉</Button>
           {!loading && !loadError && (issues.unknownColor.length > 0 || negativeColors.length > 0) && (
-            <button className="btn primary" disabled={saving || editCount === 0} onClick={applyFixes}>
+            <Button disabled={saving || editCount === 0} onClick={applyFixes}>
               {saving ? '套用中…' : `套用修正（${editCount}）`}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -2245,7 +2245,7 @@ function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
       <div style={{ width: 680, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>「{part.name}」顏色分列資料不完整</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>
           下面這些加工站的「各顏色加總」跟「該站實際在途數」對不起來：
@@ -2371,11 +2371,11 @@ function SkuMismatchModal({ part, mismatches, onClose, onFixed }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
-          <button className="btn" onClick={onClose}>關閉</button>
+          <Button variant="outline" onClick={onClose}>關閉</Button>
           {!loading && !loadError && (issues.noStage.length > 0 || issues.unknownColor.length > 0) && (
-            <button className="btn primary" disabled={saving || totalEdits === 0} onClick={applyFixes}>
+            <Button disabled={saving || totalEdits === 0} onClick={applyFixes}>
               {saving ? '套用中…' : `套用修正（${totalEdits}）`}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -2410,7 +2410,7 @@ function EditProductPicker({ products, action, onSelect, onClose }) {
             >{p.name}</button>
           ))}
         </div>
-        <button className="btn ghost" style={{ marginTop: 12, width: '100%', fontSize: 13 }} onClick={onClose}>取消</button>
+        <Button variant="ghost" className="w-full mt-3" onClick={onClose}>取消</Button>
       </div>
     </div>
   )
@@ -2619,7 +2619,7 @@ function ProcessPage({ products, selectedProduct, onSelectProduct, headerActions
             <span style={{ fontWeight: 500, color: 'var(--accent)' }}>編輯零件名稱 / SKU</span>
             <span style={{ color: 'var(--text-3)' }}>— 點擊名稱旁鉛筆圖示修改名稱，點擊 × 刪除色號</span>
           </div>
-          <button className="btn" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => setSkuEditMode(false)}>完成編輯</button>
+          <Button variant="outline" size="sm" onClick={() => setSkuEditMode(false)}>完成編輯</Button>
         </div>
       )}
 
@@ -3220,7 +3220,7 @@ function ProcessTable({ rows, edit, productImgSrc, onMutate, reloadParts, produc
             <div style={{ fontSize: 15, fontWeight: 600 }}>刪除加工站</div>
             <div style={{ fontSize: 13, color: 'var(--text-2)' }}>刪除 <b>站 {delColAt + 1}</b> 將清除該站所有紀錄，確認？</div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn" onClick={() => setDelColAt(null)}>取消</button>
+              <Button variant="outline" onClick={() => setDelColAt(null)}>取消</Button>
               <button onClick={() => deleteCol(delColAt)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#E8461A', color: '#fff', fontSize: 13, fontWeight: 500 }}>刪除</button>
             </div>
           </div>
@@ -3308,7 +3308,7 @@ function AddPartModal({ selectedProduct, onClose, onCreated }) {
       <div style={{ width: 480, background: '#fff', borderRadius: 14, padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 17, fontWeight: 600 }}>新增零件</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         {/* Part name */}
@@ -3330,9 +3330,9 @@ function AddPartModal({ selectedProduct, onClose, onCreated }) {
               type="number" min="0" value={stockInput}
               onChange={e => setStockInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addColor()} />
-            <button className="btn" style={{ flexShrink: 0 }} onClick={addColor}>
+            <Button variant="outline" size="icon" className="shrink-0" onClick={addColor}>
               <Icon.Plus />
-            </button>
+            </Button>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 4 }}>
             輸入顏色後按 + 加入，可加入多個顏色
@@ -3361,10 +3361,10 @@ function AddPartModal({ selectedProduct, onClose, onCreated }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4, borderTop: '1px solid var(--line-1)' }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={handleCreate} disabled={saving || !partName.trim()}>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button onClick={handleCreate} disabled={saving || !partName.trim()}>
             <Icon.Plus />{saving ? '新增中...' : '新增零件'}
-          </button>
+          </Button>
         </div>
       </div>
     </ModalOverlay>
@@ -3408,9 +3408,9 @@ function SkuPage({ parts, logs, products, onSelectProduct, selectedProduct, relo
         )}
       </div>
 
-      <button className="btn" style={{ fontSize: 13, alignSelf: 'flex-start' }} onClick={() => setShowAddPart(true)}>
+      <Button variant="outline" className="self-start" onClick={() => setShowAddPart(true)}>
         <Icon.Plus />新增零件
-      </button>
+      </Button>
 
       {showAddPart && (
         <AddPartModal
@@ -3526,8 +3526,8 @@ function SkuPartRow({ part, logs, isFirst, onDelete, onReload }) {
               <input autoFocus className="input" style={{ flex: 1, fontSize: 13 }} placeholder="顏色名稱，例：鈦"
                 value={newSku} onChange={e => setNewSku(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') createSku(); if (e.key === 'Escape') setAddingSku(false) }} />
-              <button className="btn primary" style={{ fontSize: 13 }} onClick={createSku}>新增</button>
-              <button className="btn" style={{ fontSize: 13 }} onClick={() => { setAddingSku(false); setNewSku('') }}>取消</button>
+              <Button onClick={createSku}>新增</Button>
+              <Button variant="outline" onClick={() => { setAddingSku(false); setNewSku('') }}>取消</Button>
             </div>
           ) : (
             <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--info)', padding: 0 }}
@@ -4898,7 +4898,7 @@ function SkuBackfillModal({ logs, onClose, onDone }) {
       <div style={{ width: 720, maxWidth: '92vw', maxHeight: '85vh', background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>批次補登 SKU 顏色（共 {untagged.length} 筆）</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         {loading ? (
@@ -4941,10 +4941,10 @@ function SkuBackfillModal({ logs, onClose, onDone }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={saving || loading} onClick={batchSave}>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button disabled={saving || loading} onClick={batchSave}>
             {saving ? '儲存中…' : '批次儲存'}
-          </button>
+          </Button>
         </div>
       </div>
     </ModalOverlay>
@@ -5012,7 +5012,7 @@ function StockAdjustModal({ product, onClose, onReload }) {
             <div style={{ fontSize: 14, fontWeight: 500 }}>手動修正庫存</div>
             <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{product.name}・倉庫庫存</div>
           </div>
-          <button className="btn ghost" style={{ padding: '4px 8px', marginTop: -2 }} onClick={onClose}><Icon.X /></button>
+          <Button variant="ghost" size="icon" style={{ marginTop: -2 }} onClick={onClose}><Icon.X /></Button>
         </div>
 
         {/* Current value block */}
@@ -5082,11 +5082,11 @@ function StockAdjustModal({ product, onClose, onReload }) {
 
         {/* Buttons */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={submit}
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button onClick={submit}
             disabled={saving || !reason.trim()}>
             {saving ? '儲存中…' : '確認修正'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -5194,10 +5194,10 @@ function PartConfigRow({ part, onChange, onDelete, autoFocus }) {
                 onKeyDown={e => e.key === 'Enter' && addSku()}
                 style={{ fontSize: 12, padding: '6px 9px', marginBottom: 8, width: '100%', boxSizing: 'border-box' }}
               />
-              <button className="btn primary" onClick={addSku} disabled={!pendingColor.name.trim()}
-                style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}>
+              <Button onClick={addSku} disabled={!pendingColor.name.trim()}
+                size="sm" className="w-full justify-center">
                 確認
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -5306,7 +5306,7 @@ function NewProductModal({ onClose, onCreated }) {
             </div>
             <span style={{ fontSize: 13, color: 'var(--text-3)' }}>步驟 {step} / 2</span>
           </div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         {/* Step 1 — 基本資訊 */}
@@ -5329,9 +5329,9 @@ function NewProductModal({ onClose, onCreated }) {
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-              <button className="btn primary" disabled={!info.name.trim()} onClick={() => setStep(2)}>
+              <Button disabled={!info.name.trim()} onClick={() => setStep(2)}>
                 下一步：設定零件 →
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -5341,11 +5341,11 @@ function NewProductModal({ onClose, onCreated }) {
           <>
             <PartsStep productName={info.name} parts={parts} setParts={setParts} />
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 4, borderTop: '0.5px solid var(--line-1)' }}>
-              <button className="btn" onClick={() => setStep(1)}>← 上一步</button>
-              <button className="btn primary" onClick={finish}
+              <Button variant="outline" onClick={() => setStep(1)}>← 上一步</Button>
+              <Button onClick={finish}
                 disabled={saving || !parts.some(p => p.name.trim())}>
                 {saving ? '建立中…' : '完成建立'}
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -5406,10 +5406,10 @@ function SkuColorPicker({ onAdd, label = '+ 顏色' }) {
             onKeyDown={e => e.key === 'Enter' && confirm()}
             style={{ fontSize: 12, padding: '6px 9px', marginBottom: 8, width: '100%', boxSizing: 'border-box' }}
           />
-          <button className="btn primary" onClick={confirm} disabled={!pending.name.trim()}
-            style={{ width: '100%', justifyContent: 'center', fontSize: 12 }}>
+          <Button onClick={confirm} disabled={!pending.name.trim()}
+            size="sm" className="w-full justify-center">
             確認
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -5618,7 +5618,7 @@ function ManagePartsModal({ product, onClose, onChanged }) {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>「{product.name}」的零件</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         {/* Existing parts */}
@@ -5670,15 +5670,15 @@ function ManagePartsModal({ product, onClose, onChanged }) {
             ))}
             <SkuColorPicker onAdd={sku => setNewPart(r => ({ ...r, skus: [...r.skus, sku] }))} />
           </div>
-          <button className="btn primary" onClick={addPart} disabled={adding || !newPart.name.trim()}
-            style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <Button onClick={addPart} disabled={adding || !newPart.name.trim()}
+            size="sm" className="whitespace-nowrap shrink-0">
             {adding ? '新增中…' : '+ 新增'}
-          </button>
+          </Button>
         </div>
 
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 12, borderTop: '0.5px solid var(--line-1)' }}>
-          <button className="btn" onClick={onClose}>完成</button>
+          <Button variant="outline" onClick={onClose}>完成</Button>
         </div>
       </div>
     </ModalOverlay>
@@ -5729,9 +5729,9 @@ function SettingsPage({ products, reload, onGoToProcess, onGoToOrders }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 860 }}>
       {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn primary" style={{ fontSize: 13 }} onClick={() => setShowNewProduct(true)}>
+        <Button onClick={() => setShowNewProduct(true)}>
           <Icon.Plus />新增產品
-        </button>
+        </Button>
       </div>
 
       {/* Product cards */}
@@ -5750,14 +5750,14 @@ function SettingsPage({ products, reload, onGoToProcess, onGoToOrders }) {
             >
               {adjCount > 0 && (
                 <div style={{ borderTop: '1px solid var(--line-1)', paddingTop: 8 }}>
-                  <button className="btn ghost" style={{ fontSize: 11, color: 'var(--text-3)', padding: '2px 6px', gap: 4 }}
+                  <Button variant="ghost" size="sm" className="h-auto py-1 px-1.5 text-xs text-muted-foreground"
                     onClick={() => toggleHistory(p.id)}>
                     <svg viewBox="0 0 12 12" fill="none" width="10" height="10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
                       style={{ transform: expandedHistoryId === p.id ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }}>
                       <path d="M2 4l4 4 4-4"/>
                     </svg>
                     查看修正紀錄 {adjCount} 筆
-                  </button>
+                  </Button>
                   {expandedHistoryId === p.id && historyRows.length > 0 && (
                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                       {historyRows.map(adj => (
@@ -5917,7 +5917,7 @@ function FactoriesPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>加工廠商</h2>
-        <button className="btn primary" onClick={() => setModal({ mode: 'new' })}><Icon.Plus />新增廠商</button>
+        <Button onClick={() => setModal({ mode: 'new' })}><Icon.Plus />新增廠商</Button>
       </div>
 
       <input className="input" placeholder="搜尋廠商名稱、加工類型、聯絡方式..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -5961,11 +5961,11 @@ function FactoriesPage() {
                     <td style={{ padding: '10px 14px', color: 'var(--text-3)', fontSize: 12 }}>{f.note || ''}</td>
                     <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setModal({ mode: 'edit', factory: f })}>編輯</button>
+                        <Button variant="outline" size="sm" onClick={() => setModal({ mode: 'edit', factory: f })}>編輯</Button>
                         {!isInHouse && (
-                          <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => toggleStatus(f)}>
+                          <Button variant="outline" size="sm" onClick={() => toggleStatus(f)}>
                             {f.status === 'inactive' ? '恢復' : '停用'}
-                          </button>
+                          </Button>
                         )}
                         {!isInHouse && (
                           <button
@@ -6035,7 +6035,7 @@ function FactoryMergeModal({ factory, factories, onClose, onMerged }) {
       <div style={{ width: 440, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>合併廠商</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: -6 }}>
           將此廠商的所有加工紀錄合併到另一個廠商，合併後此廠商將被刪除。
@@ -6079,7 +6079,7 @@ function FactoryMergeModal({ factory, factories, onClose, onMerged }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
-          <button className="btn" onClick={onClose}>取消</button>
+          <Button variant="outline" onClick={onClose}>取消</Button>
           <button
             disabled={saving || !targetId}
             onClick={confirmMerge}
@@ -6119,7 +6119,7 @@ function FactoryModal({ mode, factory, onClose, onSaved }) {
       <div style={{ width: 480, background: 'var(--bg-1)', borderRadius: 'var(--r-lg)', padding: 24, display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>{mode === 'edit' ? '編輯廠商' : '新增廠商'}</div>
-          <button className="btn ghost" onClick={onClose} style={{ padding: 6 }}><Icon.X /></button>
+          <Button variant="ghost" size="icon" onClick={onClose}><Icon.X /></Button>
         </div>
 
         <div className="field">
@@ -6154,10 +6154,10 @@ function FactoryModal({ mode, factory, onClose, onSaved }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 4 }}>
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={saving || !form.name.trim()} onClick={save}>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button disabled={saving || !form.name.trim()} onClick={save}>
             {saving ? '儲存中…' : (mode === 'edit' ? '儲存' : '新增')}
-          </button>
+          </Button>
         </div>
       </div>
     </ModalOverlay>
@@ -6179,7 +6179,7 @@ function EmptyState({ onAdd }) {
       <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
       <p style={{ fontSize: 16, fontWeight: 500, color: 'var(--text-1)', margin: '0 0 8px' }}>尚無產品資料</p>
       <p style={{ fontSize: 13, margin: '0 0 20px' }}>請執行 <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: 4 }}>npm run seed</code> 或前往產品管理新增產品</p>
-      <button className="btn primary" onClick={onAdd}><Icon.Setting />前往產品管理</button>
+      <Button onClick={onAdd}><Icon.Setting />前往產品管理</Button>
     </div>
   )
 }
